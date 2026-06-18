@@ -1,0 +1,28 @@
+[
+  {
+    "id": "cc_import_1781788071824_t7r5vr",
+    "original_filename": "HomeProtectionPlan-20260617-20260618-BatchDataExport.csv",
+    "uploaded_at": "2026-06-18T13:07:51.824Z",
+    "updated_at": "2026-06-18T14:55:32.413Z",
+    "uploaded_by": "Local User",
+    "policy_lookup_refreshed_at": "2026-06-18T14:56:16.135Z",
+    "status": "ready",
+    "row_count": 4,
+    "ready_count": 4,
+    "error_count": 0,
+    "warning_count": 0,
+    "missing_policy_count": 0,
+    "exported_at": null,
+    "export_filename": "",
+    "attempted_import_count": 4,
+    "successful_import_count": 4,
+    "salesforce_failed_row_count": 0,
+    "import_confirmed_at": "2026-06-18T14:55:32.411Z",
+    "import_confirmed_by": "Local User",
+    "final_status": "imported",
+    "valid_row_count": 4,
+    "failed_validation_row_count": 0,
+    "imported_row_count": 4,
+    "import_completed_at": "2026-06-18T14:55:32.411Z"
+  }
+]

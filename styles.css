@@ -487,7 +487,7 @@ textarea {
   flex-direction: column;
   gap: 16px;
   min-height: calc(100vh - 220px);
-  overflow: hidden;
+  overflow: visible;
   padding-top: 8px;
 }
 
@@ -517,6 +517,25 @@ textarea {
   overflow: visible;
 }
 
+.analysis-review-floating-panel.is-inline-page {
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: auto;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.analysis-review-floating-panel.is-inline-page .analysis-review-floating-handle {
+  cursor: default;
+}
+
 .analysis-review-floating-handle {
   display: flex;
   gap: 12px;
@@ -540,8 +559,8 @@ textarea {
 .analysis-review-spreadsheet-area {
   flex: 1;
   min-height: 0;
-  height: 100%;
-  overflow-y: auto;
+  height: auto;
+  overflow: visible;
   padding-top: 8px;
 }
 

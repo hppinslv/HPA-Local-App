@@ -43,6 +43,7 @@ const APPLICATION_DEFAULTS = Object.freeze({
 const UI_STATE_STORAGE_KEY = "hpa.ui.currentState";
 const COMPARISON_DEBUG_QUERY_PARAM = "debugComparisonPicker";
 const ANALYSIS_REVIEW_POPUP_QUERY_PARAM = "analysisReviewPopup";
+const IMPORT_SESSION_POPUP_QUERY_PARAM = "importSessionPopup";
 
 function getDefaultAnalysisName() {
   return new Date().toLocaleString("en-US", {
@@ -124,6 +125,18 @@ const state = {
     currentSessionId: "",
     currentSession: null,
     filter: "all",
+    popup: false,
+    launchSessionId: "",
+  },
+  checkImports: {
+    templates: [],
+    selectedTemplateKey: "",
+    sessions: [],
+    currentSessionId: "",
+    currentSession: null,
+    filter: "all",
+    popup: false,
+    launchSessionId: "",
   },
   referenceLists: [],
 };
@@ -967,8 +980,15 @@ function setRoute(route) {
   }
 
   if (normalizedRoute === "cc-payment-imports") {
-    Promise.all([loadCcPaymentImportTemplates(), loadCcPaymentImportSessions()]).catch((error) => {
+    Promise.all([loadCcPaymentImportTemplates(), loadCcPaymentImportSessions(state.ccPayments.launchSessionId || "")]).catch((error) => {
       setStatus("cc-payment-status", `Unable to load credit card payment imports: ${error.message}`);
+    });
+    return;
+  }
+
+  if (normalizedRoute === "check-imports") {
+    Promise.all([loadCheckImportTemplates(), loadCheckImportSessions(state.checkImports.launchSessionId || "")]).catch((error) => {
+      setStatus("check-import-status", `Unable to load check imports: ${error.message}`);
     });
     return;
   }
@@ -1112,6 +1132,7 @@ function readLaunchStateFromUrl() {
   try {
     const params = new URLSearchParams(window.location.search || "");
     const route = String(params.get("route") || "").trim().toLowerCase();
+    const sessionId = String(params.get("sessionId") || "").trim();
     const panel = String(params.get("analysisPanel") || "").trim().toLowerCase();
     const subtab = String(params.get("analysisSubtab") || "").trim().toLowerCase();
     const mailingListType = String(params.get("mailingListType") || "").trim().toLowerCase();
@@ -1121,10 +1142,16 @@ function readLaunchStateFromUrl() {
     const reviewScf = normalizeScf(params.get("reviewScf") || "");
     const reviewSummaryMode = String(params.get("reviewSummaryMode") || "").trim().toLowerCase();
     const isReviewPopup = params.get(ANALYSIS_REVIEW_POPUP_QUERY_PARAM) === "1";
+    const isImportSessionPopup = params.get(IMPORT_SESSION_POPUP_QUERY_PARAM) === "1";
     return {
-      route: ["dashboard", "analysis", "applications", "monthly-reports", "report-history", "settings"].includes(route)
+      route: ["dashboard", "analysis", "applications", "monthly-reports", "report-history", "settings", "cc-payment-imports", "check-imports"].includes(route)
         ? route
         : "",
+      importSession: {
+        route: ["cc-payment-imports", "check-imports"].includes(route) ? route : "",
+        sessionId,
+        popup: isImportSessionPopup,
+      },
       analysis: {
         panel: ["home", "previous", "workspace", "compare", "compare-review"].includes(panel)
           ? panel
@@ -1294,6 +1321,40 @@ function isAnalysisReviewPopupWindow() {
   } catch {
     return false;
   }
+}
+
+function isImportSessionPopupWindow() {
+  try {
+    return new URLSearchParams(window.location.search || "").get(IMPORT_SESSION_POPUP_QUERY_PARAM) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function openImportSessionPopup(route, sessionId) {
+  const normalizedRoute = String(route || "").trim();
+  const normalizedSessionId = String(sessionId || "").trim();
+  if (!["cc-payment-imports", "check-imports"].includes(normalizedRoute) || !normalizedSessionId) {
+    return false;
+  }
+
+  const popupUrl = new URL(window.location.href);
+  popupUrl.searchParams.set("route", normalizedRoute);
+  popupUrl.searchParams.set("sessionId", normalizedSessionId);
+  popupUrl.searchParams.set(IMPORT_SESSION_POPUP_QUERY_PARAM, "1");
+
+  const popupWindow = window.open(
+    popupUrl.toString(),
+    `hpa-import-session-${normalizedRoute}-${normalizedSessionId}`,
+    "popup=yes,width=1650,height=1000,resizable=yes,scrollbars=yes"
+  );
+
+  if (!popupWindow) {
+    return false;
+  }
+
+  popupWindow.focus();
+  return true;
 }
 
 function openComparisonReviewPopup() {
@@ -1933,11 +1994,7 @@ function renderCcPaymentReviewTable() {
     tbody.innerHTML = '<tr><td colspan="19" class="empty-cell">No credit card payment import session loaded.</td></tr>';
     return;
   }
-
-  if (["imported", "imported_with_errors"].includes(String(session.final_status || ""))) {
-    tbody.innerHTML = `<tr><td colspan="20" class="empty-cell">This import is complete. ${Number(session.imported_row_count || session.successful_import_count || 0)} row(s) were imported into Salesforce. Use Import History to reopen and review it.</td></tr>`;
-    return;
-  }
+  const isImportedSession = ["imported", "imported_with_errors"].includes(String(session.final_status || ""));
 
   const rows = getCcPaymentFilteredRows();
   if (!rows.length) {
@@ -1964,13 +2021,13 @@ function renderCcPaymentReviewTable() {
           <td>
             <div class="field-stack">
               <strong>${esc(row.certificate_number || "")}</strong>
-              <input class="field-input cc-inline-input" data-cc-row-field="certificate_number" data-cc-row-id="${esc(row.id)}" value="${esc(row.certificate_number || "")}" />
+              ${isImportedSession ? "" : `<input class="field-input cc-inline-input" data-cc-row-field="certificate_number" data-cc-row-id="${esc(row.id)}" value="${esc(row.certificate_number || "")}" />`}
             </div>
           </td>
           <td>
             <div class="field-stack">
               <strong>${esc(row.matched_policy_id || "-")}</strong>
-              <input class="field-input cc-inline-input" data-cc-row-field="manual_policy_id" data-cc-row-id="${esc(row.id)}" value="${esc(row.manual_policy_id || row.matched_policy_id || "")}" placeholder="Enter Policy ID" />
+              ${isImportedSession ? "" : `<input class="field-input cc-inline-input" data-cc-row-field="manual_policy_id" data-cc-row-id="${esc(row.id)}" value="${esc(row.manual_policy_id || row.matched_policy_id || "")}" placeholder="Enter Policy ID" />`}
             </div>
           </td>
           <td>${esc(row.payment_name || "")}</td>
@@ -1994,7 +2051,7 @@ function renderCcPaymentReviewTable() {
           <td><span class="cc-status-pill is-${esc(row.status || "ready")}">${esc((row.status || "ready").replace("_", " "))}</span></td>
           <td>${issueColumn}</td>
           <td class="table-action-cell">
-            <button class="secondary-button table-action-button" data-cc-save-row="${esc(row.id)}">Save</button>
+            ${isImportedSession ? '<span class="cc-row-note">Read only</span>' : `<button class="secondary-button table-action-button" data-cc-save-row="${esc(row.id)}">Save</button>`}
           </td>
         </tr>
       `;
@@ -2065,10 +2122,12 @@ async function loadCcPaymentImportSessions(preferredSessionId = "") {
     "";
   if (targetSessionId) {
     await loadCcPaymentImportSession(targetSessionId);
+    state.ccPayments.launchSessionId = "";
     return;
   }
   state.ccPayments.currentSessionId = "";
   state.ccPayments.currentSession = null;
+  state.ccPayments.launchSessionId = "";
   renderCcPaymentPage();
 }
 
@@ -2228,10 +2287,14 @@ function bindCcPaymentImportEvents() {
     if (!(target instanceof HTMLElement)) return;
     const sessionId = target.getAttribute("data-cc-open-session");
     if (!sessionId) return;
-    setStatus("cc-payment-status", "Loading import session...");
+    setStatus("cc-payment-status", "Opening import session...");
     try {
+      if (openImportSessionPopup("cc-payment-imports", sessionId)) {
+        setStatus("cc-payment-status", "Import session opened in a new window.");
+        return;
+      }
       await loadCcPaymentImportSession(sessionId);
-      setStatus("cc-payment-status", "Import session loaded.");
+      setStatus("cc-payment-status", "Popup was blocked, so the import session opened here.");
     } catch (error) {
       setStatus("cc-payment-status", `Unable to load session: ${error.message}`);
     }
@@ -2266,6 +2329,479 @@ function bindCcPaymentImportEvents() {
       setStatus("cc-payment-status", "Row correction saved.");
     } catch (error) {
       setStatus("cc-payment-status", `Unable to save row: ${error.message}`);
+    }
+  });
+}
+
+function getCurrentCheckImportSession() {
+  return state.checkImports.currentSession || null;
+}
+
+function getSelectedCheckImportTemplate() {
+  const selectedKey = String(state.checkImports.selectedTemplateKey || "").trim();
+  return state.checkImports.templates.find((entry) => entry.key === selectedKey) || null;
+}
+
+function renderCheckImportTemplatePicker() {
+  const select = el("check-import-template-select");
+  const status = el("check-import-template-status");
+  if (!select) return;
+
+  const templates = Array.isArray(state.checkImports.templates) ? state.checkImports.templates : [];
+  if (!templates.length) {
+    select.innerHTML = '<option value="">No templates loaded</option>';
+    if (status) status.textContent = "Check import template list is empty.";
+    return;
+  }
+
+  select.innerHTML = templates
+    .map((template) => `
+      <option value="${esc(template.key)}"${template.key === state.checkImports.selectedTemplateKey ? " selected" : ""}>
+        ${esc(template.name || template.key)}
+      </option>
+    `)
+    .join("");
+
+  const selectedTemplate = getSelectedCheckImportTemplate();
+  if (status) {
+    status.textContent = selectedTemplate
+      ? `${selectedTemplate.name || selectedTemplate.key} -> ${selectedTemplate.salesforceObjectApiName || "Salesforce"} (${selectedTemplate.operationType || "insert"})`
+      : "Select a template.";
+  }
+}
+
+function updateCheckImportFilterButtons() {
+  all("[data-check-filter]").forEach((button) => {
+    button.classList.toggle(
+      "is-active",
+      button.getAttribute("data-check-filter") === state.checkImports.filter
+    );
+  });
+}
+
+function getCheckImportFilteredRows() {
+  const session = getCurrentCheckImportSession();
+  const rows = Array.isArray(session?.rows) ? session.rows.slice() : [];
+  const filter = String(state.checkImports.filter || "all");
+  const filtered = rows.filter((row) => {
+    if (filter === "all") return true;
+    if (filter === "ready") return row.status === "ready";
+    if (filter === "errors") return row.status === "error";
+    if (filter === "warnings") return row.status === "warning";
+    if (filter === "missing_certificate") {
+      return Array.isArray(row.issue_details) && row.issue_details.some((issue) => issue.code === "missing_certificate");
+    }
+    if (filter === "missing_policy") {
+      return Array.isArray(row.issue_details) && row.issue_details.some((issue) => issue.code === "missing_policy_id");
+    }
+    return true;
+  });
+  return filtered.sort((a, b) => {
+    const order = { error: 0, warning: 1, ready: 2, excluded: 3 };
+    return (order[a.status] ?? 9) - (order[b.status] ?? 9) || Number(a.row_number || 0) - Number(b.row_number || 0);
+  });
+}
+
+function renderCheckImportSummary() {
+  const session = getCurrentCheckImportSession();
+  el("check-import-summary-total").textContent = String(Number(session?.row_count || 0));
+  el("check-import-summary-amount").textContent = formatApplicationCurrency(Number(session?.total_amount || 0));
+  el("check-import-summary-ready").textContent = String(Number(session?.ready_count || 0));
+  el("check-import-summary-missing-certificate").textContent = String(Number(session?.missing_certificate_count || 0));
+  el("check-import-summary-missing-policy").textContent = String(Number(session?.missing_policy_count || 0));
+  el("check-import-summary-discrepancy").textContent = String(Number(session?.discrepancy_count || 0));
+  setStatus("check-import-validation-message", session?.validation_message || "Upload a file to begin validation.");
+}
+
+function renderCheckImportHistory() {
+  const tbody = el("check-import-history-body");
+  if (!tbody) return;
+  const sessions = Array.isArray(state.checkImports.sessions) ? state.checkImports.sessions : [];
+  if (!sessions.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-cell">No check import sessions yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = sessions
+    .map((session) => `
+      <tr>
+        <td>${esc(formatDate(session.uploaded_at))}</td>
+        <td>${esc(session.original_filename || "")}</td>
+        <td>${esc(session.row_count || 0)}</td>
+        <td>${esc(session.imported_row_count || session.successful_import_count || 0)}</td>
+        <td>${esc(session.ready_count || 0)}</td>
+        <td>${esc(session.error_count || 0)}</td>
+        <td>${esc(session.warning_count || 0)}</td>
+        <td>${esc(formatApplicationCurrency(Number(session.total_amount || 0)))}</td>
+        <td>${esc(session.uploaded_by || "")}</td>
+        <td class="table-action-cell">
+          <button class="secondary-button table-action-button" data-check-open-session="${esc(session.id)}">Open</button>
+        </td>
+      </tr>
+    `)
+    .join("");
+}
+
+function renderCheckImportReviewTable() {
+  const tbody = el("check-import-review-body");
+  if (!tbody) return;
+  const session = getCurrentCheckImportSession();
+  if (!session) {
+    tbody.innerHTML = '<tr><td colspan="13" class="empty-cell">No check import session loaded.</td></tr>';
+    return;
+  }
+  const isImportedSession = ["imported", "imported_with_errors"].includes(String(session.final_status || ""));
+
+  const rows = getCheckImportFilteredRows();
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="13" class="empty-cell">No rows match the selected filter.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row) => `
+    <tr class="cc-import-row is-${esc(row.status || "ready")}">
+      <td><span class="cc-status-pill is-${esc(row.status || "ready")}">${esc((row.status || "ready").replaceAll("_", " "))}</span></td>
+      <td>${esc(row.deposit_date || "")}</td>
+      <td>
+        <div class="field-stack">
+          <strong>${esc(row.certificate_number || "")}</strong>
+          ${isImportedSession ? "" : `<input class="field-input cc-inline-input" data-check-row-field="certificate_number" data-check-row-id="${esc(row.id)}" value="${esc(row.certificate_number || "")}" />`}
+        </div>
+      </td>
+      <td>
+        <div class="field-stack">
+          <strong>${esc(row.matched_certificate_record_id || "-")}</strong>
+          <div class="cc-row-note">${esc(row.matched_policy_id || "No related policy ID")}</div>
+        </div>
+      </td>
+      <td>
+        <div class="field-stack">
+          <strong>${esc(row.check_amount || "")}</strong>
+          ${row.expected_amount !== null && row.expected_amount !== undefined ? `<div class="cc-row-note">Selected match: ${esc(formatApplicationCurrency(row.expected_amount))}</div>` : ""}
+          ${row.premium_comparison_label ? `<div class="cc-row-note">${esc(row.premium_comparison_label)}</div>` : ""}
+        </div>
+      </td>
+      <td>${esc(row.remitter_name || "")}</td>
+      <td>${esc(row.check_number || "")}</td>
+      <td>${esc(row.transaction_id || "")}</td>
+      <td>${esc(row.member_1_name || "")}</td>
+      <td>${esc(row.member_2_name || "")}</td>
+      <td>
+        <div class="field-stack">
+          <strong>${esc(String(row.months ?? "").trim() !== "" ? row.months : "-")}</strong>
+          ${isImportedSession ? "" : `<input class="field-input cc-inline-input" data-check-row-field="months" data-check-row-id="${esc(row.id)}" type="number" min="0" step="1" value="${esc(String(row.corrected_months ?? "").trim() !== "" ? row.corrected_months : (String(row.months ?? "").trim() !== "" ? row.months : ""))}" placeholder="Months" />`}
+        </div>
+      </td>
+      <td>${esc(row.issue_reason || "")}</td>
+      <td class="table-action-cell">
+        ${isImportedSession
+          ? '<span class="cc-row-note">Read only</span>'
+          : `<button class="secondary-button table-action-button" data-check-save-row="${esc(row.id)}">Save</button>
+        <button class="secondary-button table-action-button" data-check-toggle-exclude="${esc(row.id)}">${row.excluded ? "Include" : "Exclude"}</button>`}
+      </td>
+    </tr>
+  `).join("");
+}
+
+function updateCheckImportPolicyStatus() {
+  const session = getCurrentCheckImportSession();
+  const refreshedAt = session?.policyLookup?.refreshedAt || session?.policy_lookup_refreshed_at || "";
+  const source = session?.policyLookup?.source || "";
+  const count = Number(session?.policyLookup?.items?.length || 0);
+  setStatus(
+    "check-import-policy-status",
+    !count
+      ? "Certificate lookup data failed to load. Cannot validate check imports."
+      :
+    refreshedAt
+      ? `Certificate lookup refreshed ${formatDate(refreshedAt)} from ${source || "Salesforce"} with ${count.toLocaleString("en-US")} record(s).`
+      : "Certificate lookup not refreshed yet."
+  );
+}
+
+function updateCheckImportButtons() {
+  const session = getCurrentCheckImportSession();
+  const confirmButton = el("check-import-confirm-button");
+  const exportButton = el("check-import-export-errors-button");
+  if (confirmButton) {
+    const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+    const readyCount = Number(session?.ready_count || 0);
+    confirmButton.disabled = !session || readyCount <= 0 || Boolean(session?.footer_mismatch) || alreadyImported;
+    confirmButton.textContent = alreadyImported
+      ? "Import Completed"
+      : readyCount > 0
+        ? `Confirm Import (${readyCount})`
+        : "Confirm Import";
+  }
+  if (exportButton) {
+    exportButton.disabled = !session || (!Number(session?.error_count || 0) && !Number(session?.warning_count || 0));
+  }
+}
+
+function renderCheckImportPage() {
+  renderCheckImportTemplatePicker();
+  updateCheckImportFilterButtons();
+  renderCheckImportSummary();
+  renderCheckImportReviewTable();
+  renderCheckImportHistory();
+  updateCheckImportPolicyStatus();
+  updateCheckImportButtons();
+}
+
+async function loadCheckImportSession(sessionId) {
+  const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(sessionId)}`);
+  state.checkImports.currentSessionId = payload.session?.id || sessionId;
+  state.checkImports.currentSession = payload.session || null;
+  if (payload.session?.template?.key) {
+    state.checkImports.selectedTemplateKey = payload.session.template.key;
+  }
+  renderCheckImportPage();
+}
+
+async function loadCheckImportTemplates() {
+  const payload = await apiRequest("/api/check-import-templates");
+  state.checkImports.templates = Array.isArray(payload.templates) ? payload.templates : [];
+  if (!state.checkImports.selectedTemplateKey) {
+    state.checkImports.selectedTemplateKey = state.checkImports.templates[0]?.key || "";
+  }
+  renderCheckImportTemplatePicker();
+}
+
+async function loadCheckImportSessions(preferredSessionId = "") {
+  const payload = await apiRequest("/api/check-imports");
+  state.checkImports.sessions = payload.sessions || [];
+  const nextActiveSession = state.checkImports.sessions.find((session) => !["imported", "imported_with_errors"].includes(String(session.final_status || ""))) || null;
+  const targetSessionId = preferredSessionId || state.checkImports.currentSessionId || nextActiveSession?.id || "";
+  if (targetSessionId) {
+    await loadCheckImportSession(targetSessionId);
+    state.checkImports.launchSessionId = "";
+    return;
+  }
+  state.checkImports.currentSessionId = "";
+  state.checkImports.currentSession = null;
+  state.checkImports.launchSessionId = "";
+  renderCheckImportPage();
+}
+
+function bindCheckImportEvents() {
+  el("check-import-upload-button")?.addEventListener("click", () => {
+    el("check-import-upload-input")?.click();
+  });
+
+  el("check-import-upload-input")?.addEventListener("change", async (event) => {
+    const input = event.target;
+    const file = input?.files?.[0];
+    if (!file) return;
+    const selectedTemplate = getSelectedCheckImportTemplate();
+    if (!selectedTemplate?.key) {
+      setStatus("check-import-status", "Select an import template first.");
+      return;
+    }
+    setStatus("check-import-status", "Uploading check import file...");
+    try {
+      const base64Content = await fileToBase64(file);
+      const payload = await apiRequest("/api/check-imports/upload", {
+        method: "POST",
+        body: {
+          fileName: file.name,
+          base64Content,
+          uploadedBy: "Local User",
+          templateKey: selectedTemplate.key,
+        },
+      });
+      state.checkImports.sessions = payload.sessions || [];
+      state.checkImports.currentSession = payload.session || null;
+      state.checkImports.currentSessionId = payload.session?.id || "";
+      renderCheckImportPage();
+      setStatus("check-import-status", `Uploaded ${file.name}.`);
+    } catch (error) {
+      setStatus("check-import-status", `Upload failed: ${error.message}`);
+    } finally {
+      if (input) input.value = "";
+    }
+  });
+
+  el("check-import-policy-refresh-button")?.addEventListener("click", async () => {
+    const session = getCurrentCheckImportSession();
+    if (!session?.id) {
+      setStatus("check-import-status", "Upload a check import file first.");
+      return;
+    }
+    setStatus("check-import-policy-status", "Refreshing policy lookup from Salesforce...");
+    try {
+      const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(session.id)}/refresh-policy-lookup`, {
+        method: "POST",
+        body: {},
+      });
+      state.checkImports.currentSession = payload.session || null;
+      state.checkImports.currentSessionId = payload.session?.id || session.id;
+      renderCheckImportPage();
+      setStatus("check-import-policy-status", "Policy lookup refreshed. Updating review table...");
+      await loadCheckImportSessions(state.checkImports.currentSessionId);
+    } catch (error) {
+      setStatus("check-import-policy-status", `Refresh failed: ${error.message}`);
+    }
+  });
+
+  el("check-import-revalidate-button")?.addEventListener("click", async () => {
+    const session = getCurrentCheckImportSession();
+    if (!session?.id) return;
+    setStatus("check-import-status", "Revalidating session...");
+    try {
+      const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(session.id)}/revalidate`, {
+        method: "POST",
+        body: {},
+      });
+      state.checkImports.currentSession = payload.session || null;
+      state.checkImports.currentSessionId = payload.session?.id || session.id;
+      renderCheckImportPage();
+      setStatus("check-import-status", "Session revalidated.");
+    } catch (error) {
+      setStatus("check-import-status", `Revalidation failed: ${error.message}`);
+    }
+  });
+
+  el("check-import-confirm-button")?.addEventListener("click", async () => {
+    const session = getCurrentCheckImportSession();
+    if (!session?.id) return;
+    const readyCount = Number(session.ready_count || 0);
+    const errorCount = Number(session.error_count || 0);
+    const warningCount = Number(session.warning_count || 0);
+    const confirmMessage = [
+      `Import ${readyCount} ready row(s) into ${session.salesforce_object_api_name || "Salesforce"}?`,
+      errorCount > 0 ? `${errorCount} row(s) with errors will be skipped.` : "",
+      warningCount > 0 ? `${warningCount} warning row(s) will still import.` : "",
+    ].filter(Boolean).join(" ");
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+    setStatus("check-import-status", "Importing rows into Salesforce...");
+    try {
+      const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(session.id)}/confirm-import`, {
+        method: "POST",
+        body: { confirmedBy: "Local User" },
+      });
+      state.checkImports.currentSession = null;
+      state.checkImports.currentSessionId = "";
+      await loadCheckImportSessions("");
+      setStatus(
+        "check-import-status",
+        `Salesforce import finished. Success: ${Number(payload.session?.successful_import_count || 0)}. Failed: ${Number(payload.session?.salesforce_failed_row_count || 0)}.`
+      );
+    } catch (error) {
+      setStatus("check-import-status", `Import failed: ${error.message}`);
+    }
+  });
+
+  el("check-import-export-errors-button")?.addEventListener("click", async () => {
+    const session = getCurrentCheckImportSession();
+    if (!session?.id) return;
+    try {
+      const response = await fetch(`/api/check-imports/${encodeURIComponent(session.id)}/export-errors`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || "Unable to export rejected rows.");
+      }
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `check-import-rejections-${session.id}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+      setStatus("check-import-status", "Rejected rows exported.");
+    } catch (error) {
+      setStatus("check-import-status", `Export failed: ${error.message}`);
+    }
+  });
+
+  el("check-import-template-select")?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    state.checkImports.selectedTemplateKey = target.value || "";
+    renderCheckImportTemplatePicker();
+  });
+
+  all("[data-check-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.checkImports.filter = button.getAttribute("data-check-filter") || "all";
+      renderCheckImportPage();
+    });
+  });
+
+  el("check-import-history-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const sessionId = target.getAttribute("data-check-open-session");
+    if (!sessionId) return;
+    setStatus("check-import-status", "Opening import session...");
+    try {
+      if (openImportSessionPopup("check-imports", sessionId)) {
+        setStatus("check-import-status", "Import session opened in a new window.");
+        return;
+      }
+      await loadCheckImportSession(sessionId);
+      setStatus("check-import-status", "Popup was blocked, so the import session opened here.");
+    } catch (error) {
+      setStatus("check-import-status", `Unable to load session: ${error.message}`);
+    }
+  });
+
+  el("check-import-review-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const session = getCurrentCheckImportSession();
+    if (!session?.id) return;
+
+    const rowId = target.getAttribute("data-check-save-row");
+    if (rowId) {
+      const certificateInput = document.querySelector(`[data-check-row-field="certificate_number"][data-check-row-id="${rowId}"]`);
+      const monthsInput = document.querySelector(`[data-check-row-field="months"][data-check-row-id="${rowId}"]`);
+      setStatus("check-import-status", "Saving row correction...");
+      try {
+        const payload = await apiRequest(
+          `/api/check-imports/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`,
+          {
+            method: "PATCH",
+            body: {
+              certificate_number: certificateInput?.value || "",
+              months: monthsInput?.value || "",
+              corrected_by: "Local User",
+            },
+          }
+        );
+        state.checkImports.currentSession = payload.session || null;
+        state.checkImports.currentSessionId = payload.session?.id || session.id;
+        renderCheckImportPage();
+        setStatus("check-import-status", "Row correction saved.");
+      } catch (error) {
+        setStatus("check-import-status", `Unable to save row: ${error.message}`);
+      }
+      return;
+    }
+
+    const excludeRowId = target.getAttribute("data-check-toggle-exclude");
+    if (!excludeRowId) return;
+    const row = (session.rows || []).find((entry) => entry.id === excludeRowId);
+    try {
+      const payload = await apiRequest(
+        `/api/check-imports/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(excludeRowId)}`,
+        {
+          method: "PATCH",
+          body: {
+            excluded: !row?.excluded,
+            corrected_by: "Local User",
+          },
+        }
+      );
+      state.checkImports.currentSession = payload.session || null;
+      state.checkImports.currentSessionId = payload.session?.id || session.id;
+      renderCheckImportPage();
+      setStatus("check-import-status", row?.excluded ? "Row included again." : "Row excluded from import.");
+    } catch (error) {
+      setStatus("check-import-status", `Unable to update row: ${error.message}`);
     }
   });
 }
@@ -3031,6 +3567,9 @@ function bindComparisonReviewFloatingPanel() {
     return;
   }
   const panel = el("analysis-review-floating-panel");
+  if (!(panel instanceof HTMLElement) || panel.classList.contains("is-inline-page")) {
+    return;
+  }
   const handle = el("analysis-review-floating-handle");
   const page = panel?.closest(".analysis-comparison-review-page");
   if (!(panel instanceof HTMLElement) || !(handle instanceof HTMLElement) || !(page instanceof HTMLElement)) {
@@ -5049,8 +5588,9 @@ function renderAnalysisComparisonReviewPanel() {
     }
     const hasExactMetrics = cachedMetrics?.status === "ready";
     const exactRow = hasExactMetrics ? cachedMetrics.row : null;
-    const row = hasExactMetrics ? exactRow : fallbackRow;
-    const isMetricLoading = needsExactMetrics && cachedMetrics?.status !== "ready";
+    const row = exactRow || fallbackRow;
+    const isMetricLoading = needsExactMetrics && cachedMetrics?.status === "loading";
+    const hasMetricError = cachedMetrics?.status === "error";
     const totalMailed = row ? getTotalMailedFromRow(row) : "";
     const displayedTotalMailed = formatWholeNumber(totalMailed);
     const foundLabel = !row
@@ -5060,22 +5600,30 @@ function renderAnalysisComparisonReviewPanel() {
       : rowEntry?.source === "export" || rowEntry?.source === "export-aggregate"
         ? "SCF found in report rows"
         : "SCF found";
-    const soldRateDisplay = isMetricLoading
-      ? "Loading..."
-      : row
-        ? getRowMetricDisplayValue(row, "Sold Rate")
+    const soldRateDisplay = row
+      ? getRowMetricDisplayValue(row, "Sold Rate")
+      : isMetricLoading
+        ? "Loading..."
         : "-";
-    const inForceRateDisplay = isMetricLoading
-      ? "Loading..."
-      : row
-        ? getRowMetricDisplayValue(row, "In Force Rate")
+    const inForceRateDisplay = row
+      ? getRowMetricDisplayValue(row, "In Force Rate")
+      : isMetricLoading
+        ? "Loading..."
         : "-";
-    const convertedRateDisplay = isMetricLoading
-      ? "Loading..."
-      : row
-        ? getRowMetricDisplayValue(row, "Converted Rate")
+    const convertedRateDisplay = row
+      ? getRowMetricDisplayValue(row, "Converted Rate")
+      : isMetricLoading
+        ? "Loading..."
         : "-";
-    const cardStatusLabel = isMetricLoading ? "Loading exact report metrics..." : foundLabel;
+    const cardStatusLabel = !row && isMetricLoading
+      ? "Loading exact report metrics..."
+      : hasMetricError && row
+        ? `${foundLabel} (using saved report metrics)`
+        : hasMetricError
+          ? "Unable to load exact report metrics"
+          : isMetricLoading && row
+            ? `${foundLabel} (refreshing exact report metrics)`
+            : foundLabel;
     return `
       <article class="analysis-review-metric-card">
         <div class="analysis-review-metric-head">
@@ -5130,7 +5678,7 @@ function renderAnalysisComparisonReviewPanel() {
 
   container.innerHTML = `
     <section class="analysis-review-shell analysis-comparison-review-page">
-      <section id="analysis-review-floating-panel" class="analysis-review-floating-panel${detachedWindow ? " is-detached-window" : ""}" style="${detachedWindow ? "" : getReviewFloatingPanelStyle()}">
+      <section id="analysis-review-floating-panel" class="analysis-review-floating-panel${detachedWindow ? " is-detached-window" : " is-inline-page"}" style="">
       <div id="analysis-review-floating-handle" class="analysis-review-floating-handle">
         <div>
           <span class="field-label">Review Workspace</span>
@@ -5173,6 +5721,7 @@ function renderAnalysisComparisonReviewPanel() {
         </div>
       </article>
 
+      ${detachedWindow ? "" : `
       <article class="panel analysis-review-bulk-panel">
         <div class="panel-heading analysis-review-summary-heading">
           <h3>Bulk Remove From Working ${esc(listType)}</h3>
@@ -5197,6 +5746,7 @@ function renderAnalysisComparisonReviewPanel() {
           </div>
         </div>
       </article>
+      `}
 
       <article class="panel analysis-review-summary-panel">
         <div class="panel-heading analysis-review-summary-heading">
@@ -5248,6 +5798,7 @@ function renderAnalysisComparisonReviewPanel() {
       </section>
       </section>
 
+      ${detachedWindow ? "" : `
       <section class="analysis-review-spreadsheet-area">
       <article class="panel analysis-review-primary-panel">
         <div class="panel-heading">
@@ -5341,6 +5892,7 @@ function renderAnalysisComparisonReviewPanel() {
         </div>
       </article>
       </section>
+      `}
     </section>
   `;
 
@@ -8057,8 +8609,8 @@ function bindPrimaryNavigation() {
       const route = routeButton.getAttribute("data-route");
       if (route) {
         if (route === "analysis") {
-          openAnalysisLanding().catch((error) => {
-            setStatus("analysis-setup-status", `Unable to open analysis: ${error.message}`);
+          openAnalysisList().catch((error) => {
+            setStatus("analysis-setup-status", `Unable to open analyses: ${error.message}`);
           });
         } else {
           setRoute(route);
@@ -8192,6 +8744,7 @@ async function init() {
   bindMailingListEvents();
   bindApplicationEvents();
   bindCcPaymentImportEvents();
+  bindCheckImportEvents();
   bindMonthlyActions();
   if (!state.applications.current) {
     state.applications.current = createEmptyApplication();
@@ -8241,6 +8794,16 @@ async function init() {
     if (launchState.analysis.popup) {
       document.body.classList.add("analysis-review-popup-window");
     }
+  }
+
+  if (launchState?.importSession?.route === "cc-payment-imports") {
+    state.ccPayments.launchSessionId = launchState.importSession.sessionId || "";
+    state.ccPayments.popup = launchState.importSession.popup === true;
+  }
+
+  if (launchState?.importSession?.route === "check-imports") {
+    state.checkImports.launchSessionId = launchState.importSession.sessionId || "";
+    state.checkImports.popup = launchState.importSession.popup === true;
   }
 
   const initialRoute = String(launchState?.route || persistedUiState?.route || "dashboard").trim() || "dashboard";

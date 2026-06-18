@@ -57,6 +57,7 @@
           </div>
           <button class="nav-link" data-route="applications">Request New Application</button>
           <button class="nav-link" data-route="cc-payment-imports">Credit Card Payment Imports</button>
+          <button class="nav-link" data-route="check-imports">Check Imports</button>
           <button class="nav-link" data-route="monthly-reports">Monthly Reports</button>
           <button class="nav-link" data-route="report-history">Report History</button>
           <button class="nav-link" data-route="settings">Settings</button>
@@ -115,6 +116,20 @@
               </div>
               <button class="primary-button" data-route="cc-payment-imports">
                 Credit Card Payment Imports
+              </button>
+            </article>
+
+            <article class="feature-card">
+              <div>
+                <p class="card-label">Payments</p>
+                <h3>Check Imports</h3>
+                <p>
+                  Upload the CashPro check ZIP, refresh policy lookups,
+                  resolve certificate mismatches, and import the validated check rows.
+                </p>
+              </div>
+              <button class="primary-button" data-route="check-imports">
+                Check Imports
               </button>
             </article>
 
@@ -822,6 +837,155 @@
                 <tbody id="cc-payment-history-body">
                   <tr>
                     <td colspan="10" class="empty-cell">No credit card payment import sessions yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" data-view="check-imports">
+          <header class="page-header">
+            <p class="eyebrow">Payments</p>
+            <h2>Check Imports</h2>
+            <p class="page-copy">
+              Upload the CashPro check ZIP, refresh the Salesforce certificate lookup,
+              validate every check row, and import only the rows that are fully resolved.
+            </p>
+          </header>
+
+          <section class="cc-import-layout">
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>Upload CashPro ZIP</h3>
+                <p>Create a new import session from the CashPro `batchDetail.csv` ZIP file.</p>
+              </div>
+              <div class="field-stack">
+                <label class="field-label" for="check-import-template-select">Import Template</label>
+                <select id="check-import-template-select" class="field-input"></select>
+              </div>
+              <input id="check-import-upload-input" type="file" accept=".zip,.csv" class="is-hidden" />
+              <div class="action-row">
+                <button id="check-import-upload-button" class="primary-button">Upload CashPro ZIP</button>
+                <button id="check-import-revalidate-button" class="secondary-button">Revalidate</button>
+                <button id="check-import-confirm-button" class="secondary-button" disabled>Confirm Import</button>
+                <button id="check-import-export-errors-button" class="secondary-button" disabled>Export Rejected Rows</button>
+              </div>
+              <p id="check-import-status" class="inline-status"></p>
+              <p id="check-import-template-status" class="inline-status"></p>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>Certificate Lookup</h3>
+                <p>Refresh certificate and premium data from Salesforce reports <strong>00OQm0000016PuPMAU</strong> and <strong>00OQm000003Q6cjMAC</strong>.</p>
+              </div>
+              <div class="action-row">
+                <button id="check-import-policy-refresh-button" class="primary-button">Refresh Certificate Lookup</button>
+              </div>
+              <p id="check-import-policy-status" class="inline-status">Certificate lookup not refreshed yet.</p>
+            </article>
+          </section>
+
+          <section class="cc-import-summary-grid">
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Total Check Rows</span>
+              <strong id="check-import-summary-total">0</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Total Dollar Amount</span>
+              <strong id="check-import-summary-amount">$0.00</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Ready</span>
+              <strong id="check-import-summary-ready">0</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Missing Certificate</span>
+              <strong id="check-import-summary-missing-certificate">0</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Missing Certificate Record</span>
+              <strong id="check-import-summary-missing-policy">0</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Discrepancies</span>
+              <strong id="check-import-summary-discrepancy">0</strong>
+            </article>
+          </section>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Validation Summary</h3>
+              <p id="check-import-validation-message">Upload a file to begin validation.</p>
+            </div>
+            <div class="action-row" id="check-import-filter-row">
+              <button class="secondary-button is-active" data-check-filter="all">All</button>
+              <button class="secondary-button" data-check-filter="ready">Ready</button>
+              <button class="secondary-button" data-check-filter="missing_certificate">Missing Certificate</button>
+              <button class="secondary-button" data-check-filter="missing_policy">Missing Certificate Record</button>
+              <button class="secondary-button" data-check-filter="errors">Errors</button>
+              <button class="secondary-button" data-check-filter="warnings">Warnings</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Review Table</h3>
+              <p>Correct certificate numbers, review discrepancies, exclude rows when needed, and then confirm import.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Deposit Date</th>
+                    <th>Cert Number</th>
+                    <th>Policy ID / Certificate Record ID</th>
+                    <th>Check Amount</th>
+                    <th>Remitter Name</th>
+                    <th>Check Number</th>
+                    <th>Transaction ID</th>
+                    <th>Member 1</th>
+                    <th>Member 2</th>
+                    <th>No Of Months</th>
+                    <th>Issue / Error Message</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="check-import-review-body">
+                  <tr>
+                    <td colspan="13" class="empty-cell">No check import session loaded.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Import History</h3>
+              <p>Reopen prior check import sessions and review what was imported.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Uploaded</th>
+                    <th>Filename</th>
+                    <th>Rows</th>
+                    <th>Imported</th>
+                    <th>Ready</th>
+                    <th>Errors</th>
+                    <th>Warnings</th>
+                    <th>Total Amount</th>
+                    <th>User</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="check-import-history-body">
+                  <tr>
+                    <td colspan="10" class="empty-cell">No check import sessions yet.</td>
                   </tr>
                 </tbody>
               </table>

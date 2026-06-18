@@ -70,6 +70,29 @@ const {
   updateCcPaymentImportRow,
 } = require("./services/ccPaymentImportService");
 const {
+  createCheckImportSession,
+  exportCheckImportErrors,
+  confirmCheckImport,
+  getCheckImportSession,
+  initializeCheckImportPersistence,
+  listCheckImportSessions,
+  listCheckImportTemplates,
+  refreshCheckImportPolicyLookupFromSalesforce,
+  revalidateSession: revalidateCheckImportSession,
+  updateCheckImportRow,
+} = require("./services/checkImportService");
+const {
+  clearCurrentAchReturnSession,
+  createAchReturnRow,
+  exportAchReturnSession,
+  getAchReturnSession,
+  getCurrentAchReturnSession,
+  initializeAchReturnPersistence,
+  listAchReturnSessions,
+  previewAchReturn,
+  removeAchReturnRow,
+} = require("./services/achReturnService");
+const {
   getAllConfiguredSalesforceReports,
   getMonthlyReportTypes,
 } = require("./services/reportCatalog");
@@ -255,6 +278,68 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/check-imports" && request.method === "GET") {
+    sendJson(response, 200, { sessions: listCheckImportSessions() });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/check-import-templates" && request.method === "GET") {
+    sendJson(response, 200, { templates: listCheckImportTemplates() });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/ach-returns" && request.method === "GET") {
+    sendJson(response, 200, {
+      sessions: listAchReturnSessions(),
+      currentSession: getCurrentAchReturnSession(),
+    });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/ach-returns/parse" && request.method === "POST") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const preview = await previewAchReturn(body.emailBody || "");
+        sendJson(response, 200, { preview });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to parse ACH return email." });
+      });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/ach-returns/rows" && request.method === "POST") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await createAchReturnRow({
+          emailBody: body.emailBody || "",
+          selectedMatchKey: body.selectedMatchKey || "",
+          actor: body.actor || body.user,
+        });
+        sendJson(response, 200, {
+          session,
+          sessions: listAchReturnSessions(),
+        });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to create ACH reversal row." });
+      });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/ach-returns/current/clear" && request.method === "POST") {
+    try {
+      clearCurrentAchReturnSession();
+      sendJson(response, 200, {
+        sessions: listAchReturnSessions(),
+        currentSession: getCurrentAchReturnSession(),
+      });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to clear ACH reversal table." });
+    }
+    return;
+  }
+
   if (requestUrl.pathname === "/api/applications" && request.method === "GET") {
     sendJson(response, 200, { applications: listApplications() });
     return;
@@ -285,6 +370,23 @@ const server = http.createServer((request, response) => {
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to upload credit card payments." });
+      });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/check-imports/upload" && request.method === "POST") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await createCheckImportSession({
+          fileName: body.fileName,
+          base64Content: body.base64Content,
+          uploadedBy: body.uploadedBy || body.user,
+          templateKey: body.templateKey,
+        });
+        sendJson(response, 200, { session, sessions: listCheckImportSessions() });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to upload check import file." });
       });
     return;
   }
@@ -728,6 +830,159 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  const checkImportSessionMatch = requestUrl.pathname.match(/^\/api\/check-imports\/([^/]+)$/);
+  if (checkImportSessionMatch && request.method === "GET") {
+    try {
+      const session = getCheckImportSession(checkImportSessionMatch[1]);
+      sendJson(response, 200, { session });
+    } catch (error) {
+      sendJson(response, 404, { error: error.message || "Check import session not found." });
+    }
+    return;
+  }
+
+  const achReturnSessionMatch = requestUrl.pathname.match(/^\/api\/ach-returns\/([^/]+)$/);
+  if (achReturnSessionMatch && request.method === "GET") {
+    try {
+      const session = getAchReturnSession(achReturnSessionMatch[1]);
+      sendJson(response, 200, { session });
+    } catch (error) {
+      sendJson(response, 404, { error: error.message || "ACH return session not found." });
+    }
+    return;
+  }
+
+  const achReturnRowMatch = requestUrl.pathname.match(/^\/api\/ach-returns\/([^/]+)\/rows\/([^/]+)$/);
+  if (achReturnRowMatch && request.method === "DELETE") {
+    try {
+      const session = removeAchReturnRow(achReturnRowMatch[1], achReturnRowMatch[2]);
+      sendJson(response, 200, {
+        session,
+        sessions: listAchReturnSessions(),
+      });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to remove ACH reversal row." });
+    }
+    return;
+  }
+
+  const achReturnExportMatch = requestUrl.pathname.match(/^\/api\/ach-returns\/([^/]+)\/export$/);
+  if (achReturnExportMatch && request.method === "GET") {
+    try {
+      const artifact = exportAchReturnSession(achReturnExportMatch[1]);
+      fs.readFile(artifact.filePath, (error, data) => {
+        if (error) {
+          sendJson(response, 500, { error: "Unable to generate ACH return export." });
+          return;
+        }
+        response.on("finish", () => {
+          try {
+            fs.unlinkSync(artifact.filePath);
+          } catch {
+            // ignore cleanup errors
+          }
+        });
+        response.writeHead(200, {
+          "Content-Type": artifact.contentType,
+          "Content-Disposition": `attachment; filename="${artifact.fileName}"`,
+        });
+        response.end(data);
+      });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to export ACH returns CSV." });
+    }
+    return;
+  }
+
+  const checkImportRefreshMatch = requestUrl.pathname.match(
+    /^\/api\/check-imports\/([^/]+)\/refresh-policy-lookup$/
+  );
+  if (checkImportRefreshMatch && request.method === "POST") {
+    refreshCheckImportPolicyLookupFromSalesforce(checkImportRefreshMatch[1])
+      .then((session) => {
+        sendJson(response, 200, { session });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to refresh check policy lookup." });
+      });
+    return;
+  }
+
+  const checkImportRevalidateMatch = requestUrl.pathname.match(
+    /^\/api\/check-imports\/([^/]+)\/revalidate$/
+  );
+  if (checkImportRevalidateMatch && request.method === "POST") {
+    try {
+      const session = revalidateCheckImportSession(checkImportRevalidateMatch[1]);
+      sendJson(response, 200, { session });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to revalidate check import session." });
+    }
+    return;
+  }
+
+  const checkImportConfirmMatch = requestUrl.pathname.match(
+    /^\/api\/check-imports\/([^/]+)\/confirm-import$/
+  );
+  if (checkImportConfirmMatch && request.method === "POST") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await confirmCheckImport(checkImportConfirmMatch[1], {
+          confirmedBy: body.confirmedBy || body.user,
+        });
+        sendJson(response, 200, { session });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to import checks into Salesforce." });
+      });
+    return;
+  }
+
+  const checkImportRowMatch = requestUrl.pathname.match(
+    /^\/api\/check-imports\/([^/]+)\/rows\/([^/]+)$/
+  );
+  if (checkImportRowMatch && request.method === "PATCH") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await updateCheckImportRow(checkImportRowMatch[1], checkImportRowMatch[2], body);
+        sendJson(response, 200, { session });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to update check import row." });
+      });
+    return;
+  }
+
+  const checkImportExportMatch = requestUrl.pathname.match(
+    /^\/api\/check-imports\/([^/]+)\/export-errors$/
+  );
+  if (checkImportExportMatch && request.method === "GET") {
+    try {
+      const artifact = exportCheckImportErrors(checkImportExportMatch[1]);
+      fs.readFile(artifact.filePath, (error, data) => {
+        if (error) {
+          sendJson(response, 500, { error: "Unable to generate export." });
+          return;
+        }
+        response.on("finish", () => {
+          try {
+            fs.unlinkSync(artifact.filePath);
+          } catch {
+            // ignore cleanup errors
+          }
+        });
+        response.writeHead(200, {
+          "Content-Type": artifact.contentType,
+          "Content-Disposition": `attachment; filename="${artifact.fileName}"`,
+        });
+        response.end(data);
+      });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to export check import issues." });
+    }
+    return;
+  }
+
   const ccPaymentImportRevalidateMatch = requestUrl.pathname.match(
     /^\/api\/cc-payment-imports\/([^/]+)\/revalidate$/
   );
@@ -954,6 +1209,8 @@ Promise.all([
   initializeAnalysisStatePersistence(),
   initializeReportRunPersistence(),
   initializeCcPaymentImportPersistence(),
+  initializeCheckImportPersistence(),
+  initializeAchReturnPersistence(),
 ]).catch((error) => {
   console.warn("Could not initialize persistence from Supabase:", error.message);
 });
