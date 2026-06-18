@@ -4,7 +4,7 @@
     "runName": "June 2026",
     "status": "draft",
     "createdAt": "2026-06-17T16:20:39.276Z",
-    "updatedAt": "2026-06-18T16:12:24.057Z",
+    "updatedAt": "2026-06-18T20:52:13.280Z",
     "completedAt": null,
     "archived": false,
     "reportPulls": [
@@ -86,7 +86,7 @@
         "reportAId": "analysis_report_1781713292554_dith17",
         "reportBId": "analysis_report_1781713287505_y7f5hm",
         "createdAt": "2026-06-17T19:59:46.128Z",
-        "updatedAt": "2026-06-18T16:12:24.049Z",
+        "updatedAt": "2026-06-18T20:52:13.276Z",
         "matchField": "SCF Grouping",
         "metricColumns": [
           "Sum of Mailed",
@@ -108,7 +108,7 @@
         "reportAId": "analysis_report_1781713262693_qhyirq",
         "reportBId": "analysis_report_1781713258269_4qe19r",
         "createdAt": "2026-06-17T20:00:00.151Z",
-        "updatedAt": "2026-06-18T16:12:24.049Z",
+        "updatedAt": "2026-06-18T20:52:13.276Z",
         "matchField": "SCF Grouping",
         "metricColumns": [
           "Sum of Mailed",
@@ -119,7 +119,7 @@
         ]
       }
     ],
-    "notes": "",
+    "notes": "2 reports for each...  1/1 - 5/31 for current year and then all the other prevoius years",
     "results": null,
     "referenceListsSnapshot": null
   },

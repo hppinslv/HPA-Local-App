@@ -475,6 +475,19 @@ const apiDownload = async (url, fallbackFileName) => {
   URL.revokeObjectURL(urlObj);
 };
 
+const triggerDirectDownload = (url, fallbackFileName) => {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  if (fallbackFileName) {
+    anchor.download = fallbackFileName;
+  }
+  anchor.rel = "noopener noreferrer";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+};
+
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -4838,6 +4851,12 @@ async function completeComparisonReview() {
         ...buildAnalysisPayload("complete"),
         id: state.analysis.currentSetupId || undefined,
         completedAt: completionTimestamp,
+        referenceListChanges: changes,
+        referenceListActor: "Local User",
+        referenceListSourceName: state.analysis.runName || getDefaultAnalysisName(),
+        referenceListReason:
+          state.analysis.reviewSummaryNotes ||
+          `Complete comparison review for run ${state.analysis.currentRunId || "local-session"}`,
         results: {
           comparisonReview: {
             summary: actualSummary,
@@ -4892,7 +4911,12 @@ async function exportMailerCurrentMailingList() {
   btn.disabled = true;
   setStatus("mailing-list-status", `Exporting ${type.toUpperCase()} for mailer...`);
   try {
-    await apiDownload(`/api/analysis/reference-lists/${type}/export?format=mailer`, `${type}-mailer.xlsx`);
+    const exportUrl = `${window.location.origin}/api/analysis/reference-lists/${encodeURIComponent(type)}/export?format=mailer`;
+    try {
+      triggerDirectDownload(exportUrl, `${type}-mailer.xlsx`);
+    } catch {
+      await apiDownload(exportUrl, `${type}-mailer.xlsx`);
+    }
     setStatus("mailing-list-status", `${type.toUpperCase()} mailer export ready.`);
   } catch (error) {
     setStatus("mailing-list-status", `Mailer export failed: ${error.message}`);

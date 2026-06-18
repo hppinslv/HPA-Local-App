@@ -637,6 +637,116 @@ function writeReferenceLists(payload) {
   queueStateSync(SCF_REFERENCE_LISTS_SUPABASE_KEY, referenceListsCache);
 }
 
+function normalizeCompletionReferenceEntries(entries = []) {
+  const seen = new Set();
+  return ensureArray(entries)
+    .map((entry) => {
+      const scf = normalizeScf(entry?.scf || entry);
+      if (!scf) {
+        return null;
+      }
+      return { scf, state: normalizeState(entry?.state || entry?.scope || "") };
+    })
+    .filter(Boolean)
+    .filter((entry) => {
+      if (seen.has(entry.scf)) {
+        return false;
+      }
+      seen.add(entry.scf);
+      return true;
+    });
+}
+
+function normalizeCompletionReferenceListChanges(rawChanges = []) {
+  const normalized = {
+    nhcl: { added: [], removed: [] },
+    rfc: { added: [], removed: [] },
+  };
+
+  ensureArray(rawChanges).forEach((change) => {
+    const type = String(change?.type || "").trim().toLowerCase();
+    if (!["nhcl", "rfc"].includes(type)) {
+      return;
+    }
+
+    normalized[type].added.push(...normalizeCompletionReferenceEntries(change.added || []));
+    normalized[type].removed.push(...normalizeCompletionReferenceEntries(change.removed || []));
+  });
+
+  return normalized;
+}
+
+function applyCompletionReferenceListChanges(rawChanges = [], actor, sourceName, reason) {
+  const changes = normalizeCompletionReferenceListChanges(rawChanges);
+  const payload = readReferenceLists();
+  const now = new Date().toISOString();
+  const dnmLookup = getReferenceListLookup("dnm");
+  let changed = false;
+  const normalizedActor = String(actor || "Local User").trim() || "Local User";
+  const normalizedSource = String(sourceName || "analysis-completion").trim() || "analysis-completion";
+  const normalizedReason = String(reason || "").trim();
+
+  ["nhcl", "rfc"].forEach((type) => {
+    const listChanges = changes[type] || {};
+    const list = payload.lists.find((entry) => entry.type === type);
+    if (!list) {
+      return;
+    }
+
+    const existingItems = ensureArray(list.items);
+    const blockedScfs = new Set();
+    listChanges.added.forEach((entry) => {
+      const scf = entry.scf;
+      if (dnmLookup.has(scf)) {
+        blockedScfs.add(scf);
+      }
+    });
+    if (blockedScfs.size) {
+      const blockedList = Array.from(blockedScfs).join(", ");
+      throw new Error(
+        `This SCF is on the Do Not Mail list and cannot be added to ${type.toUpperCase()}: ${blockedList}`
+      );
+    }
+
+    const removedSet = new Set(listChanges.removed.map((entry) => entry.scf));
+    if (removedSet.size) {
+      const keptItems = existingItems.filter((entry) => !removedSet.has(normalizeScf(entry.scf)));
+      if (keptItems.length !== existingItems.length) {
+        changed = true;
+        list.items = keptItems;
+      }
+    }
+
+    const filteredItems = ensureArray(list.items).filter((entry) => {
+      const normalizedScf = normalizeScf(entry.scf);
+      return Boolean(normalizedScf);
+    });
+    const nextSet = new Set(filteredItems.map((entry) => normalizeScf(entry.scf)).filter(Boolean));
+    listChanges.added.forEach((entry) => {
+      const scf = normalizeScf(entry?.scf);
+      if (!scf || nextSet.has(scf)) {
+        return;
+      }
+      list.items.unshift({
+        scf,
+        scope: normalizeState(entry.state),
+        state: normalizeState(entry.state),
+        addedAt: now,
+        addedBy: normalizedActor,
+        reason: normalizedReason,
+        sourceAnalysis: normalizedSource,
+      });
+      nextSet.add(scf);
+      changed = true;
+    });
+  });
+
+  if (changed) {
+    payload.updatedAt = now;
+    writeReferenceLists(payload);
+  }
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -879,6 +989,12 @@ function normalizeAnalysisRequest(body = {}) {
     results: body.results || null,
     errorMessage: body.errorMessage || null,
     referenceListsSnapshot: body.referenceListsSnapshot || null,
+    referenceListChanges: ensureArray(body.referenceListChanges || []),
+    referenceListActor: String(body.referenceListActor || "Local User").trim(),
+    referenceListSourceName: String(
+      body.referenceListSourceName || body.runName || "Analysis Run"
+    ).trim(),
+    referenceListReason: String(body.referenceListReason || "").trim(),
   };
 }
 
@@ -1861,6 +1977,16 @@ function saveAnalysisSetup(body = {}) {
     setups[index] = setup;
   } else {
     setups.unshift(setup);
+  }
+
+  const normalizedStatus = String(request.status || setup.status || "").trim().toLowerCase();
+  if (normalizedStatus === "complete" && ensureArray(request.referenceListChanges).length) {
+    applyCompletionReferenceListChanges(
+      request.referenceListChanges,
+      request.referenceListActor,
+      request.referenceListSourceName || setup.runName,
+      request.referenceListReason
+    );
   }
 
   writeAnalysisSetups(setups);
