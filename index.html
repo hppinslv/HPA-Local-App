@@ -196,13 +196,91 @@
               <div class="panel-heading">
                 <h3>Mailbag Generator</h3>
                 <p>
-                  This feature has now been added to the app navigation. The workbook
-                  generator UI is the next part to wire in here.
+                  Upload the monthly NHCL and RFC ZIP files, preview the combined
+                  sequence and case number ranges, and generate the final workbook.
                 </p>
               </div>
-              <p id="mailing-data-status" class="inline-status">
-                Mailing Data tab is now available in the app.
-              </p>
+              <p id="mailing-data-status" class="inline-status"></p>
+
+              <div class="field-grid">
+                <div class="field-stack">
+                  <label class="field-label" for="mailing-data-file-1">ZIP File 1</label>
+                  <input id="mailing-data-file-1" class="field-input" type="file" accept=".zip,application/zip" />
+                  <p id="mailing-data-file-1-name" class="field-help-text"></p>
+                </div>
+                <div class="field-stack">
+                  <label class="field-label" for="mailing-data-file-2">ZIP File 2</label>
+                  <input id="mailing-data-file-2" class="field-input" type="file" accept=".zip,application/zip" />
+                  <p id="mailing-data-file-2-name" class="field-help-text"></p>
+                </div>
+                <div class="field-stack">
+                  <label class="field-label" for="mailing-data-month">Mailing Month</label>
+                  <input id="mailing-data-month" class="field-input" type="month" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label" for="mailing-data-starting-case-number">Starting Case Number</label>
+                  <input id="mailing-data-starting-case-number" class="field-input" type="number" min="1" step="1" />
+                </div>
+              </div>
+
+              <div class="actions-row">
+                <button class="secondary-button" id="mailing-data-next-case-button">Use Next Case Number</button>
+                <button class="secondary-button" id="mailing-data-preview-button">Preview Mailbag Workbook</button>
+                <button class="primary-button" id="mailing-data-generate-button">Generate Mailbag Workbook</button>
+              </div>
+              <p id="mailing-data-progress-status" class="inline-status"></p>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>Preview</h3>
+                <p>Review the detected key codes, record counts, and sequence/case number ranges before export.</p>
+              </div>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ZIP File</th>
+                      <th>Key Code</th>
+                      <th>Records</th>
+                      <th>Start Seq</th>
+                      <th>End Seq</th>
+                      <th>Start Case</th>
+                      <th>End Case</th>
+                      <th>Mail Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mailing-data-preview-body">
+                    <tr><td colspan="8" class="empty-cell">Run preview to see the combined workbook details.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="mailing-data-summary-grid" id="mailing-data-preview-summary"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>History</h3>
+                <p>Generated mailbag workbooks stay here so the next run can continue case numbering.</p>
+              </div>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Generated</th>
+                      <th>Output File</th>
+                      <th>Month</th>
+                      <th>Total Records</th>
+                      <th>Start Case</th>
+                      <th>End Case</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mailing-data-history-body">
+                    <tr><td colspan="7" class="empty-cell">No Mailing Data history yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </article>
           </section>
         </section>

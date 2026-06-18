@@ -855,6 +855,20 @@ textarea {
   color: var(--text);
 }
 
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.field-help-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .ach-return-email-textarea {
   min-height: 160px;
   max-height: 260px;
@@ -881,6 +895,13 @@ textarea {
   gap: 12px;
   flex-wrap: wrap;
   margin-top: 22px;
+}
+
+.actions-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 18px;
 }
 
 .primary-button,
@@ -1140,6 +1161,29 @@ textarea {
 .inline-status {
   min-height: 24px;
   margin: 14px 0 0;
+  color: var(--muted);
+}
+
+.mailing-data-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.summary-chip {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(216, 236, 238, 0.45);
+  border: 1px solid rgba(13, 92, 99, 0.14);
+}
+
+.summary-chip strong {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 

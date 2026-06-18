@@ -42,6 +42,7 @@ const APPLICATION_DEFAULTS = Object.freeze({
 });
 const UI_STATE_STORAGE_KEY = "hpa.ui.currentState";
 const ACH_RETURN_DRAFT_STORAGE_KEY = "hpa.achReturns.currentDraft";
+const MAILING_DATA_HISTORY_STORAGE_KEY = "hpa.mailingData.history";
 const COMPARISON_DEBUG_QUERY_PARAM = "debugComparisonPicker";
 const ANALYSIS_REVIEW_POPUP_QUERY_PARAM = "analysisReviewPopup";
 const IMPORT_SESSION_POPUP_QUERY_PARAM = "importSessionPopup";
@@ -149,6 +150,17 @@ const state = {
     currentSession: null,
     draft: null,
     emailBody: "",
+  },
+  mailingData: {
+    fileSlots: [
+      { fileName: "", base64Content: "" },
+      { fileName: "", base64Content: "" },
+    ],
+    mailingMonth: "",
+    startingCaseNumber: "",
+    nextCaseNumber: "",
+    preview: null,
+    history: [],
   },
   referenceLists: [],
 };
@@ -1052,6 +1064,13 @@ function setRoute(route) {
     return;
   }
 
+  if (normalizedRoute === "mailing-data") {
+    loadMailingDataPage().catch((error) => {
+      setStatus("mailing-data-status", `Unable to load Mailing Data: ${error.message}`);
+    });
+    return;
+  }
+
   if (normalizedRoute === "applications") {
     loadApplications().catch((error) => {
       setStatus("applications-status", `Unable to load applications: ${error.message}`);
@@ -1271,6 +1290,28 @@ function readPersistedAchReturnDraftState() {
 function clearPersistedAchReturnDraftState() {
   try {
     window.localStorage.removeItem(ACH_RETURN_DRAFT_STORAGE_KEY);
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function readPersistedMailingDataHistory() {
+  try {
+    const raw = window.localStorage.getItem(MAILING_DATA_HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistMailingDataHistory(historyEntries) {
+  try {
+    window.localStorage.setItem(
+      MAILING_DATA_HISTORY_STORAGE_KEY,
+      JSON.stringify(Array.isArray(historyEntries) ? historyEntries : [])
+    );
   } catch {
     // Best-effort persistence only.
   }
@@ -2162,6 +2203,297 @@ function updateCcPaymentFilterButtons() {
       "is-active",
       button.getAttribute("data-cc-filter") === state.ccPayments.filter
     );
+  });
+}
+
+function getMailingDataUploads() {
+  return ensureArray(state.mailingData.fileSlots)
+    .map((entry) => ({
+      fileName: String(entry?.fileName || "").trim(),
+      base64Content: String(entry?.base64Content || "").trim(),
+    }))
+    .filter((entry) => entry.fileName && entry.base64Content);
+}
+
+function renderMailingDataPage() {
+  const monthInput = el("mailing-data-month");
+  if (monthInput && monthInput.value !== String(state.mailingData.mailingMonth || "")) {
+    monthInput.value = String(state.mailingData.mailingMonth || "");
+  }
+
+  const caseInput = el("mailing-data-starting-case-number");
+  if (caseInput && caseInput.value !== String(state.mailingData.startingCaseNumber || "")) {
+    caseInput.value = String(state.mailingData.startingCaseNumber || "");
+  }
+
+  const file1Name = el("mailing-data-file-1-name");
+  const file2Name = el("mailing-data-file-2-name");
+  if (file1Name) {
+    file1Name.textContent = state.mailingData.fileSlots[0]?.fileName
+      ? `Selected: ${state.mailingData.fileSlots[0].fileName}`
+      : "No ZIP file selected yet.";
+  }
+  if (file2Name) {
+    file2Name.textContent = state.mailingData.fileSlots[1]?.fileName
+      ? `Selected: ${state.mailingData.fileSlots[1].fileName}`
+      : "No ZIP file selected yet.";
+  }
+
+  const previewBody = el("mailing-data-preview-body");
+  const previewSummary = el("mailing-data-preview-summary");
+  const preview = state.mailingData.preview;
+  if (previewBody) {
+    if (!preview?.uploads?.length) {
+      previewBody.innerHTML = '<tr><td colspan="8" class="empty-cell">Run preview to see the combined workbook details.</td></tr>';
+    } else {
+      previewBody.innerHTML = preview.uploads.map((upload) => `
+        <tr>
+          <td>${esc(upload.fileName || "")}</td>
+          <td>${esc(upload.keyCode || "")}</td>
+          <td>${esc(Number(upload.recordCount || 0).toLocaleString())}</td>
+          <td>${esc(upload.startingSequence || "")}</td>
+          <td>${esc(upload.endingSequence || "")}</td>
+          <td>${esc(upload.startingCaseNumber || "")}</td>
+          <td>${esc(upload.endingCaseNumber || "")}</td>
+          <td>${esc(formatShortDate(upload.mailDate || preview.mailDate || ""))}</td>
+        </tr>
+      `).join("");
+    }
+  }
+
+  if (previewSummary) {
+    if (!preview) {
+      previewSummary.innerHTML = "";
+    } else {
+      previewSummary.innerHTML = `
+        <div class="summary-chip"><strong>Output File</strong><span>${esc(preview.outputFileName || "")}</span></div>
+        <div class="summary-chip"><strong>Total Records</strong><span>${esc(Number(preview.totalRecords || 0).toLocaleString())}</span></div>
+        <div class="summary-chip"><strong>Starting Case</strong><span>${esc(preview.startingCaseNumber || "")}</span></div>
+        <div class="summary-chip"><strong>Ending Case</strong><span>${esc(preview.endingCaseNumber || "")}</span></div>
+        <div class="summary-chip"><strong>Mail Date</strong><span>${esc(formatShortDate(preview.mailDate || ""))}</span></div>
+      `;
+    }
+  }
+
+  const historyBody = el("mailing-data-history-body");
+  if (historyBody) {
+    const history = ensureArray(state.mailingData.history);
+    if (!history.length) {
+      historyBody.innerHTML = '<tr><td colspan="7" class="empty-cell">No Mailing Data history yet.</td></tr>';
+    } else {
+      historyBody.innerHTML = history.map((entry) => `
+        <tr>
+          <td>${esc(formatDate(entry.generatedAt || ""))}</td>
+          <td>${esc(entry.outputFileName || "")}</td>
+          <td>${esc(entry.mailingMonthLabel || entry.mailingMonth || "")}</td>
+          <td>${esc(Number(entry.totalRecords || 0).toLocaleString())}</td>
+          <td>${esc(entry.startingCaseNumber || "")}</td>
+          <td>${esc(entry.endingCaseNumber || "")}</td>
+          <td class="table-action-cell">
+            <button class="secondary-button table-action-button" data-mailing-data-download="${esc(entry.id || "")}">Download</button>
+            ${history[0]?.id === entry.id
+              ? `<button class="secondary-button table-action-button" data-mailing-data-delete="${esc(entry.id || "")}">Delete Most Recent</button>`
+              : ""}
+          </td>
+        </tr>
+      `).join("");
+    }
+  }
+}
+
+async function loadMailingDataPage() {
+  const payload = await apiRequest("/api/mailing-data");
+  const serverHistory = Array.isArray(payload.history) ? payload.history : [];
+  const persistedHistory = readPersistedMailingDataHistory();
+  state.mailingData.history = serverHistory.length ? serverHistory : persistedHistory;
+  if (state.mailingData.history.length) {
+    persistMailingDataHistory(state.mailingData.history);
+  }
+  const fallbackNextCaseNumber = state.mailingData.history.reduce((maxValue, entry) => {
+    const candidate = Number(entry?.endingCaseNumber || 0);
+    return Number.isFinite(candidate) && candidate > maxValue ? candidate : maxValue;
+  }, 65782402) + 1;
+  state.mailingData.nextCaseNumber = String(payload.nextCaseNumber || fallbackNextCaseNumber || "");
+  if (!state.mailingData.startingCaseNumber && state.mailingData.nextCaseNumber) {
+    state.mailingData.startingCaseNumber = state.mailingData.nextCaseNumber;
+  }
+  if (!state.mailingData.mailingMonth) {
+    state.mailingData.mailingMonth = todayIsoDate().slice(0, 7);
+  }
+  renderMailingDataPage();
+}
+
+async function runMailingDataPreview() {
+  const uploads = getMailingDataUploads();
+  if (!uploads.length) {
+    setStatus("mailing-data-status", "Select the ZIP files first.");
+    return;
+  }
+  setStatus("mailing-data-progress-status", "Extracting zip...");
+  setStatus("mailing-data-status", "Preparing Mailing Data preview...");
+  try {
+    const payload = await apiRequest("/api/mailing-data/preview", {
+      method: "POST",
+      body: {
+        uploads,
+        mailingMonth: state.mailingData.mailingMonth,
+        startingCaseNumber: state.mailingData.startingCaseNumber,
+      },
+    });
+    state.mailingData.preview = payload.preview || null;
+    state.mailingData.nextCaseNumber = String(payload.nextCaseNumber || state.mailingData.nextCaseNumber || "");
+    renderMailingDataPage();
+    setStatus("mailing-data-progress-status", "Complete");
+    setStatus("mailing-data-status", "Mailing Data preview is ready.");
+  } catch (error) {
+    setStatus("mailing-data-progress-status", "");
+    setStatus("mailing-data-status", `Preview failed: ${error.message}`);
+  }
+}
+
+async function generateMailingDataWorkbook() {
+  const uploads = getMailingDataUploads();
+  if (!uploads.length) {
+    setStatus("mailing-data-status", "Select the ZIP files first.");
+    return;
+  }
+  setStatus("mailing-data-progress-status", "Building workbook...");
+  setStatus("mailing-data-status", "Generating Mailing Data workbook...");
+  try {
+    const payload = await apiRequest("/api/mailing-data/generate", {
+      method: "POST",
+      body: {
+        uploads,
+        mailingMonth: state.mailingData.mailingMonth,
+        startingCaseNumber: state.mailingData.startingCaseNumber,
+      },
+    });
+    state.mailingData.history = payload.history || [];
+    persistMailingDataHistory(state.mailingData.history);
+    state.mailingData.preview = null;
+    state.mailingData.nextCaseNumber = String(payload.nextCaseNumber || state.mailingData.nextCaseNumber || "");
+    state.mailingData.startingCaseNumber = String(
+      payload.nextCaseNumber || state.mailingData.nextCaseNumber || state.mailingData.startingCaseNumber || ""
+    );
+    state.mailingData.fileSlots = [
+      { fileName: "", base64Content: "" },
+      { fileName: "", base64Content: "" },
+    ];
+    const entry = payload.historyEntry || null;
+    renderMailingDataPage();
+    setStatus("mailing-data-progress-status", "Complete");
+    setStatus("mailing-data-status", entry
+      ? `${entry.outputFileName} generated successfully.`
+      : "Mailing Data workbook generated successfully.");
+    if (entry?.id) {
+      await apiDownload(`/api/mailing-data/${encodeURIComponent(entry.id)}/download`, entry.outputFileName || "mailing-data.xlsx");
+    }
+  } catch (error) {
+    setStatus("mailing-data-progress-status", "");
+    setStatus("mailing-data-status", `Generation failed: ${error.message}`);
+  }
+}
+
+function bindMailingDataEvents() {
+  const bindUploadInput = (inputId, slotIndex) => {
+    el(inputId)?.addEventListener("change", async (event) => {
+      const input = event.target;
+      const file = input?.files?.[0];
+      if (!file) return;
+      try {
+        const base64Content = await fileToBase64(file);
+        state.mailingData.fileSlots[slotIndex] = {
+          fileName: file.name,
+          base64Content,
+        };
+        state.mailingData.preview = null;
+        renderMailingDataPage();
+        setStatus("mailing-data-status", `${file.name} selected.`);
+      } catch (error) {
+        setStatus("mailing-data-status", `Unable to read ${file.name}: ${error.message}`);
+      } finally {
+        if (input) input.value = "";
+      }
+    });
+  };
+
+  bindUploadInput("mailing-data-file-1", 0);
+  bindUploadInput("mailing-data-file-2", 1);
+
+  el("mailing-data-month")?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    state.mailingData.mailingMonth = target.value || "";
+    state.mailingData.preview = null;
+  });
+
+  el("mailing-data-starting-case-number")?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    state.mailingData.startingCaseNumber = target.value || "";
+    state.mailingData.preview = null;
+  });
+
+  el("mailing-data-next-case-button")?.addEventListener("click", () => {
+    state.mailingData.startingCaseNumber = state.mailingData.nextCaseNumber || state.mailingData.startingCaseNumber;
+    state.mailingData.preview = null;
+    renderMailingDataPage();
+    setStatus("mailing-data-status", `Starting case number set to ${state.mailingData.startingCaseNumber}.`);
+  });
+
+  el("mailing-data-preview-button")?.addEventListener("click", () => {
+    void runMailingDataPreview();
+  });
+
+  el("mailing-data-generate-button")?.addEventListener("click", () => {
+    void generateMailingDataWorkbook();
+  });
+
+  el("mailing-data-history-body")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const deleteEntryId = target.getAttribute("data-mailing-data-delete");
+    if (deleteEntryId) {
+      const entry = ensureArray(state.mailingData.history).find((item) => item.id === deleteEntryId);
+      if (!entry) {
+        setStatus("mailing-data-status", "Unable to find that Mailing Data run.");
+        return;
+      }
+      if (!confirm(`Delete the most recent Mailing Data run ${entry.outputFileName || ""}?`)) {
+        return;
+      }
+      void apiRequest(`/api/mailing-data/${encodeURIComponent(deleteEntryId)}`, {
+        method: "DELETE",
+        body: {},
+      }).then((payload) => {
+        state.mailingData.history = payload.history || [];
+        persistMailingDataHistory(state.mailingData.history);
+        state.mailingData.nextCaseNumber = String(payload.nextCaseNumber || state.mailingData.nextCaseNumber || "");
+        state.mailingData.preview = null;
+        const resetToDeletedStart = confirm(
+          `Do you want to reset the Starting Case Number back to ${entry.startingCaseNumber}?`
+        );
+        if (resetToDeletedStart) {
+          state.mailingData.startingCaseNumber = String(entry.startingCaseNumber || "");
+        } else if (!state.mailingData.startingCaseNumber) {
+          state.mailingData.startingCaseNumber = state.mailingData.nextCaseNumber || "";
+        }
+        renderMailingDataPage();
+        setStatus("mailing-data-status", "Most recent Mailing Data run deleted.");
+      }).catch((error) => {
+        setStatus("mailing-data-status", `Delete failed: ${error.message}`);
+      });
+      return;
+    }
+    const entryId = target.getAttribute("data-mailing-data-download");
+    if (!entryId) return;
+    const entry = ensureArray(state.mailingData.history).find((item) => item.id === entryId);
+    void apiDownload(
+      `/api/mailing-data/${encodeURIComponent(entryId)}/download`,
+      entry?.outputFileName || "mailing-data.xlsx"
+    ).catch((error) => {
+      setStatus("mailing-data-status", `Download failed: ${error.message}`);
+    });
   });
 }
 
@@ -4172,6 +4504,7 @@ function buildComparisonReviewSummaryFromClient() {
   const dnmSet = new Set(normalizeSummaryRows(baselineMap.get("dnm") || []).map((entry) => entry.scf));
   const listTypes = ["nhcl", "rfc"];
   const result = {};
+  const runNotes = String(state.analysis.runNotes || "").trim();
 
   listTypes.forEach((listType) => {
     const baselineRows = normalizeSummaryRows(baselineMap.get(listType) || []);
@@ -4221,6 +4554,7 @@ function buildComparisonReviewSummaryFromClient() {
 
   return {
     generatedAt: new Date().toISOString(),
+    runNotes,
     lists: result,
     summary: {
       nhclAdded: result.nhcl.addedCount,
@@ -6534,6 +6868,13 @@ function renderAnalysisComparisonSummaryView() {
   const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
   const canComplete = !!state.analysis.reviewSummary && !summary.violations?.length;
   const approved = Boolean(state.analysis.reviewSummaryApproved);
+  const runNotes = String(summary.runNotes || state.analysis.runNotes || "").trim();
+  const runNotesMarkup = runNotes
+    ? `<article class="panel">
+        <h4>Run Notes</h4>
+        <p>${esc(runNotes).replace(/\n/g, "<br />")}</p>
+      </article>`
+    : "";
 
   container.innerHTML = `
     <section class="analysis-review-shell">
@@ -6556,6 +6897,8 @@ function renderAnalysisComparisonSummaryView() {
           <span>Blocked Additions: ${Number(summary.summary?.blockedCount || 0)} </span>
         </div>
       </article>
+
+      ${runNotesMarkup}
 
       <article class="panel">
         <h4>Approval</h4>
@@ -9983,6 +10326,7 @@ async function init() {
   bindCcPaymentImportEvents();
   bindCheckImportEvents();
   bindAchReturnEvents();
+  bindMailingDataEvents();
   bindMonthlyActions();
   if (!state.applications.current) {
     state.applications.current = createEmptyApplication();

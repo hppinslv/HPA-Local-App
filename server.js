@@ -94,6 +94,15 @@ const {
   removeAchReturnRow,
 } = require("./services/achReturnService");
 const {
+  deleteMostRecentMailingDataRun,
+  generateMailingDataWorkbook,
+  getMailingDataArtifact,
+  getNextMailingCaseNumber,
+  initializeMailingDataPersistence,
+  listMailingDataHistory,
+  previewMailingData,
+} = require("./services/mailingDataService");
+const {
   getAllConfiguredSalesforceReports,
   getMonthlyReportTypes,
 } = require("./services/reportCatalog");
@@ -294,6 +303,78 @@ const server = http.createServer((request, response) => {
       sessions: listAchReturnSessions(),
       currentSession: getCurrentAchReturnSession(),
     });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/mailing-data" && request.method === "GET") {
+    sendJson(response, 200, {
+      history: listMailingDataHistory(),
+      nextCaseNumber: getNextMailingCaseNumber(),
+    });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/mailing-data/preview" && request.method === "POST") {
+    collectRequestBody(request)
+      .then((body) => {
+        const preview = previewMailingData(body || {});
+        sendJson(response, 200, {
+          preview,
+          nextCaseNumber: getNextMailingCaseNumber(),
+        });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to preview Mailing Data workbook." });
+      });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/mailing-data/generate" && request.method === "POST") {
+    collectRequestBody(request)
+      .then((body) => {
+        const result = generateMailingDataWorkbook(body || {});
+        sendJson(response, 200, {
+          historyEntry: result.historyEntry,
+          preview: result.preview,
+          history: listMailingDataHistory(),
+          nextCaseNumber: getNextMailingCaseNumber(),
+        });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to generate Mailing Data workbook." });
+      });
+    return;
+  }
+
+  const mailingDataDownloadMatch = requestUrl.pathname.match(/^\/api\/mailing-data\/([^/]+)\/download$/);
+  if (mailingDataDownloadMatch && request.method === "GET") {
+    try {
+      const artifact = getMailingDataArtifact(mailingDataDownloadMatch[1]);
+      fs.readFile(artifact.filePath, (error, data) => {
+        if (error) {
+          sendJson(response, 500, { error: "Unable to read generated Mailing Data workbook." });
+          return;
+        }
+        response.writeHead(200, {
+          "Content-Type": artifact.contentType,
+          "Content-Disposition": `attachment; filename="${artifact.fileName}"`,
+        });
+        response.end(data);
+      });
+    } catch (error) {
+      sendJson(response, 404, { error: error.message || "Mailing Data workbook not found." });
+    }
+    return;
+  }
+
+  const mailingDataEntryMatch = requestUrl.pathname.match(/^\/api\/mailing-data\/([^/]+)$/);
+  if (mailingDataEntryMatch && request.method === "DELETE") {
+    try {
+      const result = deleteMostRecentMailingDataRun(mailingDataEntryMatch[1]);
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to delete Mailing Data run." });
+    }
     return;
   }
 
@@ -1234,6 +1315,7 @@ Promise.all([
   initializeCcPaymentImportPersistence(),
   initializeCheckImportPersistence(),
   initializeAchReturnPersistence(),
+  initializeMailingDataPersistence(),
 ]).catch((error) => {
   console.warn("Could not initialize persistence from Supabase:", error.message);
 });
