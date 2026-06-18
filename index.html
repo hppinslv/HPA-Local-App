@@ -55,9 +55,11 @@
               </button>
             </div>
           </div>
+          <button class="nav-link" data-route="mailing-data">Mailing Data</button>
           <button class="nav-link" data-route="applications">Request New Application</button>
           <button class="nav-link" data-route="cc-payment-imports">Credit Card Payment Imports</button>
           <button class="nav-link" data-route="check-imports">Check Imports</button>
+          <button class="nav-link" data-route="ach-returns">ACH Returns</button>
           <button class="nav-link" data-route="monthly-reports">Monthly Reports</button>
           <button class="nav-link" data-route="report-history">Report History</button>
           <button class="nav-link" data-route="settings">Settings</button>
@@ -135,6 +137,34 @@
 
             <article class="feature-card">
               <div>
+                <p class="card-label">Payments</p>
+                <h3>Process ACH Return</h3>
+                <p>
+                  Paste a Global Payments ACH return email, match the original payment by Identifier 1,
+                  build a reversal credit row, and export the ACH return credit batch.
+                </p>
+              </div>
+              <button class="primary-button" data-route="ach-returns">
+                Process ACH Return
+              </button>
+            </article>
+
+            <article class="feature-card">
+              <div>
+                <p class="card-label">Mailing</p>
+                <h3>Mailing Data</h3>
+                <p>
+                  Combine the monthly NHCL and RFC mailbag ZIP files into the
+                  finished HPA mailbag workbook and keep generation history.
+                </p>
+              </div>
+              <button class="primary-button" data-route="mailing-data">
+                Mailing Data
+              </button>
+            </article>
+
+            <article class="feature-card">
+              <div>
                 <p class="card-label">Customer Applications</p>
                 <h3>Create Application</h3>
                 <p>
@@ -148,6 +178,32 @@
               </button>
             </article>
 
+          </section>
+        </section>
+
+        <section class="view" data-view="mailing-data">
+          <header class="page-header">
+            <p class="eyebrow">Mailing</p>
+            <h2>Mailing Data</h2>
+            <p class="page-copy">
+              Build the combined monthly mailbag workbook from the NHCL and RFC ZIP files
+              and keep the generated workbook history in the app.
+            </p>
+          </header>
+
+          <section class="card-grid">
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>Mailbag Generator</h3>
+                <p>
+                  This feature has now been added to the app navigation. The workbook
+                  generator UI is the next part to wire in here.
+                </p>
+              </div>
+              <p id="mailing-data-status" class="inline-status">
+                Mailing Data tab is now available in the app.
+              </p>
+            </article>
           </section>
         </section>
 
@@ -400,7 +456,7 @@
                   <tr>
                     <th>Analysis</th>
                     <th>Stage</th>
-                    <th>Status</th>
+                    <th>Import Status</th>
                     <th>Created Date</th>
                     <th>Last Updated</th>
                     <th>Completed Date</th>
@@ -987,6 +1043,162 @@
                   <tr>
                     <td colspan="10" class="empty-cell">No check import sessions yet.</td>
                   </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" data-view="ach-returns">
+          <header class="page-header">
+            <p class="eyebrow">Payments</p>
+            <h2>ACH Returns</h2>
+            <p class="page-copy">
+              Paste a Global Payments ACH return email, match the original payment, review the reversal credit,
+              save multiple reversal credits in a staging table, and then export or import them into Salesforce.
+            </p>
+          </header>
+
+          <section class="workflow-grid ach-return-top-layout">
+            <article id="ach-return-email-panel" class="panel">
+              <div class="panel-heading">
+                <h3>ACH Return Email</h3>
+                <p>Paste the full ACH return email body, then parse the return details and match the original payment.</p>
+              </div>
+              <div class="field-stack">
+                <label class="field-label" for="ach-return-email-body">Email Body</label>
+                <textarea id="ach-return-email-body" class="field-input ach-return-email-textarea" rows="6" placeholder="Paste the ACH return email here"></textarea>
+              </div>
+              <div class="action-row">
+                <button
+                  id="ach-return-parse-button"
+                  type="button"
+                  class="primary-button"
+                  onclick="window.__hpaHandleAchReturnParse?.(event)"
+                >
+                  Parse Return Email
+                </button>
+                <button
+                  id="ach-return-create-row-button"
+                  type="button"
+                  class="secondary-button"
+                  disabled
+                  onclick="window.__hpaHandleAchReturnCreateRow?.(event)"
+                >
+                  Save Row
+                </button>
+                <button
+                  id="ach-return-clear-draft-button"
+                  type="button"
+                  class="secondary-button"
+                  onclick="window.__hpaHandleAchReturnClearDraft?.(event)"
+                >
+                  Clear / Start Over
+                </button>
+              </div>
+              <p id="ach-return-status" class="inline-status"></p>
+            </article>
+
+            <article id="ach-return-review-article" class="panel">
+              <div class="panel-heading">
+                <h3>Review</h3>
+                <p>Review the parsed return, original payment match, and pending reversal credit before adding it to the export table.</p>
+              </div>
+              <div id="ach-return-review-panel" class="field-stack">
+                <p class="empty-cell">Parse an ACH return email to begin.</p>
+              </div>
+            </article>
+          </section>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Export Table</h3>
+              <p>Stage multiple ACH return reversal credits here, save each row as you go, then export or import the batch.</p>
+            </div>
+            <div class="action-row">
+              <button
+                id="ach-return-export-button"
+                type="button"
+                class="primary-button"
+                disabled
+                onclick="window.__hpaHandleAchReturnExport?.(event)"
+              >
+                Export Credits CSV
+              </button>
+              <button
+                id="ach-return-confirm-button"
+                type="button"
+                class="primary-button"
+                disabled
+                onclick="window.__hpaHandleAchReturnConfirmImport?.(event)"
+              >
+                Confirm Import
+              </button>
+              <button
+                id="ach-return-clear-table-button"
+                type="button"
+                class="secondary-button"
+                disabled
+                onclick="window.__hpaHandleAchReturnClearTable?.(event)"
+              >
+                Clear Export Table
+              </button>
+            </div>
+            <p id="ach-return-export-status" class="inline-status"></p>
+            <div class="table-wrapper ach-return-export-table-wrapper">
+              <table id="ach-return-export-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>Refund Name</th>
+                    <th>Policy ID</th>
+                    <th>Certificate ID</th>
+                    <th>Certificate Number</th>
+                    <th>Type</th>
+                    <th>Payment Method</th>
+                    <th>Credit Date</th>
+                    <th>Premium</th>
+                    <th>Dues Collected</th>
+                    <th>Credit Reason Code</th>
+                    <th>Rollback Months</th>
+                    <th>Amount</th>
+                    <th>Reason for Credit</th>
+                    <th>Date Refunded</th>
+                    <th>Status</th>
+                    <th>Credit Batch ID (Approval)</th>
+                    <th>Import Result</th>
+                    <th>Imported Salesforce ID</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="ach-return-table-body">
+                  <tr><td colspan="19" class="empty-cell">No ACH reversal rows yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>ACH Return History</h3>
+              <p>Reopen prior ACH return batches and review what was exported.</p>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>Rows</th>
+                    <th>Ready</th>
+                    <th>Errors</th>
+                    <th>Imported</th>
+                    <th>Exported</th>
+                    <th>User</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="ach-return-history-body">
+                  <tr><td colspan="8" class="empty-cell">No ACH return sessions yet.</td></tr>
                 </tbody>
               </table>
             </div>

@@ -41,9 +41,12 @@ const APPLICATION_DEFAULTS = Object.freeze({
   twoPersonPer1000: "0.33",
 });
 const UI_STATE_STORAGE_KEY = "hpa.ui.currentState";
+const ACH_RETURN_DRAFT_STORAGE_KEY = "hpa.achReturns.currentDraft";
 const COMPARISON_DEBUG_QUERY_PARAM = "debugComparisonPicker";
 const ANALYSIS_REVIEW_POPUP_QUERY_PARAM = "analysisReviewPopup";
 const IMPORT_SESSION_POPUP_QUERY_PARAM = "importSessionPopup";
+const ANALYSIS_REVIEW_SYNC_CHANNEL_NAME = "hpa-analysis-review-sync-v1";
+const ANALYSIS_REVIEW_SYNC_STORAGE_KEY = "hpa.analysis.review.syncState";
 
 function getDefaultAnalysisName() {
   return new Date().toLocaleString("en-US", {
@@ -91,6 +94,8 @@ const state = {
     reviewSummary: null,
     reviewSummaryMode: "review",
     reviewSummaryNotes: "",
+    reviewSummaryApproved: false,
+    reviewSyncVersion: 0,
     reportScfMetricCache: {},
     editingReportId: "",
     editingReportTitle: "",
@@ -137,6 +142,13 @@ const state = {
     filter: "all",
     popup: false,
     launchSessionId: "",
+  },
+  achReturns: {
+    sessions: [],
+    currentSessionId: "",
+    currentSession: null,
+    draft: null,
+    emailBody: "",
   },
   referenceLists: [],
 };
@@ -253,6 +265,13 @@ const formatDate = (value) => {
   });
 };
 
+const formatShortDate = (value) => {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+};
+
 const formatReportDateStamp = (value) => {
   const d = value ? new Date(value) : new Date();
   const safeDate = Number.isNaN(d.getTime()) ? new Date() : d;
@@ -352,6 +371,39 @@ const getFilenameFromDisposition = (disposition, fallback) => {
   );
   if (!match) return fallback;
   return decodeURIComponent(match[1] || match[2] || match[3] || fallback);
+};
+
+const analysisReviewWindowId = `analysis-review-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+if (!(typeof window === "undefined")) {
+  if (!("analysisReviewSyncChannel" in window)) {
+    window.analysisReviewSyncChannel = null;
+  }
+  if (!("analysisReviewSyncing" in window)) {
+    window.analysisReviewSyncing = false;
+  }
+}
+
+const getAnalysisReviewSyncChannel = () => {
+  if (typeof window === "undefined") return null;
+  if (!("analysisReviewSyncChannel" in window)) {
+    window.analysisReviewSyncChannel = null;
+  }
+  return window.analysisReviewSyncChannel;
+};
+
+const setAnalysisReviewSyncChannel = (value) => {
+  if (typeof window === "undefined") return;
+  window.analysisReviewSyncChannel = value || null;
+};
+
+const isAnalysisReviewSyncing = () => {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.analysisReviewSyncing);
+};
+
+const setAnalysisReviewSyncing = (value) => {
+  if (typeof window === "undefined") return;
+  window.analysisReviewSyncing = Boolean(value);
 };
 
 const apiRequest = async (url, options = {}) => {
@@ -993,6 +1045,13 @@ function setRoute(route) {
     return;
   }
 
+  if (normalizedRoute === "ach-returns") {
+    loadAchReturnData(state.achReturns.currentSessionId || "").catch((error) => {
+      setStatus("ach-return-status", `Unable to load ACH returns: ${error.message}`);
+    });
+    return;
+  }
+
   if (normalizedRoute === "applications") {
     loadApplications().catch((error) => {
       setStatus("applications-status", `Unable to load applications: ${error.message}`);
@@ -1002,6 +1061,10 @@ function setRoute(route) {
 
   if (normalizedRoute === "monthly-reports") {
     state.monthly.refreshOutput?.();
+  }
+
+  if (normalizedRoute === "report-history") {
+    state.monthly.refreshHistory?.();
   }
 }
 
@@ -1110,6 +1173,9 @@ function persistUiState() {
           mailingListType: state.analysis.mailingListType || "dnm",
           navExpanded: state.analysis.navExpanded !== false,
         },
+        achReturns: {
+          currentSessionId: state.achReturns.currentSessionId || "",
+        },
       })
     );
   } catch {
@@ -1144,11 +1210,11 @@ function readLaunchStateFromUrl() {
     const isReviewPopup = params.get(ANALYSIS_REVIEW_POPUP_QUERY_PARAM) === "1";
     const isImportSessionPopup = params.get(IMPORT_SESSION_POPUP_QUERY_PARAM) === "1";
     return {
-      route: ["dashboard", "analysis", "applications", "monthly-reports", "report-history", "settings", "cc-payment-imports", "check-imports"].includes(route)
+      route: ["dashboard", "analysis", "mailing-data", "applications", "monthly-reports", "report-history", "settings", "cc-payment-imports", "check-imports", "ach-returns"].includes(route)
         ? route
         : "",
       importSession: {
-        route: ["cc-payment-imports", "check-imports"].includes(route) ? route : "",
+        route: ["cc-payment-imports", "check-imports", "ach-returns"].includes(route) ? route : "",
         sessionId,
         popup: isImportSessionPopup,
       },
@@ -1169,6 +1235,216 @@ function readLaunchStateFromUrl() {
   } catch {
     return null;
   }
+}
+
+function persistAchReturnDraftState() {
+  try {
+    const draft = state.achReturns.draft ? cloneData(state.achReturns.draft) : null;
+    const emailBody = String(state.achReturns.emailBody || "");
+    if (!draft && !emailBody.trim()) {
+      window.localStorage.removeItem(ACH_RETURN_DRAFT_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(
+      ACH_RETURN_DRAFT_STORAGE_KEY,
+      JSON.stringify({
+        draft,
+        emailBody,
+      })
+    );
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function readPersistedAchReturnDraftState() {
+  try {
+    const raw = window.localStorage.getItem(ACH_RETURN_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPersistedAchReturnDraftState() {
+  try {
+    window.localStorage.removeItem(ACH_RETURN_DRAFT_STORAGE_KEY);
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function getCurrentComparisonReviewSetupId() {
+  return String(state.analysis.currentSetupId || readPersistedAnalysisSetupId() || "").trim();
+}
+
+function normalizeReviewSyncMap(source) {
+  const raw = source && typeof source === "object" ? source : {};
+  const output = {};
+  Object.keys(raw).forEach((key) => {
+    const normalizedKey = String(key || "").trim();
+    const value = String(raw[key] || "").trim();
+    if (normalizedKey && value) {
+      output[normalizedKey] = value;
+    }
+  });
+  return output;
+}
+
+function normalizeReviewSyncLists(source) {
+  const rows = ensureArray(source || []);
+  return rows
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      return {
+        type: String(entry.type || "").trim(),
+        items: ensureArray(entry.items).map((item) => ({
+          scf: String(item?.scf || "").trim(),
+          state: String(item?.state || "").trim(),
+          scope: String(item?.scope || "").trim(),
+          reason: String(item?.reason || "").trim(),
+          addedAt: String(item?.addedAt || "").trim(),
+          addedBy: String(item?.addedBy || "").trim(),
+        })).filter((entry) => entry.scf),
+        count: Number(entry.count || 0),
+        stateGroups: ensureArray(entry.stateGroups).map((group) => ({
+          label: String(group?.label || "").trim(),
+          state: String(group?.state || "").trim(),
+          isActive: Boolean(group?.isActive),
+          scfs: ensureArray(group?.scfs).map((rawScf) => String(rawScf || "").trim()).filter(Boolean),
+        })),
+        updatedAt: String(entry.updatedAt || "").trim(),
+      };
+    })
+    .filter((entry) => entry.type);
+}
+
+function isAnalysisReviewSyncReady() {
+  return state.route === "analysis" || isAnalysisReviewPopupWindow();
+}
+
+function getAnalysisReviewSyncPayload(reason = "state-change") {
+  const setupId = getCurrentComparisonReviewSetupId();
+  const currentComparisonId = String(state.analysis.selectedComparisonId || "").trim();
+  const nextVersion = Number(state.analysis.reviewSyncVersion || 0) + 1;
+  state.analysis.reviewSyncVersion = nextVersion;
+  return {
+    type: "analysis-review-sync",
+    source: analysisReviewWindowId,
+    reason,
+    ts: Date.now(),
+    setupId,
+    selectedComparisonId: currentComparisonId,
+    lastEditedComparisonId: String(state.analysis.lastEditedComparisonId || currentComparisonId).trim(),
+    reviewPrimaryReportIds: normalizeReviewSyncMap(state.analysis.reviewPrimaryReportIds),
+    reviewSelectedScfs: normalizeReviewSyncMap(state.analysis.reviewSelectedScfs),
+    reviewBaselineLists: normalizeReviewSyncLists(state.analysis.reviewBaselineLists),
+    reviewWorkingLists: normalizeReviewSyncLists(state.analysis.reviewWorkingLists),
+    reviewSummary: state.analysis.reviewSummary ? cloneData(state.analysis.reviewSummary) : null,
+    reviewSummaryMode: String(state.analysis.reviewSummaryMode || "review").trim() || "review",
+    reviewSummaryNotes: String(state.analysis.reviewSummaryNotes || "").trim(),
+    reviewSummaryApproved: Boolean(state.analysis.reviewSummaryApproved),
+    reviewTableSort: cloneData(state.analysis.reviewTableSort || { key: "soldRate", direction: "desc" }),
+    reviewThresholdMetric: String(state.analysis.reviewThresholdMetric || "soldRate").trim(),
+    reviewThresholdValue: String(state.analysis.reviewThresholdValue || ""),
+    reviewBulkMetric: String(state.analysis.reviewBulkMetric || "soldRate").trim(),
+    reviewBulkThresholdValue: String(state.analysis.reviewBulkThresholdValue || ""),
+    reviewPageSize: String(state.analysis.reviewPageSize || 100),
+    reviewPageNumber: Number(state.analysis.reviewPageNumber || 1) || 1,
+    reviewSyncVersion: nextVersion,
+    panel: state.analysis.panel || "home",
+    route: state.route || "dashboard",
+  };
+}
+
+function applyAnalysisReviewSync(message) {
+  if (!message || typeof message !== "object" || message.source === analysisReviewWindowId) return;
+  if (!message.type || message.type !== "analysis-review-sync") return;
+  const messageVersion = Number(message.reviewSyncVersion || 0);
+  const messageTs = Number(message.ts || 0);
+  if (!Number.isFinite(messageVersion) || !Number.isFinite(messageTs)) {
+    return;
+  }
+
+  const messageSetupId = String(message.setupId || "").trim();
+  const currentSetupId = getCurrentComparisonReviewSetupId();
+  if (messageSetupId && currentSetupId && messageSetupId !== currentSetupId) return;
+  if (messageVersion <= Number(state.analysis.reviewSyncVersion || 0)) return;
+
+  setAnalysisReviewSyncing(true);
+  try {
+    state.analysis.lastEditedComparisonId = String(message.lastEditedComparisonId || message.selectedComparisonId || "").trim();
+    state.analysis.selectedComparisonId = String(message.selectedComparisonId || state.analysis.selectedComparisonId || "").trim();
+    state.analysis.reviewPrimaryReportIds = normalizeReviewSyncMap(message.reviewPrimaryReportIds);
+    state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(message.reviewSelectedScfs);
+    state.analysis.reviewBaselineLists = normalizeReviewSyncLists(message.reviewBaselineLists);
+    state.analysis.reviewWorkingLists = normalizeReviewSyncLists(message.reviewWorkingLists);
+    state.analysis.reviewSummary = message.reviewSummary ? cloneData(message.reviewSummary) : null;
+    state.analysis.reviewSummaryMode = String(message.reviewSummaryMode || "review").trim() || "review";
+    state.analysis.reviewSummaryNotes = String(message.reviewSummaryNotes || "").trim();
+    state.analysis.reviewSummaryApproved = Boolean(message.reviewSummaryApproved);
+    state.analysis.reviewTableSort = message.reviewTableSort && typeof message.reviewTableSort === "object"
+      ? cloneData(message.reviewTableSort)
+      : { key: "soldRate", direction: "desc" };
+    state.analysis.reviewThresholdMetric = String(message.reviewThresholdMetric || "soldRate").trim();
+    state.analysis.reviewThresholdValue = String(message.reviewThresholdValue || "");
+    state.analysis.reviewBulkMetric = String(message.reviewBulkMetric || "soldRate").trim();
+    state.analysis.reviewBulkThresholdValue = String(message.reviewBulkThresholdValue || "");
+    state.analysis.reviewPageSize = String(message.reviewPageSize || 100);
+    state.analysis.reviewPageNumber = Number(message.reviewPageNumber || 1) || 1;
+    state.analysis.reviewSyncVersion = messageVersion;
+  } finally {
+    setAnalysisReviewSyncing(false);
+  }
+
+  if (state.route === "analysis" && state.analysis.panel === "compare-review") {
+    renderAnalysisComparisonReviewPanel();
+  }
+}
+
+function broadcastAnalysisReviewState(reason = "state-change") {
+  if (!isAnalysisReviewSyncReady() || isAnalysisReviewSyncing()) {
+    return;
+  }
+
+  try {
+    const payload = getAnalysisReviewSyncPayload(reason);
+    const syncChannel = getAnalysisReviewSyncChannel();
+    if (syncChannel) {
+      syncChannel.postMessage(payload);
+    }
+    if (window && window.localStorage) {
+      window.localStorage.setItem(ANALYSIS_REVIEW_SYNC_STORAGE_KEY, JSON.stringify(payload));
+    }
+  } catch {
+    // Best effort sync; keep runtime behavior resilient.
+  }
+}
+
+function setupAnalysisReviewSync() {
+  if ("BroadcastChannel" in window) {
+    try {
+      const syncChannel = new BroadcastChannel(ANALYSIS_REVIEW_SYNC_CHANNEL_NAME);
+      setAnalysisReviewSyncChannel(syncChannel);
+      syncChannel.onmessage = (event) => {
+        applyAnalysisReviewSync(event.data);
+      };
+    } catch {
+      setAnalysisReviewSyncChannel(null);
+    }
+  }
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== ANALYSIS_REVIEW_SYNC_STORAGE_KEY || !event.newValue) return;
+    try {
+      const message = JSON.parse(event.newValue);
+      applyAnalysisReviewSync(message);
+    } catch {
+      // Ignore malformed sync payloads.
+    }
+  });
 }
 
 async function openAnalysisWorkspace() {
@@ -1334,7 +1610,7 @@ function isImportSessionPopupWindow() {
 function openImportSessionPopup(route, sessionId) {
   const normalizedRoute = String(route || "").trim();
   const normalizedSessionId = String(sessionId || "").trim();
-  if (!["cc-payment-imports", "check-imports"].includes(normalizedRoute) || !normalizedSessionId) {
+  if (!["cc-payment-imports", "check-imports", "ach-returns"].includes(normalizedRoute) || !normalizedSessionId) {
     return false;
   }
 
@@ -2806,6 +3082,815 @@ function bindCheckImportEvents() {
   });
 }
 
+function getCurrentAchReturnSession() {
+  return state.achReturns.currentSession || null;
+}
+
+function isAchReturnImportedSession(session) {
+  return ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+}
+
+function resolveMatchTextValue(selectedMatch, valueGetters) {
+  for (const valueGetter of valueGetters) {
+    const rawValue = typeof valueGetter === "function" ? valueGetter() : "";
+    const value = String(rawValue || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function resolveMatchAmount(selectedMatch, valueGetters) {
+  for (const valueGetter of valueGetters) {
+    const rawValue = typeof valueGetter === "function" ? valueGetter() : "";
+    const text = String(rawValue || "").trim();
+    if (!text) continue;
+    const numeric = Number(text.replace(/[^0-9.\-]/g, ""));
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
+function buildAchReturnPendingCredit(parsed, selectedMatch) {
+  if (!selectedMatch) {
+    return null;
+  }
+
+  const returnCode = resolveMatchTextValue(selectedMatch, [() => parsed?.returnCode]);
+  const returnReason = resolveMatchTextValue(selectedMatch, [() => parsed?.returnReason]);
+
+  const certificateNumber = resolveMatchTextValue(selectedMatch, [
+    () => selectedMatch?.certificateNumber,
+    () => selectedMatch?.certificate,
+    () => selectedMatch?.raw?.certificate_number,
+    () => selectedMatch?.raw?.Certificate__c,
+    () => selectedMatch?.raw?.Certificate__r?.Name,
+    () => selectedMatch?.raw?.CertificateName__c,
+    () => selectedMatch?.raw?.Certificate_Number__c,
+    () => selectedMatch?.raw?.CertificateNumber__c,
+  ]);
+
+  const customerName = resolveMatchTextValue(selectedMatch, [
+    () => selectedMatch?.customerName,
+    () => selectedMatch?.customer,
+    () => selectedMatch?.raw?.customer_name,
+    () => selectedMatch?.raw?.payor_name,
+    () => selectedMatch?.raw?.Customer__c,
+    () => selectedMatch?.raw?.Customer_Name__c,
+    () => selectedMatch?.raw?.Name,
+  ]);
+
+  const premium = resolveMatchAmount(selectedMatch, [() => selectedMatch?.premium]);
+
+  const dues = resolveMatchAmount(selectedMatch, [
+    () => selectedMatch?.dues,
+    () => selectedMatch?.raw?.dues,
+    () => selectedMatch?.raw?.dues_amount,
+    () => selectedMatch?.raw?.aha_dues,
+    () => selectedMatch?.raw?.AHA_Dues__c,
+    () => selectedMatch?.raw?.Aha_Dues__c,
+  ]);
+
+  const rollbackMonths = resolveMatchTextValue(selectedMatch, [
+    () => selectedMatch?.rollbackMonths,
+    () => selectedMatch?.months,
+    () => selectedMatch?.id3,
+    () => selectedMatch?.raw?.ID3,
+    () => selectedMatch?.raw?.id3,
+  ]);
+
+  const creditAmount = Number.isFinite(Number(selectedMatch?.creditAmount))
+    ? Number(selectedMatch.creditAmount)
+    : Number.isFinite(Number(parsed?.amount))
+      ? Number(parsed.amount)
+      : null;
+  const parsedDate = formatShortDate(parsed?.batchDate || "");
+  const refundNameDate = parsedDate || formatShortDate(new Date().toISOString());
+  const reasonForCredit = [returnCode, returnReason ? `(${returnReason})` : "", parsed?.identifier1, parsed?.identifier3]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return {
+    policyId: resolveMatchTextValue(selectedMatch, [() => selectedMatch?.policyId, () => selectedMatch?.policy_id]),
+    certificateRecordId: resolveMatchTextValue(selectedMatch, [() => selectedMatch?.certificateRecordId]),
+    certificateNumber,
+    certificateType: "ACH",
+    originalPaymentId: resolveMatchTextValue(selectedMatch, [() => selectedMatch?.salesforcePaymentId, () => selectedMatch?.transactionReference]),
+    paymentMethodId: resolveMatchTextValue(selectedMatch, [() => selectedMatch?.paymentMethodId]),
+    paymentMethod: resolveMatchTextValue(selectedMatch, [() => selectedMatch?.paymentMethod, () => selectedMatch?.payment_method]),
+    checkNo: resolveMatchTextValue(selectedMatch, [() => selectedMatch?.checkNumber]),
+    claimId: "",
+    creditAmount: creditAmount || 0,
+    creditDate: parsedDate,
+    dateEntered: formatShortDate(new Date().toISOString()),
+    dateRefunded: formatShortDate(new Date().toISOString()),
+    premium,
+    dues,
+    duesCollected: dues,
+    policySelected: "",
+    discrepancy: "",
+    creditReasonCode: "Direct Debit (M&T Bank or UMB Bank) - Returned Items",
+    creditReason: "Direct Debit (M&T Bank or UMB Bank) - Returned Items",
+    rollbackMonths: String(rollbackMonths || "").trim() ? String(rollbackMonths).padStart(2, "0") : "",
+    deathClaimMonthsCredited: "",
+    reasonCode: returnCode,
+    reasonForCredit: reasonForCredit || (returnCode ? `Return Code: ${returnCode}${returnReason ? ` (${returnReason})` : ""}` : "-"),
+    refundName: `${certificateNumber || "-"} - ACH - Returned Check - ${refundNameDate}`,
+    returnCode,
+    returnReason,
+    status: "Completed",
+    creditType: "ACH",
+    traceNumber: resolveMatchTextValue(selectedMatch, [() => parsed?.traceNumber]),
+    achTransactionId: resolveMatchTextValue(selectedMatch, [() => parsed?.achTransactionId]),
+    creditBatchId: resolveMatchTextValue(selectedMatch, [() => parsed?.achTransactionId, () => parsed?.traceNumber, () => selectedMatch?.batchId]),
+    identifier1: resolveMatchTextValue(selectedMatch, [() => parsed?.identifier1]),
+    zeroMonthCredit: false,
+    creditQc: false,
+    payerName: resolveMatchTextValue(selectedMatch, [() => parsed?.payerName, () => customerName]),
+    notes: returnCode ? `Return Code: ${returnCode}${returnReason ? ` (${returnReason})` : ""}` : "-",
+    customerName,
+  };
+}
+
+function formatAchReturnCurrency(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ""
+    ? formatApplicationCurrency(value)
+    : "-";
+}
+
+function formatAchReturnBoolean(value) {
+  return value ? "Yes" : "No";
+}
+
+function renderAchReturnSpreadsheetRow(row, options = {}) {
+  const derivedStatusValue = row.import_result_status
+    ? String(row.import_result_status || "").replaceAll("_", " ")
+    : row.validation_status === "ready"
+      ? "Ready"
+      : row.validation_status === "error"
+        ? "Error"
+        : "";
+  const statusValue = options.statusValue || derivedStatusValue || row.status || "";
+  const importResult = options.importResult
+    || row.import_result_message
+    || row.issue_reason
+    || (row.validation_status === "ready" ? "Ready to import into Salesforce." : "");
+  const visualStatus = options.visualStatus || row.import_result_status || row.validation_status || "ready";
+  return `
+    <tr class="cc-import-row is-${esc(String(visualStatus || "ready").toLowerCase())}">
+      ${options.includeCreated ? `<td>${esc(formatDate(row.created_at || row.creditDate || ""))}</td>` : ""}
+      <td>${esc(row.refundName || "")}</td>
+      <td>${esc(row.policyId || "")}</td>
+      <td>${esc(row.certificateRecordId || "")}</td>
+      <td>${esc(row.certificateNumber || "")}</td>
+      <td>${esc(row.creditType || row.certificateType || "ACH")}</td>
+      <td>${esc(row.paymentMethod || "")}</td>
+      <td>${esc(row.creditDate || "")}</td>
+      <td>${esc(formatAchReturnCurrency(row.premium))}</td>
+      <td>${esc(formatAchReturnCurrency(row.duesCollected))}</td>
+      <td>${esc(row.creditReasonCode || "")}</td>
+      <td>${esc(row.rollbackMonths || "")}</td>
+      <td>${esc(formatAchReturnCurrency(row.creditAmount))}</td>
+      <td>${esc(row.reasonForCredit || row.notes || "")}</td>
+      <td>${esc(row.dateRefunded || "")}</td>
+      <td><span class="cc-status-pill is-${esc(String(visualStatus || "ready").toLowerCase())}">${esc(String(statusValue || "").replaceAll("_", " "))}</span></td>
+      <td>${esc(row.creditBatchId || "")}</td>
+      ${options.includeImportColumns ? `<td>${esc(importResult)}</td><td>${esc(row.imported_salesforce_id || "")}</td>` : ""}
+      ${options.includeActions ? `<td class="table-action-cell">${options.actionsHtml || ""}</td>` : ""}
+    </tr>
+  `;
+}
+
+function renderAchReturnReview() {
+  const container = el("ach-return-review-panel");
+  if (!container) return;
+  const draft = state.achReturns.draft;
+  if (!draft) {
+    container.innerHTML = '<p class="empty-cell">Parse an ACH return email to begin.</p>';
+    return;
+  }
+
+  const parsed = draft.parsed || {};
+  const matches = Array.isArray(draft.matches) ? draft.matches : [];
+  const selectedMatchKey = draft.selectedMatchKey || draft.selectedMatch?.matchKey || "";
+  const selectedMatch = matches.find((entry) => entry.matchKey === selectedMatchKey) || draft.selectedMatch || null;
+  const pendingCredit = buildAchReturnPendingCredit(parsed, selectedMatch);
+  const errors = Array.isArray(draft.errors) ? draft.errors : [];
+
+  const selectedCertificateNumber = resolveMatchTextValue(selectedMatch, [
+    () => pendingCredit?.certificateNumber,
+    () => selectedMatch?.certificateNumber,
+    () => selectedMatch?.certificate,
+    () => selectedMatch?.raw?.certificate_number,
+    () => selectedMatch?.raw?.Certificate__c,
+    () => selectedMatch?.raw?.Certificate_Number__c,
+    () => selectedMatch?.raw?.CertificateNumber__c,
+  ]);
+  const selectedCustomerName = resolveMatchTextValue(selectedMatch, [
+    () => selectedMatch?.customerName,
+    () => pendingCredit?.customerName,
+    () => selectedMatch?.raw?.payor_name,
+    () => selectedMatch?.raw?.customer_name,
+    () => selectedMatch?.raw?.Customer__c,
+    () => selectedMatch?.raw?.Customer_Name__c,
+    () => selectedMatch?.raw?.Name,
+  ]);
+  const selectedPremium = resolveMatchAmount(selectedMatch, [() => selectedMatch?.premium]);
+  const selectedDues = resolveMatchAmount(selectedMatch, [
+    () => selectedMatch?.dues,
+    () => selectedMatch?.raw?.dues,
+    () => selectedMatch?.raw?.dues_amount,
+    () => selectedMatch?.raw?.AHA_Dues__c,
+    () => selectedMatch?.raw?.Aha_Dues__c,
+    () => selectedMatch?.raw?.Dues__c,
+  ]);
+  const selectedRollbackMonths = resolveMatchTextValue(selectedMatch, [
+    () => selectedMatch?.rollbackMonths,
+    () => selectedMatch?.months,
+    () => selectedMatch?.id3,
+    () => selectedMatch?.raw?.ID3,
+    () => selectedMatch?.raw?.id3,
+  ]);
+
+  container.innerHTML = `
+    ${errors.length ? `<div class="inline-status">${esc(errors.join(" "))}</div>` : ""}
+    <div class="workflow-grid">
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>Parsed ACH Return Details</h3>
+        </div>
+        <div class="field-stack">
+          <p><strong>Payer Name:</strong> ${esc(parsed.payerName || "-")}</p>
+          <p><strong>Amount:</strong> ${esc(parsed.amount !== null && parsed.amount !== undefined ? formatApplicationCurrency(parsed.amount) : "-")}</p>
+          <p><strong>Return Code:</strong> ${esc(parsed.returnCode || "-")}</p>
+          <p><strong>Return Reason:</strong> ${esc(parsed.returnReason || "-")}</p>
+          <p><strong>Trace Number:</strong> ${esc(parsed.traceNumber || "-")}</p>
+          <p><strong>Batch Date:</strong> ${esc(parsed.batchDate || "-")}</p>
+          <p><strong>ACH Transaction ID:</strong> ${esc(parsed.achTransactionId || "-")}</p>
+          <p><strong>Identifier 1:</strong> ${esc(parsed.identifier1 || "-")}</p>
+          <p><strong>Identifier 2:</strong> ${esc(parsed.identifier2 || "-")}</p>
+          <p><strong>Identifier 3:</strong> ${esc(parsed.identifier3 || "-")}</p>
+          <p><strong>Identifier 4:</strong> ${esc(parsed.identifier4 || "-")}</p>
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>Matched Original Payment</h3>
+        </div>
+        ${
+          !matches.length
+            ? '<p class="empty-cell">No original payment matched yet.</p>'
+            : `
+              ${matches.length > 1 ? `
+                <label class="field-label" for="ach-return-match-select">Select Original Payment</label>
+                <select id="ach-return-match-select" class="field-input">
+                  <option value="">Choose a match</option>
+                  ${matches.map((entry) => `
+                    <option value="${esc(entry.matchKey)}"${entry.matchKey === selectedMatchKey ? " selected" : ""}>
+                      ${esc(entry.salesforcePaymentId || entry.transactionReference || entry.matchKey)} | ${esc(entry.customerName || entry.certificateNumber || entry.source)} | ${esc(entry.paymentAmount !== null && entry.paymentAmount !== undefined ? formatApplicationCurrency(entry.paymentAmount) : "-")}
+                    </option>
+                  `).join("")}
+                </select>
+              ` : ""}
+              ${selectedMatch ? `
+              <div class="field-stack">
+                  <p><strong>Salesforce Payment Id:</strong> ${esc(selectedMatch.salesforcePaymentId || "-")}</p>
+                  <p><strong>Policy Id:</strong> ${esc(selectedMatch.policyId || "-")}</p>
+                  <p><strong>Certificate Number:</strong> ${esc(selectedCertificateNumber || "-")}</p>
+                  <p><strong>Customer/Account Name:</strong> ${esc(selectedCustomerName || "-")}</p>
+                  <p><strong>Payment Amount:</strong> ${esc(selectedMatch.paymentAmount !== null && selectedMatch.paymentAmount !== undefined ? formatApplicationCurrency(selectedMatch.paymentAmount) : "-")}</p>
+                  <p><strong>Premium:</strong> ${esc(selectedPremium !== null ? formatApplicationCurrency(selectedPremium) : "-")}</p>
+                  <p><strong>Dues:</strong> ${esc(selectedDues !== null ? formatApplicationCurrency(selectedDues) : "-")}</p>
+                  <p><strong>Rollback Months:</strong> ${esc(selectedRollbackMonths || "-")}</p>
+                  <p><strong>Payment Date:</strong> ${esc(selectedMatch.paymentDate || "-")}</p>
+                  <p><strong>Payment Method:</strong> ${esc(selectedMatch.paymentMethod || "-")}</p>
+                  <p><strong>Transaction/Reference Number:</strong> ${esc(selectedMatch.transactionReference || "-")}</p>
+                </div>
+              ` : `<p class="empty-cell">Multiple matches found. Select the correct payment above.</p>`}
+            `
+        }
+      </article>
+    </div>
+  `;
+
+  const createButton = el("ach-return-create-row-button");
+  if (createButton) {
+    createButton.disabled = Boolean(errors.length) || !selectedMatch;
+  }
+}
+
+function renderAchReturnTable() {
+  const tbody = el("ach-return-table-body");
+  const status = el("ach-return-export-status");
+  if (!tbody) return;
+  const session = getCurrentAchReturnSession();
+  const rows = Array.isArray(session?.rows) ? session.rows : [];
+  const isImportedSession = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+  const draft = state.achReturns.draft;
+  const draftMatches = Array.isArray(draft?.matches) ? draft.matches : [];
+  const draftSelectedMatchKey = draft?.selectedMatchKey || draft?.selectedMatch?.matchKey || "";
+  const draftSelectedMatch = draftMatches.find((entry) => entry.matchKey === draftSelectedMatchKey) || draft?.selectedMatch || null;
+  const draftPendingCredit = draftSelectedMatch ? buildAchReturnPendingCredit(draft?.parsed || {}, draftSelectedMatch) : null;
+  const draftErrors = Array.isArray(draft?.errors) ? draft.errors : [];
+  const draftCanSave = Boolean(draftPendingCredit) && !draftErrors.length && Boolean(draftSelectedMatch);
+
+  if (!rows.length && !draftPendingCredit) {
+    tbody.innerHTML = '<tr><td colspan="19" class="empty-cell">No ACH reversal rows yet.</td></tr>';
+    if (status && !String(status.textContent || "").trim()) {
+      status.textContent = isAchReturnImportedSession(session)
+        ? "This ACH return batch has already been imported. Use ACH Return History to reopen and review it."
+        : session?.id
+        ? "The current ACH working batch is empty. Parse an email and save the row to add it here."
+        : "No ACH working batch yet. Parse an email to begin.";
+    }
+    return;
+  }
+
+  const renderedRows = [];
+
+  if (draftPendingCredit) {
+    renderedRows.push(
+      renderAchReturnSpreadsheetRow(
+        {
+          ...draftPendingCredit,
+          created_at: new Date().toISOString(),
+          issue_reason: draftErrors.join(" "),
+        },
+        {
+          includeCreated: true,
+          includeImportColumns: true,
+          includeActions: true,
+          statusValue: draftErrors.length ? "Draft Error" : "Draft Preview",
+          visualStatus: draftErrors.length ? "error" : "warning",
+          importResult: draftErrors.length
+            ? draftErrors.join(" ")
+            : "Parsed and matched. Save Row to add it to this ACH return batch.",
+          actionsHtml: draftCanSave
+            ? '<button class="secondary-button table-action-button" data-ach-save-draft="1">Save Row</button>'
+            : '<span class="cc-row-note">Finish the match above to save</span>',
+        }
+      )
+    );
+  }
+
+  renderedRows.push(
+    ...rows.map((row) =>
+      renderAchReturnSpreadsheetRow(row, {
+        includeCreated: true,
+        includeImportColumns: true,
+        includeActions: true,
+        actionsHtml: isImportedSession
+          ? '<span class="cc-row-note">Read only</span>'
+          : `<button class="secondary-button table-action-button" data-ach-remove-row="${esc(row.id)}">Remove Row</button>`,
+      })
+    )
+  );
+
+  tbody.innerHTML = renderedRows.join("");
+  if (status && draftPendingCredit && !rows.length) {
+    status.textContent = "Draft preview is showing in the export table below. Click Save Row to keep it in the working batch.";
+  }
+}
+
+function renderAchReturnHistory() {
+  const tbody = el("ach-return-history-body");
+  if (!tbody) return;
+  const sessions = (Array.isArray(state.achReturns.sessions) ? state.achReturns.sessions : []).filter((session) =>
+    ["imported", "imported_with_errors", "exported"].includes(String(session.final_status || session.status || ""))
+  );
+  if (!sessions.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">No imported ACH batches yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sessions.map((session) => `
+    <tr>
+      <td>${esc(formatDate(session.uploaded_at || ""))}</td>
+      <td>${esc(session.row_count || 0)}</td>
+      <td>${esc(session.ready_count || 0)}</td>
+      <td>${esc(session.error_count || 0)}</td>
+      <td>${esc(session.imported_row_count || session.successful_import_count || 0)}</td>
+      <td>${esc(session.exported_at ? formatDate(session.exported_at) : "Not exported")}</td>
+      <td>${esc(session.uploaded_by || "")}</td>
+      <td class="table-action-cell">
+        <button class="secondary-button table-action-button" data-ach-open-session="${esc(session.id)}">Open</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function updateAchReturnButtons() {
+  const session = getCurrentAchReturnSession();
+  const exportButton = el("ach-return-export-button");
+  const clearButton = el("ach-return-clear-table-button");
+  const confirmButton = el("ach-return-confirm-button");
+  const rows = Array.isArray(session?.rows) ? session.rows : [];
+  const readyRows = rows.filter((row) => (row.import_result_status || row.validation_status || "") === "ready");
+  if (exportButton) {
+    exportButton.disabled = !session || readyRows.length <= 0;
+  }
+  if (clearButton) {
+    clearButton.disabled = !session || !Number(session.row_count || 0);
+  }
+  if (confirmButton) {
+    const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+    const readyCount = readyRows.length;
+    confirmButton.disabled = !session || readyCount <= 0 || alreadyImported;
+    confirmButton.textContent = alreadyImported ? "Import Completed" : readyCount > 0 ? `Confirm Import (${readyCount})` : "Confirm Import";
+  }
+}
+
+function renderAchReturnPage() {
+  const textarea = el("ach-return-email-body");
+  if (textarea && textarea.value !== state.achReturns.emailBody) {
+    textarea.value = state.achReturns.emailBody || "";
+  }
+  const topLayout = document.querySelector(".ach-return-top-layout");
+  if (topLayout) {
+    topLayout.classList.toggle("is-single-panel", !state.achReturns.draft);
+  }
+  renderAchReturnReview();
+  renderAchReturnTable();
+  renderAchReturnHistory();
+  updateAchReturnButtons();
+}
+
+async function loadAchReturnSession(sessionId) {
+  const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(sessionId)}`);
+  state.achReturns.currentSession = payload.session || null;
+  state.achReturns.currentSessionId = payload.session?.id || "";
+  persistUiState();
+  renderAchReturnPage();
+}
+
+async function loadAchReturnData(preferredSessionId = "") {
+  const payload = await apiRequest("/api/ach-returns");
+  state.achReturns.sessions = payload.sessions || [];
+  state.achReturns.currentSession = payload.currentSession || null;
+  state.achReturns.currentSessionId = payload.currentSession?.id || "";
+  if (preferredSessionId) {
+    const preferredSession = (payload.sessions || []).find((session) => session.id === preferredSessionId);
+    if (preferredSession && !isAchReturnImportedSession(preferredSession)) {
+      await loadAchReturnSession(preferredSessionId);
+      return;
+    }
+  }
+  persistUiState();
+  renderAchReturnPage();
+}
+
+async function handleAchReturnParse() {
+  const emailBody = String(el("ach-return-email-body")?.value || state.achReturns.emailBody || "").trim();
+  state.achReturns.emailBody = emailBody;
+  if (!emailBody) {
+    setStatus("ach-return-status", "Paste the ACH return email body first.");
+    return;
+  }
+  setStatus("ach-return-status", "Parsing ACH return email...");
+  console.debug("[ACH Returns] parse started", {
+    bodyLength: emailBody.length,
+    hasWindow: Boolean(typeof window !== "undefined"),
+    timestamp: new Date().toISOString(),
+  });
+  try {
+    let payload = null;
+    const parseTargets = ["/api/ach-returns/parse", "/api/ach-returns/parse/"];
+    const parseErrors = [];
+    for (const parseTarget of parseTargets) {
+      try {
+        payload = await apiRequest(parseTarget, {
+          method: "POST",
+          body: { emailBody },
+        });
+        if (payload) break;
+      } catch (parseError) {
+        const parseMessage = String(parseError?.message || parseError);
+        parseErrors.push(`${parseTarget}: ${parseMessage}`);
+      }
+    }
+
+    if (!payload) {
+      throw new Error(parseErrors[0] || "Unable to call ACH return parse endpoint.");
+    }
+
+    state.achReturns.draft = payload.preview || null;
+    persistAchReturnDraftState();
+    renderAchReturnPage();
+    const errors = Array.isArray(payload.preview?.errors) ? payload.preview.errors : [];
+    setStatus("ach-return-status", errors.length ? errors.join(" ") : "ACH return parsed successfully.");
+  } catch (error) {
+    console.error("[ACH Returns] parse failed", error);
+    setStatus("ach-return-status", `Unable to parse ACH return email: ${error.message}`);
+  }
+}
+
+async function handleAchReturnCreateRow() {
+  const draft = state.achReturns.draft;
+  const emailBody = String(el("ach-return-email-body")?.value || state.achReturns.emailBody || "").trim();
+  if (!draft || !emailBody) {
+    setStatus("ach-return-status", "Parse an ACH return email first.");
+    return;
+  }
+  const selectedMatchKey = String(
+    el("ach-return-match-select")?.value || draft.selectedMatchKey || draft.selectedMatch?.matchKey || ""
+  ).trim();
+  setStatus("ach-return-status", "Creating ACH reversal row...");
+  try {
+    const payload = await apiRequest("/api/ach-returns/rows", {
+      method: "POST",
+      body: {
+        emailBody,
+        selectedMatchKey,
+        actor: "Local User",
+      },
+    });
+    state.achReturns.sessions = payload.sessions || [];
+    state.achReturns.currentSession = payload.session || null;
+    state.achReturns.currentSessionId = payload.session?.id || "";
+    if (payload.session?.duplicateDetected) {
+      setStatus("ach-return-status", "This ACH return is already in the Export Table. A duplicate row was not added.");
+    } else {
+      state.achReturns.draft = null;
+      state.achReturns.emailBody = "";
+      clearPersistedAchReturnDraftState();
+      setStatus("ach-return-status", "Reversal credit row saved in the Export Table. It will stay there until you import it.");
+    }
+    persistUiState();
+    renderAchReturnPage();
+  } catch (error) {
+    setStatus("ach-return-status", `Unable to create ACH reversal row: ${error.message}`);
+  }
+}
+
+async function handleAchReturnConfirmImport() {
+  const draft = state.achReturns.draft;
+  if (draft) {
+    const draftErrors = Array.isArray(draft.errors) ? draft.errors.filter(Boolean) : [];
+    const draftMatches = Array.isArray(draft.matches) ? draft.matches : [];
+    const selectedMatchKey = String(
+      el("ach-return-match-select")?.value || draft.selectedMatchKey || draft.selectedMatch?.matchKey || ""
+    ).trim();
+    const selectedMatch = draftMatches.find((entry) => entry.matchKey === selectedMatchKey) || draft.selectedMatch || null;
+    const draftPendingCredit = selectedMatch ? buildAchReturnPendingCredit(draft.parsed || {}, selectedMatch) : null;
+    if (draftErrors.length || !selectedMatch || !draftPendingCredit) {
+      setStatus("ach-return-status", "Finish the visible ACH draft before importing. Save Row is required when the draft has errors or no matched payment.");
+      return;
+    }
+    await handleAchReturnCreateRow();
+  }
+
+  const session = getCurrentAchReturnSession();
+  if (!session?.id) {
+    setStatus("ach-return-status", "Open or save an ACH return batch before importing.");
+    return;
+  }
+  const rows = Array.isArray(session.rows) ? session.rows : [];
+  const readyCount = rows.filter((row) => (row.import_result_status || row.validation_status || "") === "ready").length;
+  const errorCount = Number(session.error_count || 0);
+  if (readyCount <= 0) {
+    setStatus("ach-return-status", "Save at least one ready ACH credit row before importing.");
+    return;
+  }
+  if (["imported", "imported_with_errors"].includes(String(session.final_status || ""))) {
+    setStatus("ach-return-status", "This ACH return batch has already been imported.");
+    return;
+  }
+  const confirmMessage = [
+    `Import ${readyCount} ACH credit row(s) into Salesforce?`,
+    errorCount > 0 ? `${errorCount} row(s) with errors will be skipped.` : "",
+  ].filter(Boolean).join(" ");
+  if (!confirm(confirmMessage)) {
+    return;
+  }
+  setStatus("ach-return-status", "Importing ACH credits into Salesforce...");
+  try {
+    const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(session.id)}/confirm-import`, {
+      method: "POST",
+      body: {
+        confirmedBy: "Local User",
+      },
+    });
+    state.achReturns.sessions = payload.sessions || [];
+    state.achReturns.draft = null;
+    state.achReturns.emailBody = "";
+    clearPersistedAchReturnDraftState();
+    await loadAchReturnData("");
+    setStatus(
+      "ach-return-status",
+      `Salesforce import finished. Success: ${Number(payload.session?.successful_import_count || payload.session?.imported_row_count || 0)}. Failed: ${Number(payload.session?.salesforce_failed_row_count || 0)}. The imported batch has been moved to ACH Return History.`
+    );
+  } catch (error) {
+    setStatus("ach-return-status", `Import failed: ${error.message}`);
+  }
+}
+
+function handleAchReturnClearDraft() {
+  state.achReturns.draft = null;
+  state.achReturns.emailBody = "";
+  clearPersistedAchReturnDraftState();
+  renderAchReturnPage();
+  setStatus("ach-return-status", "Draft cleared.");
+}
+
+async function handleAchReturnClearTable() {
+  setStatus("ach-return-export-status", "Clearing ACH return export table...");
+  try {
+    const payload = await apiRequest("/api/ach-returns/current/clear", {
+      method: "POST",
+      body: {},
+    });
+    state.achReturns.sessions = payload.sessions || [];
+    state.achReturns.currentSession = payload.currentSession || null;
+    state.achReturns.currentSessionId = payload.currentSession?.id || "";
+    state.achReturns.draft = null;
+    state.achReturns.emailBody = "";
+    clearPersistedAchReturnDraftState();
+    persistUiState();
+    renderAchReturnPage();
+    setStatus("ach-return-export-status", "ACH return export table cleared.");
+  } catch (error) {
+    setStatus("ach-return-export-status", `Unable to clear ACH return table: ${error.message}`);
+  }
+}
+
+async function handleAchReturnExport() {
+  const session = getCurrentAchReturnSession();
+  if (!session?.id) return;
+  try {
+    await apiDownload(`/api/ach-returns/${encodeURIComponent(session.id)}/export`, `ach-returns-${session.id}.csv`);
+    await loadAchReturnData("");
+    setStatus("ach-return-export-status", "ACH returns CSV exported.");
+  } catch (error) {
+    setStatus("ach-return-export-status", `Unable to export ACH returns CSV: ${error.message}`);
+  }
+}
+
+function bindAchReturnEvents() {
+  el("ach-return-email-body")?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    state.achReturns.emailBody = target.value || "";
+    persistAchReturnDraftState();
+  });
+
+  const inFlightActions = new Set();
+  const safeHandle = async (handler, actionLabel, statusTarget = "ach-return-status") => {
+    if (inFlightActions.has(actionLabel)) {
+      return;
+    }
+    try {
+      inFlightActions.add(actionLabel);
+      console.debug(`[ACH Returns] ${actionLabel} action invoked`);
+      await handler();
+    } catch (error) {
+      const message = error?.message || String(error);
+      console.error(`[ACH Returns] ${actionLabel} action failed`, error);
+      setStatus(statusTarget, `${actionLabel} failed: ${message}`);
+    } finally {
+      inFlightActions.delete(actionLabel);
+    }
+  };
+
+  const registerAchReturnAction = (id, handler, statusContext = "ach-return-status") => {
+    const button = el(id);
+    if (!button) return;
+    button.dataset.achReturnAction = "1";
+    const listener = (event) => {
+      event?.preventDefault?.();
+      if (button.disabled) return;
+      void safeHandle(handler, id, statusContext);
+    };
+    button.addEventListener("click", listener, { capture: true });
+  };
+
+  const bindAchReturnAction = (id, handler) => {
+    registerAchReturnAction(id, handler, id === "ach-return-export-button" || id === "ach-return-clear-table-button" ? "ach-return-export-status" : "ach-return-status");
+  };
+
+  bindAchReturnAction("ach-return-parse-button", async () => {
+    await handleAchReturnParse();
+  });
+  bindAchReturnAction("ach-return-create-row-button", async () => {
+    await handleAchReturnCreateRow();
+  });
+  bindAchReturnAction("ach-return-clear-draft-button", () => {
+    handleAchReturnClearDraft();
+  });
+  bindAchReturnAction("ach-return-clear-table-button", async () => {
+    await handleAchReturnClearTable();
+  });
+  bindAchReturnAction("ach-return-export-button", async () => {
+    await handleAchReturnExport();
+  });
+  bindAchReturnAction("ach-return-confirm-button", async () => {
+    await handleAchReturnConfirmImport();
+  });
+
+  window.__hpaHandleAchReturnParse = () => void safeHandle(() => handleAchReturnParse(), "ach-return parse");
+  window.__hpaHandleAchReturnCreateRow = () => void safeHandle(() => handleAchReturnCreateRow(), "ach-return create");
+  window.__hpaHandleAchReturnClearDraft = () => void safeHandle(() => handleAchReturnClearDraft(), "ach-return clear draft");
+  window.__hpaHandleAchReturnExport = () => void safeHandle(() => handleAchReturnExport(), "ach-return export", "ach-return-export-status");
+  window.__hpaHandleAchReturnConfirmImport = () => void safeHandle(() => handleAchReturnConfirmImport(), "ach-return confirm import");
+  window.__hpaHandleAchReturnClearTable = () =>
+    void safeHandle(() => handleAchReturnClearTable(), "ach-return clear table", "ach-return-export-status");
+
+  const achReturnsView = document.querySelector('[data-view="ach-returns"]');
+  achReturnsView?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("button");
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+    console.debug("[ACH Returns] delegated click", { id: button.id });
+    if (button.dataset.achReturnAction === "1") {
+      return;
+    }
+
+    if (button.id === "ach-return-parse-button") {
+      void handleAchReturnParse();
+      return;
+    }
+
+    if (button.id === "ach-return-create-row-button") {
+      void handleAchReturnCreateRow();
+      return;
+    }
+
+    if (button.id === "ach-return-clear-draft-button") {
+      handleAchReturnClearDraft();
+      return;
+    }
+
+    if (button.id === "ach-return-clear-table-button") {
+      void handleAchReturnClearTable();
+      return;
+    }
+
+    if (button.id === "ach-return-export-button") {
+      void handleAchReturnExport();
+      return;
+    }
+
+    if (button.id === "ach-return-confirm-button") {
+      void handleAchReturnConfirmImport();
+    }
+  });
+
+  el("ach-return-table-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const saveDraft = target.getAttribute("data-ach-save-draft");
+    if (saveDraft) {
+      await handleAchReturnCreateRow();
+      return;
+    }
+    const rowId = target.getAttribute("data-ach-remove-row");
+    const session = getCurrentAchReturnSession();
+    if (!rowId || !session?.id) return;
+    try {
+      const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`, {
+        method: "DELETE",
+      });
+      state.achReturns.sessions = payload.sessions || [];
+      state.achReturns.currentSession = payload.session || null;
+      state.achReturns.currentSessionId = payload.session?.id || "";
+      persistUiState();
+      renderAchReturnPage();
+      setStatus("ach-return-export-status", "ACH reversal row removed.");
+    } catch (error) {
+      setStatus("ach-return-export-status", `Unable to remove ACH reversal row: ${error.message}`);
+    }
+  });
+
+  el("ach-return-history-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const sessionId = target.getAttribute("data-ach-open-session");
+    if (!sessionId) return;
+    setStatus("ach-return-status", "Opening ACH return session...");
+    try {
+      await loadAchReturnSession(sessionId);
+      setStatus("ach-return-status", "ACH return session opened.");
+    } catch (error) {
+      setStatus("ach-return-status", `Unable to open ACH return session: ${error.message}`);
+    }
+  });
+
+  el("ach-return-review-panel")?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement) || target.id !== "ach-return-match-select") return;
+    if (!state.achReturns.draft) return;
+    state.achReturns.draft.selectedMatchKey = target.value || "";
+    const matches = Array.isArray(state.achReturns.draft.matches) ? state.achReturns.draft.matches : [];
+    state.achReturns.draft.selectedMatch = matches.find((entry) => entry.matchKey === state.achReturns.draft.selectedMatchKey) || null;
+    persistAchReturnDraftState();
+    renderAchReturnPage();
+  });
+}
+
 function showAnalysisPanel(panelName) {
   state.analysis.panel = panelName;
   persistUiState();
@@ -3268,8 +4353,10 @@ function buildListDeltasForCompletion(listType) {
 function setComparisonReviewSummary(summary) {
   state.analysis.reviewSummary = summary || null;
   state.analysis.reviewSummaryMode = "summary";
+  state.analysis.reviewSummaryApproved = false;
   if (!summary) {
     state.analysis.reviewSummaryMode = "review";
+    state.analysis.reviewSummaryApproved = false;
   }
 }
 
@@ -3288,6 +4375,8 @@ function summarizeComparisonReview() {
     if (el("analysis-review-summary-approved")) {
       el("analysis-review-summary-approved").checked = false;
     }
+    state.analysis.reviewSummaryApproved = false;
+    broadcastAnalysisReviewState("summarize-comparison-review");
     setStatus(
       "analysis-comparison-selection-status",
       "Review summary generated. Approve to enable Complete."
@@ -3315,7 +4404,9 @@ async function completeComparisonReview() {
       const summaryCheckbox = el("analysis-review-summary-approved");
       if (summaryCheckbox) {
         summaryCheckbox.checked = false;
+        state.analysis.reviewSummaryApproved = false;
       }
+      broadcastAnalysisReviewState("complete-summary-refresh");
       setStatus(
         "analysis-comparison-selection-status",
         "Review summary has been regenerated. Approve to enable Complete."
@@ -3334,7 +4425,7 @@ async function completeComparisonReview() {
     return;
   }
 
-  const approvedNow = state.analysis.reviewSummaryMode === "summary" && el("analysis-review-summary-approved")?.checked;
+  const approvedNow = state.analysis.reviewSummaryMode === "summary" && Boolean(state.analysis.reviewSummaryApproved);
   const actualSummary = state.analysis.reviewSummary || summary;
   const hasViolations = Boolean(actualSummary.violations?.length);
   const canComplete = !!actualSummary.generatedAt && !hasViolations;
@@ -3404,6 +4495,7 @@ async function completeComparisonReview() {
     state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
     setComparisonReviewSummary(actualSummary);
     state.analysis.reviewSummaryMode = "summary";
+    state.analysis.reviewSummaryApproved = true;
 
     const completionTimestamp = new Date().toISOString();
     const savedSetupResponse = await apiRequest("/api/analysis/setups", {
@@ -3443,12 +4535,13 @@ async function completeComparisonReview() {
       `Comparison complete. Added ${totalAdds} and removed ${totalRemoves} SCFs across NHCL/RFC lists.`
     );
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("comparison-complete");
   } catch (error) {
     setStatus("analysis-comparison-selection-status", `Unable to complete comparison: ${error.message}`);
   } finally {
     if (completeButton) {
       const canNowComplete = !!state.analysis.reviewSummary && !state.analysis.reviewSummary?.violations?.length;
-      const approvedNow = el("analysis-review-summary-approved")?.checked;
+      const approvedNow = Boolean(state.analysis.reviewSummaryApproved);
       completeButton.disabled = !approvedNow || !canNowComplete;
     }
   }
@@ -3671,6 +4764,7 @@ function selectComparisonReviewScf(comparisonId, scf, options = {}) {
     syncReviewPageToSelectedScf(comparisonId, normalizedScf);
   }
   renderAnalysisComparisonReviewPanel();
+  broadcastAnalysisReviewState("comparison-scf-selected");
   if (shouldScrollSummary) {
     focusComparisonReviewSummary();
   }
@@ -4443,6 +5537,7 @@ function updateWorkingReferenceListEntry(listType, scf, shouldAdd, stateValue = 
     list.count = list.items.length;
     list.updatedAt = new Date().toISOString();
     invalidateComparisonReviewSummary();
+    broadcastAnalysisReviewState("working-list-added");
     return;
   }
 
@@ -4450,6 +5545,7 @@ function updateWorkingReferenceListEntry(listType, scf, shouldAdd, stateValue = 
   list.count = list.items.length;
   list.updatedAt = new Date().toISOString();
   invalidateComparisonReviewSummary();
+  broadcastAnalysisReviewState("working-list-removed");
 }
 
 function downloadClientFile(fileName, content, contentType) {
@@ -5437,6 +6533,7 @@ function renderAnalysisComparisonSummaryView() {
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
   const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
   const canComplete = !!state.analysis.reviewSummary && !summary.violations?.length;
+  const approved = Boolean(state.analysis.reviewSummaryApproved);
 
   container.innerHTML = `
     <section class="analysis-review-shell">
@@ -5464,7 +6561,7 @@ function renderAnalysisComparisonSummaryView() {
         <h4>Approval</h4>
         <p>Complete this comparison only when you confirm the review summary is correct.</p>
         <label class="analysis-review-summary-approve">
-          <input id="analysis-review-summary-approved" type="checkbox" />
+          <input id="analysis-review-summary-approved" type="checkbox" ${approved ? "checked" : ""} />
           I approve this summary and want to move to completed review.
         </label>
         <div class="field-stack">
@@ -5484,12 +6581,15 @@ function renderAnalysisComparisonSummaryView() {
 
   el("analysis-review-summary-back-button")?.addEventListener("click", () => {
     state.analysis.reviewSummaryMode = "review";
+    state.analysis.reviewSummaryApproved = false;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("summary-back");
   });
 
   el("analysis-review-summary-approved")?.addEventListener("change", () => {
+    const approved = el("analysis-review-summary-approved")?.checked === true;
+    state.analysis.reviewSummaryApproved = approved;
     const completeButton = el("complete-comparison-review-button");
-    const approved = el("analysis-review-summary-approved")?.checked;
     const disableReason = summary.violations?.length;
     if (completeButton) {
       completeButton.disabled = !approved || !!disableReason;
@@ -5499,6 +6599,7 @@ function renderAnalysisComparisonSummaryView() {
           : "This summary has blocked Do Not Mail additions. Resolve before completing."
         : "Click to complete this review and save the summary.";
     }
+    broadcastAnalysisReviewState("summary-approval");
   });
 
   const notesInput = el("analysis-review-summary-notes");
@@ -5506,7 +6607,18 @@ function renderAnalysisComparisonSummaryView() {
     notesInput.value = state.analysis.reviewSummaryNotes || "";
     notesInput.addEventListener("input", () => {
       state.analysis.reviewSummaryNotes = notesInput.value || "";
+      broadcastAnalysisReviewState("summary-notes");
     });
+  }
+
+  const canCompleteMode = !!state.analysis.reviewSummary && !state.analysis.reviewSummary?.violations?.length;
+  const summaryCheckbox = el("analysis-review-summary-approved");
+  const completeButton = el("complete-comparison-review-button");
+  if (completeButton) {
+    completeButton.disabled = !summaryCheckbox?.checked || !canCompleteMode;
+    completeButton.title = canCompleteMode
+      ? (summaryCheckbox?.checked ? "Complete this review." : "Check approval before complete.")
+      : "Run a summary first and clear blocked Do Not Mail additions before completing.";
   }
 }
 
@@ -5908,6 +7020,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.lastEditedComparisonId = nextId;
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("comparison-select");
   });
 
   el("analysis-review-primary-report")?.addEventListener("change", (event) => {
@@ -5916,6 +7029,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.reviewSelectedScfs[comparison.id] = "";
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("primary-report-select");
     focusComparisonReviewSummary();
   });
 
@@ -5923,6 +7037,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.reviewPageSize = normalizeReviewPageSize(event.target.value || 100);
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("page-size");
     focusComparisonReviewSummary();
     focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
   });
@@ -5931,6 +7046,7 @@ function renderAnalysisComparisonReviewPanel() {
     if (pagination.currentPage <= 1) return;
     state.analysis.reviewPageNumber = pagination.currentPage - 1;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("prev-page");
     focusComparisonReviewSummary();
   });
 
@@ -5938,6 +7054,7 @@ function renderAnalysisComparisonReviewPanel() {
     if (pagination.currentPage >= pagination.totalPages) return;
     state.analysis.reviewPageNumber = pagination.currentPage + 1;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("next-page");
     focusComparisonReviewSummary();
   });
 
@@ -5950,6 +7067,7 @@ function renderAnalysisComparisonReviewPanel() {
     );
     state.analysis.reviewPageNumber = requestedPage;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("go-page");
     focusComparisonReviewSummary();
   });
 
@@ -6011,21 +7129,23 @@ function renderAnalysisComparisonReviewPanel() {
       const sortKey = String(header.getAttribute("data-review-sort-key") || "").trim();
       if (!sortKey) return;
       const current = state.analysis.reviewTableSort;
-      state.analysis.reviewTableSort =
-        current.key === sortKey && current.direction === "desc"
-          ? { key: sortKey, direction: "asc" }
-          : { key: sortKey, direction: "desc" };
-      state.analysis.reviewPageNumber = 1;
-      renderAnalysisComparisonReviewPanel();
-      focusComparisonReviewSummary();
-      focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
-    });
+    state.analysis.reviewTableSort =
+      current.key === sortKey && current.direction === "desc"
+        ? { key: sortKey, direction: "asc" }
+        : { key: sortKey, direction: "desc" };
+    state.analysis.reviewPageNumber = 1;
+    renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("sort-change");
+    focusComparisonReviewSummary();
+    focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
+  });
   });
 
   el("analysis-review-threshold-metric")?.addEventListener("change", (event) => {
     state.analysis.reviewThresholdMetric = String(event.target.value || "soldRate").trim();
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("threshold-metric");
     focusComparisonReviewSummary();
     focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
   });
@@ -6034,6 +7154,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.reviewThresholdValue = String(event.target.value || "").trim();
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("threshold-value");
     focusComparisonReviewSummary();
     focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
   });
@@ -6042,6 +7163,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.reviewThresholdValue = "";
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("threshold-clear");
     focusComparisonReviewSummary();
     focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
   });
@@ -6078,10 +7200,12 @@ function renderAnalysisComparisonReviewPanel() {
 
   el("analysis-review-bulk-metric")?.addEventListener("change", (event) => {
     state.analysis.reviewBulkMetric = String(event.target.value || "soldRate").trim();
+    broadcastAnalysisReviewState("bulk-metric");
   });
 
   el("analysis-review-bulk-threshold")?.addEventListener("input", (event) => {
     state.analysis.reviewBulkThresholdValue = String(event.target.value || "").trim();
+    broadcastAnalysisReviewState("bulk-threshold");
   });
 
   el("analysis-review-bulk-remove-button")?.addEventListener("click", () => {
@@ -6104,6 +7228,7 @@ function renderAnalysisComparisonReviewPanel() {
     invalidateComparisonReviewSummary();
 
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("bulk-remove");
     setStatus(
       "analysis-comparison-selection-status",
       removalResult.removedCount
@@ -6128,6 +7253,7 @@ function renderAnalysisComparisonReviewPanel() {
       effectiveSelectedStateValue
     );
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("manual-add");
     setStatus(
       "analysis-comparison-selection-status",
       `SCF ${effectiveSelectedScf} was added to the working ${listType} list. Live lists were not changed.`
@@ -6152,6 +7278,7 @@ function renderAnalysisComparisonReviewPanel() {
     }
     updateWorkingReferenceListEntry(targetListType, effectiveSelectedScf, false);
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("manual-remove");
     setStatus(
       "analysis-comparison-selection-status",
       `SCF ${effectiveSelectedScf} was removed from the working ${listType} list. Live lists were not changed.`
@@ -6180,6 +7307,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.reviewWorkingLists = cloneData(state.analysis.reviewBaselineLists || []);
     invalidateComparisonReviewSummary();
     renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("restore-working-lists");
     setStatus(
       "analysis-comparison-selection-status",
       "Working lists were restored to the live start point."
@@ -7554,6 +8682,7 @@ function bindMonthlyActions() {
   const outputEmptyState = el("preview-empty-state");
   const outputResults = el("preview-results");
   const monthlyOutputRunList = el("monthly-output-run-list");
+  const reportHistoryBody = el("report-history-body");
   const normalizeSelectableMonthlyReportType = (reportType) => {
     const normalized = String(reportType || "").trim();
     return MONTHLY_SELECTABLE_REPORT_TYPES.includes(normalized)
@@ -7623,6 +8752,113 @@ function bindMonthlyActions() {
       monthInput.value = fallback;
     }
     return fallback;
+  };
+
+  const getHistoryArtifact = (run, artifactKinds = []) => {
+    if (!run) {
+      return null;
+    }
+
+    const normalizedKinds = Array.isArray(artifactKinds)
+      ? artifactKinds.map((entry) => String(entry || "").trim().toLowerCase())
+      : [];
+    if (!normalizedKinds.length) {
+      return null;
+    }
+
+    return ensureArray(run.artifacts).find((artifact) => {
+      const kind = String(artifact?.kind || "").trim().toLowerCase();
+      return normalizedKinds.includes(kind);
+    }) || null;
+  };
+
+  const renderReportHistoryRows = (runs) => {
+    if (!reportHistoryBody) {
+      return;
+    }
+
+    const normalizedRuns = ensureArray(runs)
+      .map((entry) => ({
+        ...entry,
+        _sortMonth: String(entry?.reportMonth || "").trim(),
+      }))
+      .filter((entry) => entry.reportMonth);
+
+    normalizedRuns.sort((left, right) => {
+      if (left._sortMonth !== right._sortMonth) {
+        return String(right._sortMonth).localeCompare(String(left._sortMonth));
+      }
+      return (
+        new Date(right?.updatedAt || right?.createdAt || 0).getTime() -
+        new Date(left?.updatedAt || left?.createdAt || 0).getTime()
+      );
+    });
+
+    const empty = el("report-history-empty-row");
+    if (empty) {
+      empty.remove();
+    }
+    reportHistoryBody.innerHTML = "";
+
+    if (!normalizedRuns.length) {
+      const row = document.createElement("tr");
+      row.innerHTML = '<td colspan="6" class="empty-cell">No report history yet.</td>';
+      reportHistoryBody.appendChild(row);
+      return;
+    }
+
+    normalizedRuns.forEach((run) => {
+      const reportName = esc(run.reportName || MONTHLY_REPORT_LABELS[run.reportType] || "Month-End Report");
+      const reportMonth = esc(run.reportMonthLabel || formatRunMonth(run.reportMonth));
+      const runDate = esc(formatDate(run.updatedAt || run.createdAt || ""));
+      const status = esc(String(run.status || "").trim() || "queued");
+      const excelArtifact = getHistoryArtifact(run, ["spreadsheet"]);
+      const printArtifact = getHistoryArtifact(run, [
+        "print",
+        "summary-letter-preview",
+      ]) || getHistoryArtifact(run, ["summary-letter", "summary-letter-html"]);
+
+      reportHistoryBody.appendChild(Object.assign(document.createElement("tr"), {
+        innerHTML: `
+          <td>${reportName}</td>
+          <td>${reportMonth}</td>
+          <td>${runDate}</td>
+          <td>${status}</td>
+          <td>${
+            excelArtifact
+              ? `<a href="${esc(String(excelArtifact.url || ""))}" download="${esc(String(excelArtifact.fileName || "monthly-report.xlsx"))}">${esc(String(excelArtifact.fileName || "Download Excel"))}</a>`
+              : "-"
+          }</td>
+          <td>${
+            printArtifact
+              ? `<a href="${esc(String(printArtifact.url || ""))}" target="_blank">${esc(String(printArtifact.fileName || "Download"))}</a>`
+              : "-"
+          }</td>
+        `,
+      }));
+    });
+  };
+
+  state.monthly.refreshHistory = async () => {
+    try {
+      const payload = await apiRequest("/api/monthly-reports");
+      const runs = Array.isArray(payload?.runs) ? payload.runs : [];
+      renderReportHistoryRows(runs);
+      const latest = Array.isArray(runs) && runs.length
+        ? runs.filter((entry) => String(entry?.status || "").toLowerCase() !== "running")
+            .sort((left, right) => new Date(right?.updatedAt || right?.createdAt || 0).getTime() - new Date(left?.updatedAt || left?.createdAt || 0).getTime())[0]
+        : null;
+      if (latest && latest.reportMonthLabel) {
+        setStatus("report-status-text", `Loaded report history through ${latest.reportMonthLabel}.`);
+      }
+    } catch (error) {
+      if (reportHistoryBody) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="6" class="empty-cell">Unable to load report history: ${esc(error.message)}</td>`;
+        reportHistoryBody.innerHTML = "";
+        reportHistoryBody.appendChild(row);
+      }
+    }
   };
 
   const formatMonthOrDefault = (month) => formatRunMonth(month || getPreviousMonthValue());
@@ -8739,18 +9975,21 @@ function initSalesforceStatus() {
 
 async function init() {
   bindPrimaryNavigation();
+  setupAnalysisReviewSync();
   bindAnalysisButtons();
   bindAnalysisSubtabs();
   bindMailingListEvents();
   bindApplicationEvents();
   bindCcPaymentImportEvents();
   bindCheckImportEvents();
+  bindAchReturnEvents();
   bindMonthlyActions();
   if (!state.applications.current) {
     state.applications.current = createEmptyApplication();
   }
 
   const persistedUiState = readPersistedUiState();
+  const persistedAchReturnDraftState = readPersistedAchReturnDraftState();
   const launchState = readLaunchStateFromUrl();
     if (persistedUiState?.analysis) {
       state.analysis.panel = String(persistedUiState.analysis.panel || state.analysis.panel);
@@ -8762,6 +10001,13 @@ async function init() {
         ? String(persistedUiState.analysis.mailingListType || "").toLowerCase()
         : "dnm";
       state.analysis.navExpanded = persistedUiState.analysis.navExpanded !== false;
+    }
+    if (persistedUiState?.achReturns?.currentSessionId) {
+      state.achReturns.currentSessionId = String(persistedUiState.achReturns.currentSessionId || "").trim();
+    }
+    if (persistedAchReturnDraftState) {
+      state.achReturns.draft = persistedAchReturnDraftState.draft || null;
+      state.achReturns.emailBody = String(persistedAchReturnDraftState.emailBody || "");
     }
 
   if (launchState?.analysis) {
@@ -8804,6 +10050,10 @@ async function init() {
   if (launchState?.importSession?.route === "check-imports") {
     state.checkImports.launchSessionId = launchState.importSession.sessionId || "";
     state.checkImports.popup = launchState.importSession.popup === true;
+  }
+
+  if (launchState?.importSession?.route === "ach-returns") {
+    state.achReturns.currentSessionId = launchState.importSession.sessionId || "";
   }
 
   const initialRoute = String(launchState?.route || persistedUiState?.route || "dashboard").trim() || "dashboard";

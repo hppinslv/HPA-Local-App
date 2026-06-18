@@ -83,6 +83,7 @@ const {
 } = require("./services/checkImportService");
 const {
   clearCurrentAchReturnSession,
+  confirmAchReturnImport,
   createAchReturnRow,
   exportAchReturnSession,
   getAchReturnSession,
@@ -296,7 +297,9 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  if (requestUrl.pathname === "/api/ach-returns/parse" && request.method === "POST") {
+  const achReturnsPath = requestUrl.pathname.replace(/\/+$/, "");
+
+  if (achReturnsPath === "/api/ach-returns/parse" && request.method === "POST") {
     collectRequestBody(request)
       .then(async (body) => {
         const preview = await previewAchReturn(body.emailBody || "");
@@ -308,7 +311,7 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  if (requestUrl.pathname === "/api/ach-returns/rows" && request.method === "POST") {
+  if (achReturnsPath === "/api/ach-returns/rows" && request.method === "POST") {
     collectRequestBody(request)
       .then(async (body) => {
         const session = await createAchReturnRow({
@@ -327,7 +330,7 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  if (requestUrl.pathname === "/api/ach-returns/current/clear" && request.method === "POST") {
+  if (achReturnsPath === "/api/ach-returns/current/clear" && request.method === "POST") {
     try {
       clearCurrentAchReturnSession();
       sendJson(response, 200, {
@@ -337,6 +340,26 @@ const server = http.createServer((request, response) => {
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to clear ACH reversal table." });
     }
+    return;
+  }
+
+  const achReturnConfirmImportMatch = requestUrl.pathname.match(
+    /^\/api\/ach-returns\/([^/]+)\/confirm-import$/
+  );
+  if (achReturnConfirmImportMatch && request.method === "POST") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await confirmAchReturnImport(achReturnConfirmImportMatch[1], {
+          confirmedBy: body.confirmedBy || body.user,
+        });
+        sendJson(response, 200, {
+          session,
+          sessions: listAchReturnSessions(),
+        });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to import ACH return credits." });
+      });
     return;
   }
 

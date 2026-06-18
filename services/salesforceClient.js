@@ -887,6 +887,57 @@ function buildAnalysisDetailSoqlPlan(describePayload, filters = {}) {
   };
 }
 
+function buildRawDetailSoqlPlan(describePayload) {
+  const reportMetadata = describePayload.reportMetadata || {};
+  const fields = mapDescribeFields(describePayload);
+
+  if (fields.length === 0) {
+    throw new Error("Salesforce report is missing detail columns.");
+  }
+
+  const objectName =
+    fields.find((field) => String(field.rootObject || "").trim())?.rootObject ||
+    getRootObjectName(fields[0].fullyQualifiedName || fields[0].key);
+
+  const dateField =
+    translateReportFieldToSoql(reportMetadata.standardDateFilter?.column, objectName) ||
+    fields.find((field) => looksLikeDateLabel(field.normalized))?.soqlField ||
+    "";
+  const dateFieldInfo =
+    fields.find((field) => field.soqlField === dateField) || {
+      dataType: inferSoqlFieldDataType(dateField),
+    };
+
+  const whereClauses = [];
+  const startDate = String(reportMetadata.standardDateFilter?.startDate || "").trim();
+  const endDate = String(reportMetadata.standardDateFilter?.endDate || "").trim();
+
+  if (dateField && startDate) {
+    whereClauses.push(
+      `${dateField} >= ${formatSoqlBoundaryValue(startDate, dateFieldInfo.dataType, "start")}`
+    );
+  }
+  if (dateField && endDate) {
+    whereClauses.push(
+      `${dateField} <= ${formatSoqlBoundaryValue(endDate, dateFieldInfo.dataType, "end")}`
+    );
+  }
+
+  (reportMetadata.reportFilters || []).forEach((filter) => {
+    const clause = buildFilterClause(filter, describePayload, objectName);
+    if (clause) {
+      whereClauses.push(clause);
+    }
+  });
+
+  return {
+    objectName,
+    dateField,
+    whereClauses,
+    fields,
+  };
+}
+
 function buildAggregateSoql(describePayload, reportMonth) {
   const dateRange = getMonthDateRange(reportMonth);
   const plan = buildAggregateQueryPlan(describePayload);
@@ -1857,12 +1908,35 @@ async function fetchRawSalesforceReportRows(reportId) {
     tokenRecord,
     normalizedReportId
   );
+  const reportName = describePayload?.reportMetadata?.name || normalizedReportId;
+  const shouldFallbackToSoql =
+    reportPayload?.allData === false &&
+    reportPayload?.hasExceededTabularRowLimit === true;
+
+  if (shouldFallbackToSoql) {
+    const plan = buildRawDetailSoqlPlan(describePayload);
+    const { records, fields } = await runDetailSoqlWithFallback(tokenRecord, plan);
+    const rows = records.map((record) => buildRowObjectFromSoqlRecord(record, fields));
+
+    return {
+      reportId: normalizedReportId,
+      reportName,
+      columns: fields.map((field) => ({
+        key: field.key,
+        label: field.label,
+        normalized: field.normalized,
+        dataType: field.dataType,
+      })),
+      rows,
+    };
+  }
+
   const columnMap = mapColumnLabels(reportPayload);
   const rows = getDetailRows(reportPayload).map((row) => buildRowObject(row, columnMap));
 
   return {
     reportId: normalizedReportId,
-    reportName: describePayload?.reportMetadata?.name || normalizedReportId,
+    reportName,
     columns: columnMap.map((column) => ({
       key: column.key,
       label: column.label,

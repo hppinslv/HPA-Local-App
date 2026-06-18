@@ -18,7 +18,7 @@ const {
 const {
   writeArtifacts: writeAmalgamatedArtifacts,
 } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/exportWorkbook");
-const { formatReportMonth } = require("./monthlyReportServiceHelpers");
+const { formatReportMonth, formatReportMonthFilePrefix } = require("./monthlyReportServiceHelpers");
 const { generatePdfFromHtml } = require("./pdfPrintService");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
@@ -1149,11 +1149,12 @@ function createFinalSummaryLetterArtifacts(runId, report) {
   const letterData = buildFinalSummaryLetterData(report);
   validateFinalSummaryLetterData(letterData);
 
+  const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
   const safeMonthLabel = letterData.reportMonthLabel.replace(/[^A-Za-z0-9-]/g, "-");
   const docxFileName = `Final_Summary_Letter_${safeMonthLabel}.docx`;
-  const pdfFileName = `final-summary-letter-${report.reportMonth}.pdf`;
-  const htmlFileName = `final-summary-letter-${report.reportMonth}.html`;
-  const jsonFileName = `final-summary-letter-${report.reportMonth}.json`;
+  const pdfFileName = `${filePrefix}_Premier - Letter.pdf`;
+  const htmlFileName = `${filePrefix}_Premier - Letter.html`;
+  const jsonFileName = `${filePrefix}_Premier - Letter.json`;
   const printableHtml = buildFinalSummaryLetterHtml(letterData);
 
   buildFinalSummaryLetterDocx(letterData, path.join(runDir, docxFileName));
@@ -1823,9 +1824,10 @@ function writeArtifacts(runId, report) {
   const runDir = path.join(GENERATED_DIR, runId);
   ensureDir(runDir);
 
-  const workbookFileName = `AHA HPA Transaction Summary - ${report.reportMonthLabel}.xlsm`;
-  const pdfFileName = `aha-hpa-transaction-summary-${report.reportMonth}.pdf`;
-  const jsonFileName = `aha-hpa-transaction-summary-${report.reportMonth}.json`;
+  const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
+  const workbookFileName = `${filePrefix}_AHA HPA Transaction Summary.xlsm`;
+  const pdfFileName = `${filePrefix}_AHA HPA Transaction Summary.pdf`;
+  const jsonFileName = `${filePrefix}_AHA HPA Transaction Summary.json`;
   const printableHtml = buildPrintableHtml(report);
 
   buildTemplateWorkbook(report, path.join(runDir, workbookFileName));
@@ -1915,6 +1917,7 @@ function buildRecoveredArtifacts(run) {
   }
 
   const reportMonthLabel = formatReportMonth(reportMonth);
+  const filePrefix = formatReportMonthFilePrefix(reportMonth);
   const artifacts = [];
   const pushArtifact = (kind, label, fileName, contentType) => {
     if (!fileName) {
@@ -1928,20 +1931,25 @@ function buildRecoveredArtifacts(run) {
       "spreadsheet",
       "Download Workbook",
       findFirstExistingArtifactFile(runDir, [
+        `${filePrefix}_AHA HPA Transaction Detail.xlsx`,
         `AHA HPA Transaction Detail - ${reportMonthLabel}.xlsx`,
       ]),
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     pushArtifact(
       "print",
-      fs.existsSync(path.join(runDir, `aha-hpa-transaction-detail-${reportMonth}.pdf`))
+      fs.existsSync(path.join(runDir, `${filePrefix}_AHA HPA Transaction Detail.pdf`))
+        || fs.existsSync(path.join(runDir, `aha-hpa-transaction-detail-${reportMonth}.pdf`))
         ? "Download PDF"
         : "Open Print View",
       findFirstExistingArtifactFile(runDir, [
+        `${filePrefix}_AHA HPA Transaction Detail.pdf`,
+        `${filePrefix}_AHA HPA Transaction Detail.html`,
         `aha-hpa-transaction-detail-${reportMonth}.pdf`,
         `aha-hpa-transaction-detail-${reportMonth}.html`,
       ]),
-      fs.existsSync(path.join(runDir, `aha-hpa-transaction-detail-${reportMonth}.pdf`))
+      fs.existsSync(path.join(runDir, `${filePrefix}_AHA HPA Transaction Detail.pdf`))
+        || fs.existsSync(path.join(runDir, `aha-hpa-transaction-detail-${reportMonth}.pdf`))
         ? "application/pdf"
         : "text/html; charset=utf-8"
     );
@@ -1949,6 +1957,7 @@ function buildRecoveredArtifacts(run) {
       "json",
       "Download JSON",
       findFirstExistingArtifactFile(runDir, [
+        `${filePrefix}_AHA HPA Transaction Detail.json`,
         `aha-hpa-transaction-detail-${reportMonth}.json`,
       ]),
       "application/json; charset=utf-8"
@@ -1961,20 +1970,25 @@ function buildRecoveredArtifacts(run) {
       "spreadsheet",
       "Download Workbook",
       findFirstExistingArtifactFile(runDir, [
+        `${filePrefix}_Amalgamated_Premium_Remittance.xlsx`,
         `Amalgamated_Premium_Remittance_${reportMonth.replace("-", "_")}.xlsx`,
       ]),
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     pushArtifact(
       "print",
-      fs.existsSync(path.join(runDir, `amalgamated-premium-remittance-${reportMonth}.pdf`))
+      fs.existsSync(path.join(runDir, `${filePrefix}_Amalgamated_Premium_Remittance.pdf`))
+        || fs.existsSync(path.join(runDir, `amalgamated-premium-remittance-${reportMonth}.pdf`))
         ? "Download PDF"
         : "Open Print View",
       findFirstExistingArtifactFile(runDir, [
+        `${filePrefix}_Amalgamated_Premium_Remittance.pdf`,
+        `${filePrefix}_Amalgamated_Premium_Remittance.html`,
         `amalgamated-premium-remittance-${reportMonth}.pdf`,
         `amalgamated-premium-remittance-${reportMonth}.html`,
       ]),
-      fs.existsSync(path.join(runDir, `amalgamated-premium-remittance-${reportMonth}.pdf`))
+      fs.existsSync(path.join(runDir, `${filePrefix}_Amalgamated_Premium_Remittance.pdf`))
+        || fs.existsSync(path.join(runDir, `amalgamated-premium-remittance-${reportMonth}.pdf`))
         ? "application/pdf"
         : "text/html; charset=utf-8"
     );
@@ -1982,6 +1996,7 @@ function buildRecoveredArtifacts(run) {
       "json",
       "Download JSON",
       findFirstExistingArtifactFile(runDir, [
+        `${filePrefix}_Amalgamated_Premium_Remittance.json`,
         `amalgamated-premium-remittance-${reportMonth}.json`,
       ]),
       "application/json; charset=utf-8"
@@ -1990,7 +2005,7 @@ function buildRecoveredArtifacts(run) {
   }
 
   if (run.reportType === FINAL_SUMMARY_LETTER_REPORT_TYPE) {
-    const generatedPdfPath = path.join(runDir, `final-summary-letter-${reportMonth}.pdf`);
+    const generatedPdfPath = path.join(runDir, `${filePrefix}_Premier - Letter.pdf`);
     if (
       !fs.existsSync(generatedPdfPath) &&
       run?.report?.finalSummaryLetter
@@ -2006,10 +2021,13 @@ function buildRecoveredArtifacts(run) {
       "print",
       "Download PDF",
       findFirstExistingArtifactFile(runDir, [
+        `${filePrefix}_Premier - Letter.pdf`,
+        `${filePrefix}_Premier - Letter.html`,
         `final-summary-letter-${reportMonth}.pdf`,
         `final-summary-letter-${reportMonth}.html`,
       ]),
-      fs.existsSync(path.join(runDir, `final-summary-letter-${reportMonth}.pdf`))
+      fs.existsSync(path.join(runDir, `${filePrefix}_Premier - Letter.pdf`))
+        || fs.existsSync(path.join(runDir, `final-summary-letter-${reportMonth}.pdf`))
         ? "application/pdf"
         : "text/html; charset=utf-8"
     );
@@ -2020,20 +2038,25 @@ function buildRecoveredArtifacts(run) {
     "spreadsheet",
     "Download Workbook",
     findFirstExistingArtifactFile(runDir, [
+      `${filePrefix}_AHA HPA Transaction Summary.xlsm`,
       `AHA HPA Transaction Summary - ${reportMonthLabel}.xlsm`,
     ]),
     "application/vnd.ms-excel.sheet.macroEnabled.12"
   );
   pushArtifact(
     "print",
-    fs.existsSync(path.join(runDir, `aha-hpa-transaction-summary-${reportMonth}.pdf`))
+    fs.existsSync(path.join(runDir, `${filePrefix}_AHA HPA Transaction Summary.pdf`))
+      || fs.existsSync(path.join(runDir, `aha-hpa-transaction-summary-${reportMonth}.pdf`))
       ? "Download PDF"
       : "Open Print View",
     findFirstExistingArtifactFile(runDir, [
+      `${filePrefix}_AHA HPA Transaction Summary.pdf`,
+      `${filePrefix}_AHA HPA Transaction Summary.html`,
       `aha-hpa-transaction-summary-${reportMonth}.pdf`,
       `aha-hpa-transaction-summary-${reportMonth}.html`,
     ]),
-    fs.existsSync(path.join(runDir, `aha-hpa-transaction-summary-${reportMonth}.pdf`))
+    fs.existsSync(path.join(runDir, `${filePrefix}_AHA HPA Transaction Summary.pdf`))
+      || fs.existsSync(path.join(runDir, `aha-hpa-transaction-summary-${reportMonth}.pdf`))
       ? "application/pdf"
       : "text/html; charset=utf-8"
   );
@@ -2041,6 +2064,7 @@ function buildRecoveredArtifacts(run) {
     "json",
     "Download JSON",
     findFirstExistingArtifactFile(runDir, [
+      `${filePrefix}_AHA HPA Transaction Summary.json`,
       `aha-hpa-transaction-summary-${reportMonth}.json`,
     ]),
     "application/json; charset=utf-8"
@@ -2055,10 +2079,13 @@ function buildRecoveredArtifacts(run) {
     "summary-letter-preview",
     "Open Final Summary Letter Preview",
     findFirstExistingArtifactFile(runDir, [
+      `${filePrefix}_Premier - Letter.pdf`,
+      `${filePrefix}_Premier - Letter.html`,
       `final-summary-letter-${reportMonth}.pdf`,
       `final-summary-letter-${reportMonth}.html`,
     ]),
-    fs.existsSync(path.join(runDir, `final-summary-letter-${reportMonth}.pdf`))
+    fs.existsSync(path.join(runDir, `${filePrefix}_Premier - Letter.pdf`))
+      || fs.existsSync(path.join(runDir, `final-summary-letter-${reportMonth}.pdf`))
       ? "application/pdf"
       : "text/html; charset=utf-8"
   );
@@ -2066,6 +2093,7 @@ function buildRecoveredArtifacts(run) {
     "summary-letter-json",
     "Download Final Summary Letter JSON",
     findFirstExistingArtifactFile(runDir, [
+      `${filePrefix}_Premier - Letter.json`,
       `final-summary-letter-${reportMonth}.json`,
     ]),
     "application/json; charset=utf-8"

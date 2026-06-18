@@ -7,6 +7,17 @@ function formatReportMonth(monthValue) {
   });
 }
 
+function formatReportMonthFilePrefix(monthValue) {
+  const [year, month] = String(monthValue || "").trim().split("-");
+  const normalizedYear = String(year || "").trim();
+  const normalizedMonth = String(month || "").trim().padStart(2, "0");
+  if (!/^\d{4}$/.test(normalizedYear) || !/^\d{2}$/.test(normalizedMonth)) {
+    return "0000.00";
+  }
+  return `${normalizedYear}.${normalizedMonth}`;
+}
+
 module.exports = {
   formatReportMonth,
+  formatReportMonthFilePrefix,
 };
