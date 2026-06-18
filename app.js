@@ -1,0 +1,8316 @@
+"use strict";
+
+const UI = {
+  navButtons: ".nav-link",
+  reportTypeButtons: '[data-report-picker]',
+};
+
+const MONTHLY_REPORT_LABELS = {
+  "transaction-summary": "Transaction Summary",
+  "transaction-detail": "Transaction Detail",
+  "amalgamated-premium-remittance": "Amalgamated Remittance",
+  "final-summary-letter": "Final Summary Letter",
+};
+
+const MONTHLY_ALL_REPORT_LABEL = "All Reports";
+const MONTHLY_RUN_BUTTON_TYPES = [
+  "transaction-summary",
+  "transaction-detail",
+  "amalgamated-premium-remittance",
+];
+const MONTHLY_SELECTABLE_REPORT_TYPES = [
+  ...MONTHLY_RUN_BUTTON_TYPES,
+  "final-summary-letter",
+];
+const MONTHLY_ALL_REPORT_TYPES = [
+  "transaction-summary",
+  "transaction-detail",
+  "amalgamated-premium-remittance",
+  "final-summary-letter",
+];
+const MONTHLY_STALE_RUN_MS = 10 * 60 * 1000;
+
+const DEFAULT_ANALYSIS_REPORT_ID = "00OQm000003PIxhMAG";
+const ANALYSIS_SETUP_STORAGE_KEY = "hpa.analysis.currentSetupId";
+const ANALYSIS_KEY_CODE_GROUPS = ["NHCL", "RFC"];
+const ANALYSIS_CLIENT_TYPE_OPTIONS = ["NHCL", "RFC"];
+const APPLICATION_DEFAULTS = Object.freeze({
+  dues: "19.95",
+  freeCoverageAmount: "3000",
+  onePersonPer1000: "0.22",
+  twoPersonPer1000: "0.33",
+});
+const UI_STATE_STORAGE_KEY = "hpa.ui.currentState";
+const COMPARISON_DEBUG_QUERY_PARAM = "debugComparisonPicker";
+const ANALYSIS_REVIEW_POPUP_QUERY_PARAM = "analysisReviewPopup";
+
+function getDefaultAnalysisName() {
+  return new Date().toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+const state = {
+  route: "dashboard",
+  analysis: {
+    panel: "home",
+    subtab: "runs",
+    mailingListType: "dnm",
+    navExpanded: true,
+    search: "",
+    runName: "",
+    runNotes: "",
+    currentSetupId: "",
+    currentRunId: "",
+    currentReportId: "",
+    runPollHandle: null,
+    resultMode: "",
+    resultRun: null,
+    resultReport: null,
+    tableSorts: {},
+    reportPulls: [],
+    comparisonRequests: [],
+    comparisonLinks: [],
+    comparisonResults: [],
+    savedReports: [],
+    selectedComparisonId: "",
+    lastEditedComparisonId: "",
+    reviewTableSort: { key: "soldRate", direction: "desc" },
+    reviewThresholdMetric: "soldRate",
+    reviewThresholdValue: "",
+    reviewBulkMetric: "soldRate",
+    reviewBulkThresholdValue: "",
+    reviewPageSize: 100,
+    reviewPageNumber: 1,
+    reviewPrimaryReportIds: {},
+    reviewSelectedScfs: {},
+    reviewBaselineLists: [],
+    reviewWorkingLists: [],
+    reviewSummary: null,
+    reviewSummaryMode: "review",
+    reviewSummaryNotes: "",
+    reportScfMetricCache: {},
+    editingReportId: "",
+    editingReportTitle: "",
+    selectedReportIds: [],
+    setupHydrated: false,
+    reviewFloatingPanel: {
+      x: 16,
+      y: 16,
+    },
+  },
+  monthly: {
+    reportType: "transaction-summary",
+    reportRunMode: "single",
+    runAllMonitorHandle: null,
+    runAllIds: [],
+    singleRunMonitorHandle: null,
+    singleRunId: "",
+    refreshOutput: null,
+  },
+  applications: {
+    list: [],
+    current: null,
+    selectedId: "",
+    previewVisible: false,
+    showAlignmentBoxes: false,
+    loaded: false,
+  },
+  ccPayments: {
+    templates: [],
+    selectedTemplateKey: "",
+    sessions: [],
+    currentSessionId: "",
+    currentSession: null,
+    filter: "all",
+  },
+  referenceLists: [],
+};
+
+const setStatus = (id, message) => {
+  const el = document.getElementById(id);
+  if (el) el.textContent = message || "";
+};
+
+const el = (id) => document.getElementById(id);
+const all = (selector) => Array.from(document.querySelectorAll(selector));
+const esc = (value) =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const cloneData = (value) => JSON.parse(JSON.stringify(value));
+const ensureArray = (value) => (Array.isArray(value) ? value : []);
+const comparisonDebugEnabled = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get(COMPARISON_DEBUG_QUERY_PARAM) === "1";
+  } catch {
+    return false;
+  }
+})();
+let comparisonDebugLogContainer = null;
+let comparisonDebugAutoTestRan = false;
+let comparisonDebugListenersBound = false;
+
+function logComparisonDebug(...parts) {
+  if (!comparisonDebugEnabled) {
+    return;
+  }
+  console.log(...parts);
+  if (!(comparisonDebugLogContainer instanceof HTMLElement)) {
+    return;
+  }
+  const line = parts
+    .map((part) => {
+      if (typeof part === "string") return part;
+      try {
+        return JSON.stringify(part);
+      } catch {
+        return String(part);
+      }
+    })
+    .join(" ");
+  comparisonDebugLogContainer.textContent += `${line}\n`;
+}
+
+function getSelectedAnalysisReportIds() {
+  return Array.isArray(state.analysis.selectedReportIds)
+    ? state.analysis.selectedReportIds
+    : [];
+}
+
+function setSelectedAnalysisReportIds(nextIds) {
+  state.analysis.selectedReportIds = Array.from(
+    new Set(
+      ensureArray(nextIds)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+const normalizeScf = (value) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.slice(-3).padStart(3, "0");
+};
+
+const normalizeState = (value) => String(value || "").trim().toUpperCase();
+
+const normalizeIsoDateInput = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  const slashIsoMatch = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (slashIsoMatch) {
+    const [, year, month, day] = slashIsoMatch;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, month, day, year] = slashMatch;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  return raw;
+};
+
+const createClientId = (prefix) =>
+  `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+const formatDate = (value) => {
+  if (!value) return "Not set";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const formatReportDateStamp = (value) => {
+  const d = value ? new Date(value) : new Date();
+  const safeDate = Number.isNaN(d.getTime()) ? new Date() : d;
+  return `${safeDate.getFullYear()}.${String(safeDate.getMonth() + 1).padStart(2, "0")}.${String(safeDate.getDate()).padStart(2, "0")}`;
+};
+
+function getAnalysisReportDisplayName(report) {
+  const rawName = String(report?.report_name || report?.reportName || report?.id || "Report").trim();
+  const prefixMatch = rawName.match(/^(RFC|NHCL)\b[\s-]*(.*)$/i);
+  if (!prefixMatch) {
+    return rawName;
+  }
+
+  const prefix = String(prefixMatch[1] || "").trim().toUpperCase();
+  let remainder = String(prefixMatch[2] || "").replace(/^\s*-\s*/, "").trim();
+  const runMonth = String(report?.run_month || report?.runMonth || "").trim();
+  const runYear = String(report?.run_year || report?.runYear || "").trim();
+  const trailingRunLabel = runMonth && runYear ? `${runMonth} ${runYear}` : "";
+  if (
+    trailingRunLabel &&
+    remainder.toLowerCase().endsWith(trailingRunLabel.toLowerCase())
+  ) {
+    remainder = remainder
+      .slice(0, remainder.length - trailingRunLabel.length)
+      .replace(/\s*-\s*$/, "")
+      .trim();
+  }
+
+  const dateStamp = formatReportDateStamp(report?.created_at || report?.createdAt || "");
+  return remainder ? `${prefix} ${dateStamp} - ${remainder}` : `${prefix} ${dateStamp}`;
+}
+
+const formatMonthLabel = (value) => {
+  if (!value) return "previous month";
+  const match = String(value).match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return String(value);
+  }
+
+  const [, yearRaw, monthRaw] = match;
+  const year = Number(yearRaw);
+  const month = Number(monthRaw) - 1;
+  if (!Number.isInteger(year) || month < 0 || month > 11) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(Date.UTC(year, month, 1)));
+};
+
+function formatAutoAnalysisMonthPart(value) {
+  const normalized = normalizeIsoDateInput(value || "");
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return "";
+  }
+
+  const [, yearRaw, monthRaw] = match;
+  const year = Number(yearRaw);
+  const month = Number(monthRaw) - 1;
+  if (!Number.isInteger(year) || month < 0 || month > 11) {
+    return "";
+  }
+
+  const monthLabel = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(
+    new Date(Date.UTC(year, month, 1))
+  );
+  return `${monthLabel} ${String(year)}`;
+}
+
+function buildAutoAnalysisLabel(pull = {}, index = 0) {
+  const keyCode = String((pull.keyCodes || [])[0] || pull.clientType || "").trim().toUpperCase();
+  const startDate = normalizeIsoDateInput(pull.dateRange?.startDate || "");
+  const endDate = normalizeIsoDateInput(pull.dateRange?.endDate || "");
+
+  if (keyCode && startDate && endDate) {
+    const startLabel = formatAutoAnalysisMonthPart(startDate);
+    const endLabel = formatAutoAnalysisMonthPart(endDate);
+    if (startLabel && endLabel) {
+      return `${keyCode} - ${startLabel} - ${endLabel}`;
+    }
+  }
+
+  if (keyCode) {
+    return keyCode;
+  }
+
+  return "Choose Key Code and dates";
+}
+
+const getFilenameFromDisposition = (disposition, fallback) => {
+  if (!disposition) return fallback;
+  const match = disposition.match(
+    /filename\*=UTF-8''([^;\n]+)|filename=\"([^\"]+)\"|filename=([^;\n]+)/i
+  );
+  if (!match) return fallback;
+  return decodeURIComponent(match[1] || match[2] || match[3] || fallback);
+};
+
+const apiRequest = async (url, options = {}) => {
+  const init = {
+    method: (options.method || "GET").toUpperCase(),
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      ...(options.headers || {}),
+    },
+  };
+  if (!["GET", "HEAD"].includes(init.method)) {
+    init.body = JSON.stringify(options.body || {});
+  }
+
+  const res = await fetch(url, init);
+  const raw = await res.text();
+  let payload = {};
+  if (raw) {
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = { raw };
+    }
+  }
+  if (!res.ok) {
+    throw new Error(payload.error || payload.message || `${res.status} ${res.statusText}`);
+  }
+  return payload;
+};
+
+const apiDownload = async (url, fallbackFileName) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const text = await res.text();
+    let payload = {};
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { raw: text };
+      }
+    }
+    throw new Error(payload.error || payload.message || payload.raw || `${res.status} ${res.statusText}`);
+  }
+  const blob = await res.blob();
+  const filename = getFilenameFromDisposition(
+    res.headers.get("content-disposition"),
+    fallbackFileName || "reference-list.xlsx"
+  );
+  const a = document.createElement("a");
+  const urlObj = URL.createObjectURL(blob);
+  a.href = urlObj;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(urlObj);
+};
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function createEmptyApplication() {
+  return {
+    id: "",
+    customerMailingInformation: "",
+    lender: "",
+    coverageAmount: "",
+    caseNumber: "",
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function normalizeApplicationText(value) {
+  return String(value || "").trim();
+}
+
+function parseApplicationNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return null;
+  }
+  const negativeByParens = text.startsWith("(") && text.endsWith(")");
+  const parsed = Number(text.replace(/[$,\s()]/g, ""));
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return negativeByParens ? -parsed : parsed;
+}
+
+function formatApplicationCurrency(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "$0.00";
+  }
+  return numericValue.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function formatApplicationWholeDollarCurrency(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "$0";
+  }
+  return numericValue.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+}
+
+function formatApplicationNumber(value, fractionDigits = 2) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "";
+  }
+  return numericValue.toLocaleString("en-US", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
+function formatApplicationDate(value) {
+  const normalized = normalizeIsoDateInput(value || "");
+  if (!normalized) {
+    return "";
+  }
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return normalized;
+  }
+  const [, year, month, day] = match;
+  return `${month}/${day}/${year}`;
+}
+
+function calculateApplicationMetrics(application = {}) {
+  const coverageAmount = parseApplicationNumber(application.coverageAmount);
+  const dues = parseApplicationNumber(APPLICATION_DEFAULTS.dues) ?? 19.95;
+  const onePersonPer1000 = parseApplicationNumber(APPLICATION_DEFAULTS.onePersonPer1000) ?? 0.22;
+  const twoPersonPer1000 = parseApplicationNumber(APPLICATION_DEFAULTS.twoPersonPer1000) ?? 0.33;
+  const coverageDividedBy1000 = Number.isFinite(coverageAmount) ? coverageAmount / 1000 : null;
+  const coverageOverFreeBase = Number.isFinite(coverageDividedBy1000)
+    ? coverageDividedBy1000 - 3
+    : null;
+  const onePersonPremium = Number.isFinite(coverageOverFreeBase)
+    ? Number((coverageOverFreeBase * onePersonPer1000 + dues).toFixed(2))
+    : null;
+  const twoPersonPremium = Number.isFinite(coverageOverFreeBase)
+    ? Number((coverageOverFreeBase * twoPersonPer1000 + dues).toFixed(2))
+    : null;
+
+  return {
+    coverageAmount,
+    dues,
+    onePersonPer1000,
+    twoPersonPer1000,
+    freeCoverageAmount: parseApplicationNumber(APPLICATION_DEFAULTS.freeCoverageAmount) ?? 3000,
+    coverageDividedBy1000,
+    coverageOverFreeBase,
+    onePersonPremium,
+    twoPersonPremium,
+  };
+}
+
+function syncApplicationCalculatedFields() {
+  if (!state.applications.current) {
+    state.applications.current = createEmptyApplication();
+  }
+
+  return calculateApplicationMetrics(state.applications.current);
+}
+
+function createApplicationPayload() {
+  const current = state.applications.current || createEmptyApplication();
+  return {
+    id: current.id || "",
+    customerMailingInformation: normalizeApplicationText(current.customerMailingInformation),
+    lender: normalizeApplicationText(current.lender),
+    coverageAmount: parseApplicationNumber(current.coverageAmount),
+    caseNumber: normalizeApplicationText(current.caseNumber),
+  };
+}
+
+function validateCurrentApplication() {
+  const payload = createApplicationPayload();
+  const errors = [];
+  if (!payload.customerMailingInformation) {
+    errors.push("Customer Mailing Information is required.");
+  }
+  if (!Number.isFinite(payload.coverageAmount)) {
+    errors.push("Coverage Amount is required.");
+  } else if (payload.coverageAmount < 10000 || payload.coverageAmount > 503000) {
+    errors.push("Coverage Amount must be between 10,000 and 503,000.");
+  } else if (payload.coverageAmount % 1000 !== 0) {
+    errors.push("Coverage Amount must be in increments of 1,000.");
+  }
+  const metrics = calculateApplicationMetrics(payload);
+  if (!Number.isFinite(metrics.onePersonPremium) || !Number.isFinite(metrics.twoPersonPremium)) {
+    errors.push("Premiums must calculate before printing.");
+  }
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}
+
+function hydrateApplicationFromServer(entry = {}) {
+  state.applications.current = {
+    id: String(entry.id || "").trim(),
+    customerMailingInformation: String(
+      entry.customer_mailing_information
+      || entry.customerMailingInformation
+      || ""
+    ).trim(),
+    lender: String(entry.lender || "").trim(),
+    coverageAmount: String(entry.coverage_amount ?? entry.coverageAmount ?? ""),
+    caseNumber: String(entry.case_number || entry.caseNumber || "").trim(),
+    createdAt: String(entry.created_at || "").trim(),
+    updatedAt: String(entry.updated_at || "").trim(),
+  };
+  state.applications.selectedId = state.applications.current.id || "";
+  syncApplicationCalculatedFields();
+}
+
+function renderApplicationPreview() {
+  const current = state.applications.current || createEmptyApplication();
+  const metrics = syncApplicationCalculatedFields();
+  const previewPanel = el("applications-preview-panel");
+  if (previewPanel) {
+    previewPanel.classList.toggle("is-hidden", !state.applications.previewVisible);
+  }
+  const printPage = previewPanel?.querySelector(".application-print-page");
+  if (printPage instanceof HTMLElement) {
+    printPage.classList.toggle("show-alignment-boxes", Boolean(state.applications.showAlignmentBoxes));
+  }
+
+  const values = {
+    mailing: current.customerMailingInformation,
+    lender: current.lender ? `Lender: ${current.lender}` : "",
+    coverage: Number.isFinite(metrics.coverageAmount) ? formatApplicationWholeDollarCurrency(metrics.coverageAmount) : "",
+    onePersonPremium: Number.isFinite(metrics.onePersonPremium) ? formatApplicationCurrency(metrics.onePersonPremium) : "",
+    twoPersonPremium: Number.isFinite(metrics.twoPersonPremium) ? formatApplicationCurrency(metrics.twoPersonPremium) : "",
+    caseNumber: current.caseNumber ? `Case Number: ${current.caseNumber}` : "Case Number:",
+  };
+
+  all("[data-app-print-field]").forEach((node) => {
+    const key = node.getAttribute("data-app-print-field");
+    node.textContent = key ? values[key] || "" : "";
+  });
+}
+
+function buildApplicationPrintWindowDocument() {
+  const previewRoot = document.querySelector("#applications-preview-panel .application-print-root");
+  if (!(previewRoot instanceof HTMLElement)) {
+    throw new Error("Application print template is not available.");
+  }
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Print Application</title>
+    <link rel="stylesheet" href="./applications-print.css" />
+  </head>
+  <body class="application-print-window">
+    <div class="applications-preview-stage">
+      ${previewRoot.outerHTML}
+    </div>
+    <script>
+      window.addEventListener("load", () => {
+        window.setTimeout(() => {
+          window.focus();
+          window.print();
+        }, 150);
+      });
+      window.addEventListener("afterprint", () => {
+        window.close();
+      });
+    </script>
+  </body>
+</html>`;
+}
+
+function renderApplicationsList() {
+  const tbody = el("applications-list-body");
+  if (!tbody) {
+    return;
+  }
+
+  const rows = Array.isArray(state.applications.list) ? state.applications.list : [];
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-cell">No saved applications yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows
+    .map((entry) => `
+      <tr>
+        <td>${esc(String(entry.customer_mailing_information || "").split(/\r?\n/)[0] || "Unnamed application")}</td>
+        <td>${esc(entry.lender || "-")}</td>
+        <td>${esc(formatApplicationCurrency(entry.coverage_amount || 0))}</td>
+        <td>${esc(formatApplicationCurrency(entry.one_person_premium || 0))}</td>
+        <td>${esc(formatApplicationCurrency(entry.two_person_premium || 0))}</td>
+        <td>${esc(formatDate(entry.updated_at || entry.created_at || ""))}</td>
+        <td>
+          <div class="applications-row-actions">
+            <button class="secondary-button" data-action="open-application" data-application-id="${esc(entry.id)}">Open</button>
+            <button class="secondary-button" data-action="delete-application" data-application-id="${esc(entry.id)}">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `)
+    .join("");
+}
+
+function renderApplicationForm() {
+  if (!state.applications.current) {
+    state.applications.current = createEmptyApplication();
+  }
+
+  const current = state.applications.current;
+  const metrics = syncApplicationCalculatedFields();
+
+  all("[data-application-field]").forEach((field) => {
+    const key = field.getAttribute("data-application-field");
+    if (!key) return;
+    const nextValue = current[key] ?? "";
+    if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) {
+      if (field.value !== String(nextValue)) {
+        field.value = String(nextValue);
+      }
+    }
+  });
+
+  const coverageSummary = el("applications-summary-coverage-amount");
+  if (coverageSummary) {
+    coverageSummary.textContent = Number.isFinite(metrics.coverageAmount)
+      ? formatApplicationCurrency(metrics.coverageAmount)
+      : "$0.00";
+  }
+  const onePersonSummary = el("applications-summary-one-person-premium");
+  if (onePersonSummary) {
+    onePersonSummary.textContent = Number.isFinite(metrics.onePersonPremium)
+      ? formatApplicationCurrency(metrics.onePersonPremium)
+      : "$0.00";
+  }
+  const onePersonSidebarSummary = el("applications-summary-one-person-premium-sidebar");
+  if (onePersonSidebarSummary) {
+    onePersonSidebarSummary.textContent = Number.isFinite(metrics.onePersonPremium)
+      ? formatApplicationCurrency(metrics.onePersonPremium)
+      : "$0.00";
+  }
+  const twoPersonSummary = el("applications-summary-two-person-premium");
+  if (twoPersonSummary) {
+    twoPersonSummary.textContent = Number.isFinite(metrics.twoPersonPremium)
+      ? formatApplicationCurrency(metrics.twoPersonPremium)
+      : "$0.00";
+  }
+  const twoPersonSidebarSummary = el("applications-summary-two-person-premium-sidebar");
+  if (twoPersonSidebarSummary) {
+    twoPersonSidebarSummary.textContent = Number.isFinite(metrics.twoPersonPremium)
+      ? formatApplicationCurrency(metrics.twoPersonPremium)
+      : "$0.00";
+  }
+  const caseSummary = el("applications-summary-case-number");
+  if (caseSummary) {
+    caseSummary.textContent = current.caseNumber || "Blank";
+  }
+  const alignmentToggle = el("applications-show-alignment-toggle");
+  if (alignmentToggle instanceof HTMLInputElement) {
+    alignmentToggle.checked = Boolean(state.applications.showAlignmentBoxes);
+  }
+
+  renderApplicationPreview();
+  renderApplicationsList();
+}
+
+async function loadApplications(preferredId = "") {
+  const payload = await apiRequest("/api/applications");
+  state.applications.list = Array.isArray(payload.applications) ? payload.applications : [];
+  state.applications.loaded = true;
+
+  const desiredId = String(preferredId || state.applications.selectedId || "").trim();
+  if (desiredId) {
+    const match = state.applications.list.find((entry) => entry.id === desiredId);
+    if (match) {
+      hydrateApplicationFromServer(match);
+    }
+  }
+
+  if (!state.applications.current) {
+    state.applications.current = createEmptyApplication();
+  }
+
+  renderApplicationForm();
+}
+
+async function openApplicationById(applicationId) {
+  const normalizedId = String(applicationId || "").trim();
+  if (!normalizedId) {
+    return;
+  }
+
+  const payload = await apiRequest(`/api/applications/${encodeURIComponent(normalizedId)}`);
+  hydrateApplicationFromServer(payload.application || {});
+  state.applications.previewVisible = false;
+  renderApplicationForm();
+  setStatus("applications-status", "Application loaded.");
+}
+
+async function saveCurrentApplication(statusMessage = "Application saved.") {
+  const validation = validateCurrentApplication();
+  if (!validation.isValid) {
+    setStatus("applications-status", validation.errors.join(" "));
+    return null;
+  }
+
+  const response = await apiRequest("/api/applications", {
+    method: "POST",
+    body: createApplicationPayload(),
+  });
+  state.applications.list = Array.isArray(response.applications) ? response.applications : state.applications.list;
+  if (response.application) {
+    hydrateApplicationFromServer(response.application);
+  }
+  renderApplicationForm();
+  setStatus("applications-status", statusMessage);
+  return response.application || null;
+}
+
+async function deleteApplicationById(applicationId) {
+  const normalizedId = String(applicationId || "").trim();
+  if (!normalizedId) {
+    return;
+  }
+
+  const response = await apiRequest(`/api/applications/${encodeURIComponent(normalizedId)}`, {
+    method: "DELETE",
+  });
+  state.applications.list = Array.isArray(response.applications) ? response.applications : [];
+  if (state.applications.selectedId === normalizedId) {
+    state.applications.current = createEmptyApplication();
+    state.applications.selectedId = "";
+    state.applications.previewVisible = false;
+  }
+  renderApplicationForm();
+  setStatus("applications-status", "Application deleted.");
+}
+
+function startNewApplication(clearStatus = true) {
+  state.applications.current = createEmptyApplication();
+  state.applications.selectedId = "";
+  state.applications.previewVisible = false;
+  renderApplicationForm();
+  if (clearStatus) {
+    setStatus("applications-status", "New application ready.");
+  }
+}
+
+function bindApplicationEvents() {
+  const form = el("applications-form");
+  form?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    const field = target.getAttribute("data-application-field");
+    if (!field) {
+      return;
+    }
+
+    if (!state.applications.current) {
+      state.applications.current = createEmptyApplication();
+    }
+
+    state.applications.current[field] = String(target.value || "");
+
+    syncApplicationCalculatedFields();
+    renderApplicationForm();
+  });
+
+  el("applications-new-button")?.addEventListener("click", () => {
+    startNewApplication();
+  });
+
+  el("applications-clear-button")?.addEventListener("click", () => {
+    startNewApplication(false);
+    setStatus("applications-status", "Form cleared.");
+  });
+
+  el("applications-show-alignment-toggle")?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+    state.applications.showAlignmentBoxes = target.checked;
+    renderApplicationPreview();
+  });
+
+  el("applications-save-button")?.addEventListener("click", async () => {
+    setStatus("applications-status", "Saving application...");
+    try {
+      await saveCurrentApplication();
+    } catch (error) {
+      setStatus("applications-status", `Unable to save application: ${error.message}`);
+    }
+  });
+
+  el("applications-preview-button")?.addEventListener("click", async () => {
+    const validation = validateCurrentApplication();
+    if (!validation.isValid) {
+      setStatus("applications-status", validation.errors.join(" "));
+      return;
+    }
+    try {
+      await saveCurrentApplication("Application saved and preview updated.");
+      state.applications.previewVisible = true;
+      renderApplicationForm();
+      document.getElementById("applications-preview-panel")?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    } catch (error) {
+      setStatus("applications-status", `Unable to preview application: ${error.message}`);
+    }
+  });
+
+  el("applications-print-button")?.addEventListener("click", async () => {
+    const validation = validateCurrentApplication();
+    if (!validation.isValid) {
+      setStatus("applications-status", validation.errors.join(" "));
+      return;
+    }
+    const printWindow = window.open("", "hpa-application-print", "width=950,height=1200");
+    if (!printWindow) {
+      setStatus("applications-status", "Print window was blocked. Allow pop-ups for this site and try again.");
+      return;
+    }
+    try {
+      await saveCurrentApplication("Application saved. Opening print dialog...");
+      state.applications.previewVisible = true;
+      renderApplicationForm();
+      printWindow.document.open();
+      printWindow.document.write(buildApplicationPrintWindowDocument());
+      printWindow.document.close();
+    } catch (error) {
+      try {
+        printWindow.close();
+      } catch {}
+      setStatus("applications-status", `Unable to print application: ${error.message}`);
+    }
+  });
+
+  el("applications-list-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const action = target.getAttribute("data-action");
+    const applicationId = target.getAttribute("data-application-id");
+    if (!action || !applicationId) {
+      return;
+    }
+
+    if (action === "open-application") {
+      setStatus("applications-status", "Loading application...");
+      try {
+        await openApplicationById(applicationId);
+      } catch (error) {
+        setStatus("applications-status", `Unable to load application: ${error.message}`);
+      }
+      return;
+    }
+
+    if (action === "delete-application") {
+      setStatus("applications-status", "Deleting application...");
+      try {
+        await deleteApplicationById(applicationId);
+      } catch (error) {
+        setStatus("applications-status", `Unable to delete application: ${error.message}`);
+      }
+    }
+  });
+}
+
+function setRoute(route) {
+  const normalizedRoute = String(route || "").trim();
+  if (!normalizedRoute) return;
+
+  all('[data-view]').forEach((tab) => {
+    tab.classList.toggle("is-active", tab.getAttribute("data-view") === normalizedRoute);
+  });
+  all(".nav-link").forEach((btn) => {
+    btn.classList.toggle("is-active", btn.getAttribute("data-route") === normalizedRoute);
+  });
+  state.route = normalizedRoute;
+  persistUiState();
+
+  if (normalizedRoute === "analysis") {
+    showAnalysisPanel(state.analysis.panel || "home");
+    ensureVisibleAnalysisPanel();
+    const activeAnalysisPanel = state.analysis.panel || "home";
+    const activeAnalysisSubtab = state.analysis.subtab || "runs";
+    if (
+      activeAnalysisPanel === "compare"
+      || activeAnalysisPanel === "compare-review"
+      || (activeAnalysisPanel === "workspace" && activeAnalysisSubtab === "runs")
+    ) {
+      loadAnalysisSetupView().catch((error) => {
+        setStatus("analysis-comparison-status", `Unable to load analysis setup: ${error.message}`);
+      });
+    } else if (activeAnalysisPanel === "workspace" && activeAnalysisSubtab === "mailing-lists") {
+      loadAndRenderMailingList(state.analysis.mailingListType || "dnm").catch((error) => {
+        setStatus("mailing-list-status", `Unable to load mailing list: ${error.message}`);
+      });
+    }
+    return;
+  }
+
+  if (normalizedRoute === "cc-payment-imports") {
+    Promise.all([loadCcPaymentImportTemplates(), loadCcPaymentImportSessions()]).catch((error) => {
+      setStatus("cc-payment-status", `Unable to load credit card payment imports: ${error.message}`);
+    });
+    return;
+  }
+
+  if (normalizedRoute === "applications") {
+    loadApplications().catch((error) => {
+      setStatus("applications-status", `Unable to load applications: ${error.message}`);
+    });
+    return;
+  }
+
+  if (normalizedRoute === "monthly-reports") {
+    state.monthly.refreshOutput?.();
+  }
+}
+
+function setAnalysisSubtab(tabName) {
+  const normalizedTab = tabName === "mailing-lists" ? "mailing-lists" : "runs";
+  const workspaceVisible = state.analysis.panel === "workspace";
+  all("[data-analysis-subtab]").forEach((button) => {
+    button.classList.toggle(
+      "is-active",
+      workspaceVisible && button.getAttribute("data-analysis-subtab") === normalizedTab
+    );
+  });
+  all("[data-analysis-subtab-panel]").forEach((panel) => {
+    panel.classList.toggle(
+      "is-active",
+      workspaceVisible && panel.getAttribute("data-analysis-subtab-panel") === normalizedTab
+    );
+  });
+  state.analysis.subtab = normalizedTab;
+  persistUiState();
+  updateAnalysisLeftSubmenuActiveState();
+}
+
+function setMailingListTab(tabName) {
+  const normalizedType = String(tabName || state.analysis.mailingListType || "dnm").toLowerCase();
+  if (!["dnm", "nhcl", "rfc"].includes(normalizedType)) {
+    return;
+  }
+  all("[data-mailing-list-tab]").forEach((button) => {
+    button.classList.toggle("is-active", button.getAttribute("data-mailing-list-tab") === normalizedType);
+  });
+  state.analysis.mailingListType = normalizedType;
+  persistUiState();
+  updateAnalysisLeftSubmenuActiveState();
+}
+
+function updateAnalysisLeftSubmenuActiveState() {
+  const shouldHighlight =
+    state.route === "analysis"
+    && state.analysis.panel === "workspace"
+    && state.analysis.subtab === "mailing-lists";
+  const activeType = shouldHighlight ? String(state.analysis.mailingListType || "dnm").toLowerCase() : "";
+  all(".analysis-left-submenu-link[data-list-type]").forEach((button) => {
+    button.classList.toggle("is-active", button.getAttribute("data-list-type") === activeType);
+  });
+  updateAnalysisLeftSubmenuExpandedUi();
+}
+
+function setAnalysisLeftSubmenuExpanded(expanded, options = {}) {
+  state.analysis.navExpanded = Boolean(expanded);
+  if (options.persist !== false) {
+    persistUiState();
+  }
+  updateAnalysisLeftSubmenuExpandedUi();
+}
+
+function toggleAnalysisLeftSubmenu() {
+  setAnalysisLeftSubmenuExpanded(!state.analysis.navExpanded);
+}
+
+function updateAnalysisLeftSubmenuExpandedUi() {
+  const navGroup = document.querySelector('[data-nav-group="analysis"]');
+  const toggleButton = document.querySelector('[data-action="toggle-analysis-submenu"]');
+  const expanded = state.analysis.navExpanded !== false;
+  navGroup?.classList.toggle("is-collapsed", !expanded);
+  if (toggleButton instanceof HTMLElement) {
+    toggleButton.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggleButton.title = expanded ? "Collapse Analysis menu" : "Expand Analysis menu";
+  }
+}
+
+function show(element, visible) {
+  if (!element) return;
+  element.classList.toggle("is-hidden", !visible);
+}
+
+function persistAnalysisSetupId(setupId) {
+  try {
+    if (!setupId) {
+      window.localStorage.removeItem(ANALYSIS_SETUP_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(ANALYSIS_SETUP_STORAGE_KEY, setupId);
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function readPersistedAnalysisSetupId() {
+  try {
+    return String(window.localStorage.getItem(ANALYSIS_SETUP_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function persistUiState() {
+  try {
+    window.localStorage.setItem(
+      UI_STATE_STORAGE_KEY,
+      JSON.stringify({
+        route: state.route || "dashboard",
+        analysis: {
+          panel: state.analysis.panel || "home",
+          subtab: state.analysis.subtab || "runs",
+          mailingListType: state.analysis.mailingListType || "dnm",
+          navExpanded: state.analysis.navExpanded !== false,
+        },
+      })
+    );
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function readPersistedUiState() {
+  try {
+    const raw = window.localStorage.getItem(UI_STATE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readLaunchStateFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    const route = String(params.get("route") || "").trim().toLowerCase();
+    const panel = String(params.get("analysisPanel") || "").trim().toLowerCase();
+    const subtab = String(params.get("analysisSubtab") || "").trim().toLowerCase();
+    const mailingListType = String(params.get("mailingListType") || "").trim().toLowerCase();
+    const analysisSetupId = String(params.get("analysisSetupId") || "").trim();
+    const comparisonId = String(params.get("comparisonId") || "").trim();
+    const primaryReportId = String(params.get("primaryReportId") || "").trim();
+    const reviewScf = normalizeScf(params.get("reviewScf") || "");
+    const reviewSummaryMode = String(params.get("reviewSummaryMode") || "").trim().toLowerCase();
+    const isReviewPopup = params.get(ANALYSIS_REVIEW_POPUP_QUERY_PARAM) === "1";
+    return {
+      route: ["dashboard", "analysis", "applications", "monthly-reports", "report-history", "settings"].includes(route)
+        ? route
+        : "",
+      analysis: {
+        panel: ["home", "previous", "workspace", "compare", "compare-review"].includes(panel)
+          ? panel
+          : "",
+        subtab: subtab === "mailing-lists" ? "mailing-lists" : subtab === "runs" ? "runs" : "",
+        mailingListType: ["dnm", "nhcl", "rfc"].includes(mailingListType) ? mailingListType : "",
+        setupId: analysisSetupId,
+        comparisonId,
+        primaryReportId,
+        reviewScf,
+        reviewSummaryMode: ["review", "summary"].includes(reviewSummaryMode) ? reviewSummaryMode : "",
+        popup: isReviewPopup,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function openAnalysisWorkspace() {
+  state.analysis.panel = "workspace";
+  state.analysis.subtab = "runs";
+  setRoute("analysis");
+
+  const persistedSetupId = state.analysis.currentSetupId || readPersistedAnalysisSetupId();
+  if (persistedSetupId && !state.analysis.setupHydrated) {
+    try {
+      const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(persistedSetupId)}`);
+      loadSetupIntoWorkspace(response.setup || {});
+    } catch (error) {
+      setStatus("analysis-status-detail", `Unable to restore analysis setup: ${error.message}`);
+    }
+  }
+
+  showAnalysisPanel("workspace");
+  try {
+    await loadAnalysisReports();
+  } catch (error) {
+    setStatus("analysis-status-detail", `Unable to load analysis reports: ${error.message}`);
+  }
+}
+
+function getComparisonReviewResultFromEntry(entry = {}) {
+  const results = entry?.results || {};
+  const comparisonReview = results?.comparisonReview || null;
+  return comparisonReview && typeof comparisonReview === "object" ? comparisonReview : null;
+}
+
+function resolveAnalysisLandingFromEntry(entry = {}) {
+  const comparisonReview = getComparisonReviewResultFromEntry(entry);
+  if (comparisonReview?.summary) {
+    return { panel: "compare-review", summaryMode: "summary" };
+  }
+
+  if (Array.isArray(entry?.comparisonRequests) && entry.comparisonRequests.length) {
+    return { panel: "compare-review", summaryMode: "review" };
+  }
+
+  if (Array.isArray(entry?.reportPulls) && entry.reportPulls.length) {
+    return { panel: "home", summaryMode: "review" };
+  }
+
+  return { panel: "previous", summaryMode: "review" };
+}
+
+function choosePreferredAnalysisSetup(setups = []) {
+  const normalizedSetups = ensureArray(setups).filter((entry) => !entry?.archived);
+  if (!normalizedSetups.length) {
+    return null;
+  }
+
+  const defaultName = getDefaultAnalysisName().toLowerCase();
+  const matchingSetup = normalizedSetups.find((setup) =>
+    String(setup.run_name || setup.runName || "").trim().toLowerCase() === defaultName
+  );
+  if (matchingSetup) {
+    return matchingSetup;
+  }
+
+  return [...normalizedSetups].sort((a, b) => {
+    const aTime = Date.parse(a.updated_at || a.updatedAt || a.created_at || a.createdAt || "") || 0;
+    const bTime = Date.parse(b.updated_at || b.updatedAt || b.created_at || b.createdAt || "") || 0;
+    return bTime - aTime;
+  })[0] || null;
+}
+
+async function openAnalysisLanding() {
+  setAnalysisLeftSubmenuExpanded(true);
+  setRoute("analysis");
+  const setupsPayload = await apiRequest("/api/analysis/setups");
+  const setup = choosePreferredAnalysisSetup(setupsPayload.setups || []);
+
+  if (!setup) {
+    showAnalysisPanel("previous");
+    await loadAnalysisSetups();
+    return;
+  }
+
+  const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(setup.id)}`);
+  const fullSetup = response.setup || {};
+  loadSetupIntoWorkspace(fullSetup);
+
+  const landing = resolveAnalysisLandingFromEntry(fullSetup);
+  state.analysis.reviewSummaryMode = landing.summaryMode;
+
+  if (landing.panel === "compare-review") {
+    showAnalysisPanel("compare-review");
+    return;
+  }
+
+  if (landing.panel === "home") {
+    await loadAnalysisSetupView();
+    showAnalysisPanel("home");
+    return;
+  }
+
+  showAnalysisPanel("previous");
+  await loadAnalysisSetups();
+}
+
+async function openAnalysisList() {
+  state.analysis.panel = "previous";
+  setRoute("analysis");
+  showAnalysisPanel("previous");
+  try {
+    await loadAnalysisSetups();
+  } catch (error) {
+    setStatus("analysis-setup-status", `Unable to load analyses: ${error.message}`);
+  }
+}
+
+function openMailingListsPopup(listType = "dnm") {
+  const normalizedType = String(listType || "dnm").toLowerCase();
+  const popupUrl = new URL(window.location.href);
+  popupUrl.searchParams.set("route", "analysis");
+  popupUrl.searchParams.set("analysisPanel", "workspace");
+  popupUrl.searchParams.set("analysisSubtab", "mailing-lists");
+  popupUrl.searchParams.set("mailingListType", normalizedType);
+  const popupWindow = window.open(
+    popupUrl.toString(),
+    `hpa-mailing-lists-${normalizedType}`,
+    "popup=yes,width=1380,height=920,resizable=yes,scrollbars=yes"
+  );
+  if (!popupWindow) {
+    state.analysis.panel = "workspace";
+    state.analysis.subtab = "mailing-lists";
+    state.analysis.mailingListType = ["dnm", "nhcl", "rfc"].includes(normalizedType)
+      ? normalizedType
+      : "dnm";
+    setRoute("analysis");
+    showAnalysisPanel("workspace");
+    setAnalysisSubtab("mailing-lists");
+    void loadAndRenderMailingList(state.analysis.mailingListType);
+    setStatus(
+      "analysis-comparison-selection-status",
+      "Popup was blocked, so the mailing list opened in this window instead."
+    );
+    return false;
+  }
+  popupWindow.focus();
+  return true;
+}
+
+function isAnalysisReviewPopupWindow() {
+  try {
+    return new URLSearchParams(window.location.search || "").get(ANALYSIS_REVIEW_POPUP_QUERY_PARAM) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function openComparisonReviewPopup() {
+  syncComparisonRequestsFromLinks();
+  const context = ensureComparisonReviewSelection();
+  if (!context?.comparison) {
+    setStatus("analysis-comparison-selection-status", "Choose a comparison before opening a detached review window.");
+    return false;
+  }
+
+  const setupId = String(state.analysis.currentSetupId || readPersistedAnalysisSetupId() || "").trim();
+  if (!setupId) {
+    setStatus("analysis-comparison-selection-status", "Save this analysis first, then open the detached review window.");
+    return false;
+  }
+
+  const popupUrl = new URL(window.location.href);
+  popupUrl.searchParams.set("route", "analysis");
+  popupUrl.searchParams.set("analysisPanel", "compare-review");
+  popupUrl.searchParams.set("analysisSetupId", setupId);
+  popupUrl.searchParams.set("comparisonId", String(context.comparison.id || "").trim());
+  popupUrl.searchParams.set("primaryReportId", String(context.primaryReport?.id || "").trim());
+  popupUrl.searchParams.set("reviewScf", String(context.selectedScf || state.analysis.reviewSelectedScfs[context.comparison.id] || "").trim());
+  popupUrl.searchParams.set("reviewSummaryMode", String(state.analysis.reviewSummaryMode || "review"));
+  popupUrl.searchParams.set(ANALYSIS_REVIEW_POPUP_QUERY_PARAM, "1");
+
+  const popupWindow = window.open(
+    popupUrl.toString(),
+    `hpa-analysis-review-${setupId}`,
+    "popup=yes,width=1600,height=1000,resizable=yes,scrollbars=yes"
+  );
+
+  if (!popupWindow) {
+    setStatus(
+      "analysis-comparison-selection-status",
+      "The review window was blocked by the browser. Allow popups for this site and try again."
+    );
+    return false;
+  }
+
+  popupWindow.focus();
+  setStatus(
+    "analysis-comparison-selection-status",
+    "Detached review window opened. You can drag that browser window to another monitor."
+  );
+  return true;
+}
+
+function ensureVisibleAnalysisPanel() {
+  const panelMap = {
+    home: el("analysis-home-panel"),
+    previous: el("analysis-previous-panel"),
+    workspace: el("analysis-workspace"),
+    compare: el("analysis-compare-panel"),
+    "compare-review": el("analysis-comparison-review-panel"),
+  };
+  const panels = Object.values(panelMap).filter(Boolean);
+
+  if (!panels.length) return;
+  if (panels.some((panel) => !panel.classList.contains("is-hidden"))) return;
+
+  const requestedPanel = panelMap[state.analysis.panel] ? state.analysis.panel : "home";
+  Object.entries(panelMap).forEach(([key, node]) => {
+    show(node, key === requestedPanel);
+  });
+  state.analysis.panel = requestedPanel;
+}
+
+function getReferenceListFromCache(type) {
+  const normalized = (type || "").toLowerCase();
+  return state.referenceLists.find((item) => item.type === normalized) || null;
+}
+
+function getWorkingReferenceList(type) {
+  const normalized = String(type || "").trim().toLowerCase();
+  const source = Array.isArray(state.analysis.reviewWorkingLists) && state.analysis.reviewWorkingLists.length
+    ? state.analysis.reviewWorkingLists
+    : state.referenceLists;
+  return source.find((item) => item.type === normalized) || null;
+}
+
+function ensureComparisonReviewWorkingLists() {
+  if (
+    Array.isArray(state.analysis.reviewBaselineLists)
+    && state.analysis.reviewBaselineLists.length
+    && Array.isArray(state.analysis.reviewWorkingLists)
+    && state.analysis.reviewWorkingLists.length
+  ) {
+    return;
+  }
+
+  const baseline = cloneData(state.referenceLists || []);
+  state.analysis.reviewBaselineLists = baseline;
+  state.analysis.reviewWorkingLists = cloneData(baseline);
+}
+
+async function loadReferenceLists() {
+  const payload = await apiRequest("/api/analysis/reference-lists");
+  state.referenceLists = payload.lists || [];
+  return state.referenceLists;
+}
+
+function renderMailingListMeta(list) {
+  const name = el("mailing-list-name");
+  const source = el("mailing-list-source");
+  const updated = el("mailing-list-updated");
+  const count = el("mailing-list-count");
+  const dnmStateManager = el("dnm-state-manager");
+  const importRow = el("mailing-list-import-row");
+  const dnmHeader = el("mailing-list-import-instructions");
+  const importBtn = el("mailing-list-export-button");
+  const mailerExportBtn = el("mailing-list-mailer-export-button");
+  const dnmExportBtn = el("dnm-export-button");
+
+  if (name) name.textContent = list?.name || "Mailing List";
+  if (source) source.textContent = `Source: ${list?.sourceName || "Managed in app"}`;
+  if (updated) updated.textContent = `Updated: ${formatDate(list?.updatedAt)}`;
+  if (count) count.textContent = `Count: ${list?.count || 0}`;
+
+  const isDnm = list?.type === "dnm";
+  show(dnmStateManager, isDnm);
+  show(importRow, !isDnm);
+
+  if (dnmHeader) {
+    dnmHeader.textContent = isDnm
+      ? "DNM states are managed from the state selector."
+      : "Import the current list from NHCL or RFC spreadsheet format.";
+  }
+
+  if (isDnm) {
+    show(importBtn, false);
+    show(mailerExportBtn, false);
+    show(dnmExportBtn, true);
+    if (dnmExportBtn) dnmExportBtn.textContent = "Export DNM List";
+  } else {
+    show(importBtn, true);
+    show(mailerExportBtn, true);
+    show(dnmExportBtn, false);
+    if (importBtn) {
+      importBtn.textContent = `Export ${(list?.name || list?.type || "list").toUpperCase()} List`;
+    }
+    if (mailerExportBtn) {
+      mailerExportBtn.textContent = `Export ${String(list?.type || "list").toUpperCase()} for Mailer`;
+    }
+  }
+}
+
+async function openAnalysisMailingList(listType) {
+  const normalizedType = String(listType || "").trim().toLowerCase();
+  if (!["dnm", "nhcl", "rfc"].includes(normalizedType)) {
+    return;
+  }
+  setAnalysisLeftSubmenuExpanded(true);
+  state.analysis.panel = "workspace";
+  state.analysis.subtab = "mailing-lists";
+  state.analysis.mailingListType = normalizedType;
+  persistUiState();
+  setRoute("analysis");
+  showAnalysisPanel("workspace");
+  setAnalysisSubtab("mailing-lists");
+  setMailingListTab(normalizedType);
+  await loadAndRenderMailingList(normalizedType);
+}
+
+function renderDnmStateSelect(list) {
+  const select = el("dnm-state-select");
+  if (!select) return;
+  select.innerHTML = "";
+  select.appendChild(new Option("Select a state", ""));
+  const states = list?.availableStateGroups || [];
+  states.forEach((stateGroup) => {
+    select.appendChild(new Option(stateGroup.label || stateGroup.state, stateGroup.key));
+  });
+  select.disabled = states.length === 0;
+}
+
+function buildBucketedMailingRows(items = []) {
+  const maxRowsByBucket = {};
+  const bucketMap = new Map();
+
+  for (let digit = 0; digit <= 9; digit += 1) {
+    bucketMap.set(String(digit), []);
+  }
+
+  items.forEach((entry) => {
+    const scf = normalizeScf(entry.scf);
+    if (!scf) return;
+    const digit = scf.charAt(0);
+    if (!bucketMap.has(digit)) return;
+    bucketMap.get(digit).push({
+      scf,
+      state: normalizeState(entry.state || entry.scope || ""),
+    });
+  });
+
+  for (let digit = 0; digit <= 9; digit += 1) {
+    const key = String(digit);
+    const sorted = bucketMap.get(key).sort((a, b) => a.scf.localeCompare(b.scf));
+    bucketMap.set(key, sorted);
+    maxRowsByBucket[key] = sorted.length;
+  }
+
+  const maxRows = Math.max(...Object.values(maxRowsByBucket), 0);
+  return { bucketMap, maxRows };
+}
+
+function renderMailingListRows(list) {
+  const tbody = el("mailing-list-body");
+  const head = el("mailing-list-table-head");
+  if (!tbody) return;
+  const query = (state.analysis.search || "").toLowerCase();
+  const isDnm = list?.type === "dnm";
+
+  if (head) {
+    head.innerHTML = isDnm
+      ? "<tr><th>State</th><th>SCFs</th><th></th></tr>"
+      : "<tr>" +
+        Array.from({ length: 10 }, (_, digit) => `<th>${digit}</th>`).join("") +
+        "</tr>";
+  }
+
+  tbody.innerHTML = "";
+  if (isDnm) {
+    const groups = Array.isArray(list?.stateGroups) ? list.stateGroups : [];
+    const filteredGroups = groups
+      .filter((group) => group.isActive)
+      .filter((group) => {
+        const stateName = String(group.state || group.label || "").toLowerCase();
+        const scfText = String(group.scfText || "").toLowerCase();
+        return !query || stateName.includes(query) || scfText.includes(query);
+      })
+      .sort((a, b) => String(a.state || a.label || "").localeCompare(String(b.state || b.label || "")));
+
+    if (!filteredGroups.length) {
+      const row = document.createElement("tr");
+      row.innerHTML =
+        '<td colspan="3" class="empty-cell">' +
+        (query ? "No matches for this search." : "No states in this list.") +
+        "</td>";
+      tbody.appendChild(row);
+      return;
+    }
+
+    filteredGroups.forEach((group) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${esc(group.state || group.label || "")}</td><td>${esc(group.scfText || "")}</td>
+        <td class="table-action-cell"><button data-action="delete-dnm-state" data-state-key="${esc(group.key || "")}"
+        class="secondary-button table-action-button">Remove State</button></td>`;
+      tbody.appendChild(tr);
+    });
+    return;
+  }
+
+  const items = Array.isArray(list?.items) ? list.items : [];
+  const filtered = items
+    .filter((entry) => {
+      const scf = String(entry.scf || "").toLowerCase();
+      const st = String(entry.state || entry.scope || "").toLowerCase();
+      return !query || scf.includes(query) || st.includes(query);
+    })
+    .sort((a, b) => String(a.scf).localeCompare(String(b.scf)));
+
+  if (!filtered.length) {
+    const row = document.createElement("tr");
+    row.innerHTML =
+      `<td colspan="${isDnm ? 3 : 10}" class="empty-cell">` +
+      (query ? "No matches for this search." : "No records in this list.") +
+      "</td>";
+    tbody.appendChild(row);
+    return;
+  }
+
+  const { bucketMap, maxRows } = buildBucketedMailingRows(filtered);
+  for (let rowOffset = 0; rowOffset < maxRows; rowOffset += 1) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = Array.from({ length: 10 }, (_, digit) => {
+      const entry = bucketMap.get(String(digit))?.[rowOffset];
+      if (!entry) {
+        return "<td></td>";
+      }
+      const displayValue = entry.state ? `${entry.scf} ${entry.state}` : entry.scf;
+      return (
+        `<td class="mailing-list-grid-cell">` +
+        `<div class="mailing-list-grid-entry">` +
+        `<span class="mailing-list-grid-text">${esc(displayValue)}</span>` +
+        `<button data-action="delete-list-item" data-scf="${esc(entry.scf)}" class="secondary-button mailing-list-grid-remove">Remove</button>` +
+        `</div>` +
+        `</td>`
+      );
+    }).join("");
+    tbody.appendChild(tr);
+  }
+}
+
+async function removeDnmState(stateKey) {
+  const key = String(stateKey || "").trim();
+  if (!key) return;
+  if (!confirm("Remove this state from the Do Not Mail list?")) return;
+  try {
+    await apiRequest(`/api/analysis/reference-lists/dnm/states/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+    await loadAndRenderMailingList("dnm");
+    setStatus("mailing-list-status", "State removed.");
+  } catch (error) {
+    setStatus("mailing-list-status", `Unable to remove state: ${error.message}`);
+  }
+}
+
+function renderMailingList(list) {
+  renderMailingListMeta(list);
+  renderDnmStateSelect(list);
+  renderMailingListRows(list);
+}
+
+async function loadAndRenderMailingList(type) {
+  const normalizedType = (type || "").toLowerCase();
+  setStatus("mailing-list-status", "Loading mailing list...");
+  try {
+    const payload = await apiRequest(`/api/analysis/reference-lists/${normalizedType}`);
+    state.analysis.mailingListType = normalizedType;
+    state.referenceLists = state.referenceLists.filter((item) => item.type !== normalizedType);
+    state.referenceLists.push(payload.list);
+    renderMailingList(payload.list);
+    updateMailingTabButtons(normalizedType);
+    setStatus("mailing-list-status", `${normalizedType.toUpperCase()} list loaded.`);
+  } catch (error) {
+    setStatus("mailing-list-status", `Unable to load ${normalizedType.toUpperCase()}: ${error.message}`);
+  }
+}
+
+function updateMailingTabButtons(type) {
+  all("[data-mailing-list-tab]").forEach((button) => {
+    button.classList.toggle(
+      "is-active",
+      button.getAttribute("data-mailing-list-tab") === type
+    );
+  });
+  updateAnalysisLeftSubmenuActiveState();
+}
+
+async function exportCurrentMailingList() {
+  const type = state.analysis.mailingListType;
+  const btn = type === "dnm" ? el("dnm-export-button") : el("mailing-list-export-button");
+  if (!btn) return;
+  btn.disabled = true;
+  setStatus("mailing-list-status", `Exporting ${type.toUpperCase()}...`);
+  try {
+    await apiDownload(`/api/analysis/reference-lists/${type}/export`, `${type}.xlsx`);
+    setStatus("mailing-list-status", `${type.toUpperCase()} export ready.`);
+  } catch (error) {
+    setStatus("mailing-list-status", `Export failed: ${error.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function addMailingListEntry() {
+  const scfRaw = el("mailing-list-add-scf")?.value || "";
+  const scf = normalizeScf(scfRaw);
+  const stateValue = (el("mailing-list-state")?.value || "").trim();
+  if (!scf) {
+    setStatus("mailing-list-status", "Add a valid 3-digit SCF first.");
+    return;
+  }
+
+  const button = el("mailing-list-add-button");
+  if (button) button.disabled = true;
+  setStatus("mailing-list-status", "Saving...");
+  try {
+    await apiRequest(`/api/analysis/reference-lists/${state.analysis.mailingListType}/items`, {
+      method: "POST",
+      body: {
+        scfs: [scf],
+        state: stateValue,
+        actor: "Local User",
+        sourceName: "manual-list-manager",
+      },
+    });
+    if (el("mailing-list-add-scf")) el("mailing-list-add-scf").value = "";
+    if (el("mailing-list-state")) el("mailing-list-state").value = "";
+    await loadAndRenderMailingList(state.analysis.mailingListType);
+  } catch (error) {
+    setStatus("mailing-list-status", `Add failed: ${error.message}`);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function addDnmState() {
+  const key = (el("dnm-state-select")?.value || "").trim();
+  if (!key) {
+    setStatus("mailing-list-status", "Pick a state to add.");
+    return;
+  }
+  try {
+    await apiRequest(`/api/analysis/reference-lists/dnm/states/${encodeURIComponent(key)}`, {
+      method: "POST",
+      body: {
+        reason: (el("mailing-list-reason")?.value || "").trim(),
+        sourceName: (el("mailing-list-source-name")?.value || "").trim() || "manual-list-manager",
+        actor: "Local User",
+      },
+    });
+    await loadAndRenderMailingList("dnm");
+    setStatus("mailing-list-status", "State added.");
+  } catch (error) {
+    setStatus("mailing-list-status", `Unable to add state: ${error.message}`);
+  }
+}
+
+async function removeMailingListItem(scf) {
+  const type = state.analysis.mailingListType;
+  const formatted = normalizeScf(scf);
+  if (!formatted) return;
+  if (!confirm(`Remove SCF ${formatted} from ${type.toUpperCase()} list?`)) return;
+  try {
+    await apiRequest(`/api/analysis/reference-lists/${type}/items/${encodeURIComponent(formatted)}`, {
+      method: "DELETE",
+    });
+    await loadAndRenderMailingList(type);
+    setStatus("mailing-list-status", `Removed SCF ${formatted}.`);
+  } catch (error) {
+    setStatus("mailing-list-status", `Unable to remove: ${error.message}`);
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      resolve(value.includes(",") ? value.split(",")[1] : value);
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function importReferenceList() {
+  const listType = state.analysis.mailingListType;
+  if (!["nhcl", "rfc"].includes(listType)) {
+    setStatus("mailing-list-status", "Import is only available for NHCL and RFC.");
+    return;
+  }
+  const input = el("mailing-list-import-input");
+  const file = input?.files?.[0];
+  if (!file) return;
+  setStatus("mailing-list-status", "Importing...");
+  try {
+    const base64Content = await fileToBase64(file);
+    const payload = await apiRequest("/api/analysis/reference-lists/import", {
+      method: "POST",
+      body: {
+        listType,
+        fileName: file.name,
+        base64Content,
+        actor: "Local User",
+      },
+    });
+    await loadReferenceLists();
+    await loadAndRenderMailingList(listType);
+    const result = payload.result || {};
+    setStatus(
+      "mailing-list-status",
+      `Import complete. Added ${result.addedCount || 0}, skipped duplicates ${
+        result.skippedDuplicateCount || 0
+      }, skipped Do Not Mail ${result.skippedDoNotMailCount || 0}, total ${
+        result.totalSavedCount || 0
+      }.`
+    );
+  } catch (error) {
+    setStatus("mailing-list-status", `Import failed: ${error.message}`);
+  } finally {
+    if (input) input.value = "";
+  }
+}
+
+function getCurrentCcPaymentSession() {
+  return state.ccPayments.currentSession || null;
+}
+
+function getSelectedCcPaymentTemplate() {
+  const templates = Array.isArray(state.ccPayments.templates) ? state.ccPayments.templates : [];
+  const selectedKey = String(state.ccPayments.selectedTemplateKey || "").trim();
+  return (
+    templates.find((entry) => entry.key === selectedKey) ||
+    templates[0] ||
+    null
+  );
+}
+
+function renderCcPaymentTemplatePicker() {
+  const select = el("cc-payment-template-select");
+  if (!(select instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  const templates = Array.isArray(state.ccPayments.templates) ? state.ccPayments.templates : [];
+  const selectedTemplate =
+    getSelectedCcPaymentTemplate() ||
+    null;
+  const selectedKey = selectedTemplate?.key || "";
+  state.ccPayments.selectedTemplateKey = selectedKey;
+
+  select.innerHTML = templates.length
+    ? templates
+        .map(
+          (template) => `<option value="${esc(template.key)}"${template.key === selectedKey ? " selected" : ""}>${esc(template.name)}</option>`
+        )
+        .join("")
+    : '<option value="">No templates loaded</option>';
+
+  const session = getCurrentCcPaymentSession();
+  const activeTemplate = session?.template?.key ? session.template : selectedTemplate;
+  if (activeTemplate?.salesforceObjectApiName) {
+    setStatus(
+      "cc-payment-template-status",
+      `${activeTemplate.name} -> ${activeTemplate.salesforceObjectApiName} (${activeTemplate.operationType || "insert"})`
+    );
+  } else {
+    setStatus("cc-payment-template-status", "No active import template loaded.");
+  }
+}
+
+function updateCcPaymentFilterButtons() {
+  all("[data-cc-filter]").forEach((button) => {
+    button.classList.toggle(
+      "is-active",
+      button.getAttribute("data-cc-filter") === state.ccPayments.filter
+    );
+  });
+}
+
+function getCcPaymentFilteredRows() {
+  const session = getCurrentCcPaymentSession();
+  const rows = Array.isArray(session?.rows) ? session.rows.slice() : [];
+  const filter = state.ccPayments.filter || "all";
+  const filtered = rows.filter((row) => {
+    if (filter === "ready") {
+      return row.status === "ready";
+    }
+    if (filter === "missing_policy") {
+      return Array.isArray(row.issue_details) && row.issue_details.some((issue) => issue.code === "missing_policy_id");
+    }
+    if (filter === "errors") {
+      return row.status === "error";
+    }
+    if (filter === "warnings") {
+      return row.status === "warning";
+    }
+    return true;
+  });
+
+  const severityRank = (row) => (row.status === "error" ? 0 : row.status === "warning" ? 1 : 2);
+  return filtered.sort((a, b) => {
+    const severityDiff = severityRank(a) - severityRank(b);
+    if (severityDiff !== 0) return severityDiff;
+    return Number(a.row_number || 0) - Number(b.row_number || 0);
+  });
+}
+
+function renderCcPaymentSummary() {
+  const session = getCurrentCcPaymentSession();
+  el("cc-payment-summary-total").textContent = String(session?.row_count || 0);
+  el("cc-payment-summary-ready").textContent = String(session?.ready_count || 0);
+  el("cc-payment-summary-missing-policy").textContent = String(session?.missing_policy_count || 0);
+  el("cc-payment-summary-errors").textContent = String(session?.error_count || 0);
+  el("cc-payment-summary-warnings").textContent = String(session?.warning_count || 0);
+
+  const validationMessage = el("cc-payment-validation-message");
+  if (!validationMessage) return;
+
+  if (!session) {
+    validationMessage.textContent = "Upload a file to begin validation, or open a session from Import History.";
+    return;
+  }
+
+  if (["imported", "imported_with_errors"].includes(String(session.final_status || ""))) {
+    validationMessage.textContent = `This import is complete. ${Number(session.imported_row_count || session.successful_import_count || 0)} row(s) were imported into Salesforce. Open it from Import History any time.`;
+    return;
+  }
+
+  if (Number(session.missing_policy_count || 0) > 0) {
+    validationMessage.textContent =
+      "These rows are missing a Policy ID. Fix them before confirming the Salesforce import.";
+    return;
+  }
+
+  if (Number(session.error_count || 0) > 0) {
+    validationMessage.textContent = "Resolve the blocking validation errors before confirming import.";
+    return;
+  }
+
+  if (Number(session.warning_count || 0) > 0) {
+    validationMessage.textContent = "Warnings are present. Review flagged rows before confirming import.";
+    return;
+  }
+
+  validationMessage.textContent = "All rows are ready for Salesforce import.";
+}
+
+function renderCcPaymentHistory() {
+  const tbody = el("cc-payment-history-body");
+  if (!tbody) return;
+  const sessions = Array.isArray(state.ccPayments.sessions) ? state.ccPayments.sessions : [];
+  if (!sessions.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-cell">No credit card payment import sessions yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = sessions
+    .map((session) => `
+      <tr class="${state.ccPayments.currentSessionId === session.id ? "is-selected-row" : ""}">
+        <td>${esc(formatDate(session.uploaded_at || session.uploadedAt))}</td>
+        <td>${esc(session.original_filename || "")}</td>
+        <td>${Number(session.row_count || 0)}</td>
+        <td>${Number(session.imported_row_count || session.successful_import_count || 0)}</td>
+        <td>${Number(session.ready_count || 0)}</td>
+        <td>${Number(session.error_count || 0)}</td>
+        <td>${Number(session.warning_count || 0)}</td>
+        <td>${esc(formatDate(session.exported_at || session.exportedAt))}</td>
+        <td>${esc(session.uploaded_by || "")}</td>
+        <td class="table-action-cell">
+          <button class="secondary-button table-action-button" data-cc-open-session="${esc(session.id)}">Open</button>
+        </td>
+      </tr>
+    `)
+    .join("");
+}
+
+function renderCcPaymentReviewTable() {
+  const tbody = el("cc-payment-review-body");
+  if (!tbody) return;
+  const session = getCurrentCcPaymentSession();
+  if (!session) {
+    tbody.innerHTML = '<tr><td colspan="19" class="empty-cell">No credit card payment import session loaded.</td></tr>';
+    return;
+  }
+
+  if (["imported", "imported_with_errors"].includes(String(session.final_status || ""))) {
+    tbody.innerHTML = `<tr><td colspan="20" class="empty-cell">This import is complete. ${Number(session.imported_row_count || session.successful_import_count || 0)} row(s) were imported into Salesforce. Use Import History to reopen and review it.</td></tr>`;
+    return;
+  }
+
+  const rows = getCcPaymentFilteredRows();
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="20" class="empty-cell">No rows match the selected filter.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows
+    .map((row) => {
+      const payorName = row.payor_name || row.customer_name || "";
+      const expectedAmountNote = row.expected_amount !== null && row.expected_amount !== undefined
+        ? `<div class="cc-row-note">Expected ${esc(row.expected_amount_label || "premium")}: ${esc(formatApplicationCurrency(row.expected_amount))}</div>`
+        : "";
+      const importResultNote = row.import_result_message
+        ? `<div class="cc-row-note">Import: ${esc(row.import_result_message)}</div>`
+        : row.imported_salesforce_id
+          ? `<div class="cc-row-note">Salesforce ID: ${esc(row.imported_salesforce_id)}</div>`
+          : "";
+      const issueColumn = `${esc(row.issue_reason || "")}${importResultNote}`;
+      return `
+        <tr class="cc-import-row is-${esc(row.status || "ready")}">
+          <td>${esc(row.type || "")}</td>
+          <td>${esc(row.pay_type || "")}</td>
+          <td>
+            <div class="field-stack">
+              <strong>${esc(row.certificate_number || "")}</strong>
+              <input class="field-input cc-inline-input" data-cc-row-field="certificate_number" data-cc-row-id="${esc(row.id)}" value="${esc(row.certificate_number || "")}" />
+            </div>
+          </td>
+          <td>
+            <div class="field-stack">
+              <strong>${esc(row.matched_policy_id || "-")}</strong>
+              <input class="field-input cc-inline-input" data-cc-row-field="manual_policy_id" data-cc-row-id="${esc(row.id)}" value="${esc(row.manual_policy_id || row.matched_policy_id || "")}" placeholder="Enter Policy ID" />
+            </div>
+          </td>
+          <td>${esc(row.payment_name || "")}</td>
+          <td>${esc(row.source_record_id || "")}</td>
+          <td>${esc(row.date_received || "")}</td>
+          <td>${esc(row.months || "")}</td>
+          <td>
+            <div class="field-stack">
+              <strong>${esc(row.amount || "")}</strong>
+              ${expectedAmountNote}
+            </div>
+          </td>
+          <td>${esc(row.date_received || row.transaction_date || "")}</td>
+          <td>${esc(row.batch_close_date || "")}</td>
+          <td>${esc(row.transaction_id || "")}</td>
+          <td>${esc(row.batch_id || "")}</td>
+          <td>${esc(row.auth_code || "")}</td>
+          <td>${esc(row.bill_type || "")}</td>
+          <td>${esc(row.id2 || "")}</td>
+          <td>${esc(payorName)}</td>
+          <td><span class="cc-status-pill is-${esc(row.status || "ready")}">${esc((row.status || "ready").replace("_", " "))}</span></td>
+          <td>${issueColumn}</td>
+          <td class="table-action-cell">
+            <button class="secondary-button table-action-button" data-cc-save-row="${esc(row.id)}">Save</button>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function updateCcPaymentPolicyStatus() {
+  const session = getCurrentCcPaymentSession();
+  const policyLookup = session?.policyLookup || {};
+  const refreshedAt = policyLookup.refreshedAt || session?.policy_lookup_refreshed_at || "";
+  const source = policyLookup.source || "";
+  setStatus(
+    "cc-payment-policy-status",
+    refreshedAt
+      ? `Policy lookup refreshed ${formatDate(refreshedAt)} from ${source || "Salesforce"}.`
+      : "Policy lookup not refreshed yet."
+  );
+}
+
+function updateCcPaymentExportState() {
+  const session = getCurrentCcPaymentSession();
+  const exportButton = el("cc-payment-export-button");
+  if (!exportButton) return;
+  const hasBlockingErrors = Number(session?.error_count || 0) > 0;
+  const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+  exportButton.disabled = !session || hasBlockingErrors || alreadyImported;
+  exportButton.textContent = alreadyImported ? "Import Completed" : "Confirm Import";
+}
+
+function renderCcPaymentPage() {
+  renderCcPaymentTemplatePicker();
+  updateCcPaymentFilterButtons();
+  renderCcPaymentSummary();
+  renderCcPaymentReviewTable();
+  renderCcPaymentHistory();
+  updateCcPaymentPolicyStatus();
+  updateCcPaymentExportState();
+}
+
+async function loadCcPaymentImportSession(sessionId) {
+  const payload = await apiRequest(`/api/cc-payment-imports/${encodeURIComponent(sessionId)}`);
+  state.ccPayments.currentSessionId = payload.session?.id || sessionId;
+  state.ccPayments.currentSession = payload.session || null;
+  if (payload.session?.template?.key) {
+    state.ccPayments.selectedTemplateKey = payload.session.template.key;
+  }
+  renderCcPaymentPage();
+}
+
+async function loadCcPaymentImportTemplates() {
+  const payload = await apiRequest("/api/cc-payment-import-templates");
+  state.ccPayments.templates = Array.isArray(payload.templates) ? payload.templates : [];
+  if (!state.ccPayments.selectedTemplateKey) {
+    state.ccPayments.selectedTemplateKey = state.ccPayments.templates[0]?.key || "";
+  }
+  renderCcPaymentTemplatePicker();
+}
+
+async function loadCcPaymentImportSessions(preferredSessionId = "") {
+  const payload = await apiRequest("/api/cc-payment-imports");
+  state.ccPayments.sessions = payload.sessions || [];
+  const nextActiveSession = state.ccPayments.sessions.find((session) => !["imported", "imported_with_errors"].includes(String(session.final_status || ""))) || null;
+  const targetSessionId =
+    preferredSessionId ||
+    state.ccPayments.currentSessionId ||
+    nextActiveSession?.id ||
+    "";
+  if (targetSessionId) {
+    await loadCcPaymentImportSession(targetSessionId);
+    return;
+  }
+  state.ccPayments.currentSessionId = "";
+  state.ccPayments.currentSession = null;
+  renderCcPaymentPage();
+}
+
+function bindCcPaymentImportEvents() {
+  el("cc-payment-upload-button")?.addEventListener("click", () => {
+    el("cc-payment-upload-input")?.click();
+  });
+
+  el("cc-payment-upload-input")?.addEventListener("change", async (event) => {
+    const input = event.target;
+    const file = input?.files?.[0];
+    if (!file) return;
+    const selectedTemplate = getSelectedCcPaymentTemplate();
+    if (!selectedTemplate?.key) {
+      setStatus("cc-payment-status", "Select an import template first.");
+      return;
+    }
+    setStatus("cc-payment-status", "Uploading credit card payment file...");
+    try {
+      const base64Content = await fileToBase64(file);
+      const payload = await apiRequest("/api/cc-payment-imports/upload", {
+        method: "POST",
+        body: {
+          fileName: file.name,
+          base64Content,
+          uploadedBy: "Local User",
+          templateKey: selectedTemplate.key,
+        },
+      });
+      state.ccPayments.sessions = payload.sessions || [];
+      state.ccPayments.currentSession = payload.session || null;
+      state.ccPayments.currentSessionId = payload.session?.id || "";
+      renderCcPaymentPage();
+      setStatus("cc-payment-status", `Uploaded ${file.name}.`);
+    } catch (error) {
+      setStatus("cc-payment-status", `Upload failed: ${error.message}`);
+    } finally {
+      if (input) input.value = "";
+    }
+  });
+
+  el("cc-payment-policy-refresh-button")?.addEventListener("click", async () => {
+    const session = getCurrentCcPaymentSession();
+    if (!session?.id) {
+      setStatus("cc-payment-status", "Upload a credit card payment file first.");
+      return;
+    }
+    setStatus("cc-payment-policy-status", "Refreshing policy lookup from Salesforce...");
+    try {
+      const payload = await apiRequest(`/api/cc-payment-imports/${encodeURIComponent(session.id)}/refresh-policy-lookup`, {
+        method: "POST",
+        body: {},
+      });
+      state.ccPayments.currentSession = payload.session || null;
+      state.ccPayments.currentSessionId = payload.session?.id || session.id;
+      renderCcPaymentPage();
+      setStatus("cc-payment-policy-status", "Policy lookup refreshed. Updating review table...");
+      await loadCcPaymentImportSessions(state.ccPayments.currentSessionId);
+    } catch (error) {
+      setStatus("cc-payment-policy-status", `Refresh failed: ${error.message}`);
+    }
+  });
+
+  el("cc-payment-policy-upload-button")?.addEventListener("click", () => {
+    el("cc-payment-policy-upload-input")?.click();
+  });
+
+  el("cc-payment-policy-upload-input")?.addEventListener("change", async (event) => {
+    const session = getCurrentCcPaymentSession();
+    const input = event.target;
+    const file = input?.files?.[0];
+    if (!session?.id || !file) return;
+    setStatus("cc-payment-policy-status", "Uploading policy lookup CSV...");
+    try {
+      const base64Content = await fileToBase64(file);
+      const payload = await apiRequest(`/api/cc-payment-imports/${encodeURIComponent(session.id)}/refresh-policy-lookup`, {
+        method: "POST",
+        body: {
+          fileName: file.name,
+          base64Content,
+        },
+      });
+      state.ccPayments.currentSession = payload.session || null;
+      state.ccPayments.currentSessionId = payload.session?.id || session.id;
+      renderCcPaymentPage();
+      setStatus("cc-payment-policy-status", "Policy lookup uploaded. Updating review table...");
+      await loadCcPaymentImportSessions(state.ccPayments.currentSessionId);
+    } catch (error) {
+      setStatus("cc-payment-policy-status", `Policy upload failed: ${error.message}`);
+    } finally {
+      if (input) input.value = "";
+    }
+  });
+
+  el("cc-payment-revalidate-button")?.addEventListener("click", async () => {
+    const session = getCurrentCcPaymentSession();
+    if (!session?.id) return;
+    setStatus("cc-payment-status", "Revalidating session...");
+    try {
+      const payload = await apiRequest(`/api/cc-payment-imports/${encodeURIComponent(session.id)}/revalidate`, {
+        method: "POST",
+        body: {},
+      });
+      state.ccPayments.currentSession = payload.session || null;
+      state.ccPayments.currentSessionId = payload.session?.id || session.id;
+      renderCcPaymentPage();
+      setStatus("cc-payment-status", "Session revalidated.");
+    } catch (error) {
+      setStatus("cc-payment-status", `Revalidation failed: ${error.message}`);
+    }
+  });
+
+  el("cc-payment-export-button")?.addEventListener("click", async () => {
+    const session = getCurrentCcPaymentSession();
+    if (!session?.id) return;
+    if (!confirm(`Import ${Number(session.ready_count || 0)} valid row(s) into ${session.salesforce_object_api_name || "Salesforce"}?`)) {
+      return;
+    }
+    setStatus("cc-payment-status", "Importing rows into Salesforce...");
+    try {
+      const payload = await apiRequest(`/api/cc-payment-imports/${encodeURIComponent(session.id)}/confirm-import`, {
+        method: "POST",
+        body: {
+          confirmedBy: "Local User",
+        },
+      });
+      state.ccPayments.currentSession = null;
+      state.ccPayments.currentSessionId = "";
+      await loadCcPaymentImportSessions("");
+      setStatus(
+        "cc-payment-status",
+        `Salesforce import finished. Success: ${Number(payload.session?.successful_import_count || 0)}. Failed: ${Number(payload.session?.salesforce_failed_row_count || 0)}.`
+      );
+    } catch (error) {
+      setStatus("cc-payment-status", `Import failed: ${error.message}`);
+    }
+  });
+
+  el("cc-payment-template-select")?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) {
+      return;
+    }
+    state.ccPayments.selectedTemplateKey = target.value || "";
+    renderCcPaymentTemplatePicker();
+  });
+
+  all("[data-cc-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.ccPayments.filter = button.getAttribute("data-cc-filter") || "all";
+      renderCcPaymentPage();
+    });
+  });
+
+  el("cc-payment-history-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const sessionId = target.getAttribute("data-cc-open-session");
+    if (!sessionId) return;
+    setStatus("cc-payment-status", "Loading import session...");
+    try {
+      await loadCcPaymentImportSession(sessionId);
+      setStatus("cc-payment-status", "Import session loaded.");
+    } catch (error) {
+      setStatus("cc-payment-status", `Unable to load session: ${error.message}`);
+    }
+  });
+
+  el("cc-payment-review-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const rowId = target.getAttribute("data-cc-save-row");
+    if (!rowId) return;
+    const session = getCurrentCcPaymentSession();
+    if (!session?.id) return;
+
+    const certificateInput = document.querySelector(`[data-cc-row-field="certificate_number"][data-cc-row-id="${rowId}"]`);
+    const policyInput = document.querySelector(`[data-cc-row-field="manual_policy_id"][data-cc-row-id="${rowId}"]`);
+    setStatus("cc-payment-status", "Saving row correction...");
+    try {
+      const payload = await apiRequest(
+        `/api/cc-payment-imports/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`,
+        {
+          method: "PATCH",
+          body: {
+            certificate_number: certificateInput?.value || "",
+            manual_policy_id: policyInput?.value || "",
+            corrected_by: "Local User",
+          },
+        }
+      );
+      state.ccPayments.currentSession = payload.session || null;
+      state.ccPayments.currentSessionId = payload.session?.id || session.id;
+      renderCcPaymentPage();
+      setStatus("cc-payment-status", "Row correction saved.");
+    } catch (error) {
+      setStatus("cc-payment-status", `Unable to save row: ${error.message}`);
+    }
+  });
+}
+
+function showAnalysisPanel(panelName) {
+  state.analysis.panel = panelName;
+  persistUiState();
+  const homePanel = el("analysis-home-panel");
+  const previousPanel = el("analysis-previous-panel");
+  const workspacePanel = el("analysis-workspace");
+  const comparePanel = el("analysis-compare-panel");
+  const compareReviewPanel = el("analysis-comparison-review-panel");
+  const workspaceVisible = ["workspace", "compare", "compare-review"].includes(panelName);
+  show(homePanel, panelName === "home");
+  show(previousPanel, panelName === "previous");
+  show(workspacePanel, workspaceVisible);
+  show(comparePanel, panelName === "compare");
+  show(compareReviewPanel, panelName === "compare-review");
+
+  if (workspaceVisible) {
+    setAnalysisSubtab(state.analysis.subtab || "runs");
+    setMailingListTab(state.analysis.mailingListType || "dnm");
+    if (panelName === "workspace") {
+      renderAnalysisWorkspace();
+    }
+    if (panelName === "workspace" && (state.analysis.subtab || "runs") === "runs") {
+      loadAnalysisReports().catch((error) => {
+        setStatus("analysis-status-detail", `Unable to load analysis reports: ${error.message}`);
+      });
+    } else if (panelName === "workspace") {
+      loadAndRenderMailingList(state.analysis.mailingListType || "dnm").catch((error) => {
+        setStatus("mailing-list-status", `Unable to load mailing list: ${error.message}`);
+      });
+    }
+  }
+
+  if (panelName === "compare") {
+    try {
+      renderAnalysisComparePanel();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "Unknown error");
+      setStatus("analysis-comparison-status", `Unable to open comparison setup: ${message}`);
+    }
+    comparePanel?.scrollIntoView({ behavior: "auto", block: "start" });
+    ensureVisibleAnalysisPanel();
+    return;
+  }
+
+  if (panelName === "compare-review") {
+    try {
+      renderComparisonReviewPanelShell();
+      renderAnalysisComparisonReviewPanel();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "Unknown error");
+      renderComparisonReviewPanelShell();
+      if (compareReviewPanel) {
+        const statusText = compareReviewPanel.querySelector("#analysis-comparison-selection-status");
+        if (statusText) {
+          statusText.textContent = `Unable to open comparison review: ${message}`;
+        }
+        const results = compareReviewPanel.querySelector("#analysis-comparison-results");
+        if (results) {
+          results.innerHTML = `<div class="empty-state-block">Comparison review failed to render. ${esc(message)}</div>`;
+        }
+      }
+      setStatus("analysis-comparison-selection-status", `Unable to open comparison review: ${message}`);
+    }
+    compareReviewPanel?.scrollIntoView({ behavior: "auto", block: "start" });
+    ensureVisibleAnalysisPanel();
+    return;
+  }
+
+  if (panelName === "home") {
+    renderAnalysisSetupHome();
+    homePanel?.scrollIntoView({ behavior: "auto", block: "start" });
+  }
+
+  if (panelName === "workspace") {
+    workspacePanel?.scrollIntoView({ behavior: "auto", block: "start" });
+    ensureVisibleAnalysisPanel();
+    return;
+  }
+
+  state.analysis.subtab = "runs";
+  ensureVisibleAnalysisPanel();
+}
+
+function createEmptyPull(index = 0) {
+  return {
+    id: createClientId("pull"),
+    reportId: DEFAULT_ANALYSIS_REPORT_ID,
+    analysisLabel: "",
+    keyCodes: [],
+    years: [],
+    dateRange: null,
+    scf: "",
+    clientType: "",
+    notes: "",
+  };
+}
+
+function normalizeKeyCodeGroup(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  return ANALYSIS_KEY_CODE_GROUPS.includes(normalized) ? normalized : "NHCL";
+}
+
+function getAnalysisReportKeyCodeGroup(report) {
+  if (!report || typeof report !== "object") {
+    return "";
+  }
+
+  const parameterSources = [
+    report.parameters?.key_codes,
+    report.parameters?.keyCodes,
+    report.key_codes,
+    report.keyCodes,
+  ];
+  for (const source of parameterSources) {
+    const values = ensureArray(source)
+      .map((entry) => String(entry || "").trim().toUpperCase())
+      .filter(Boolean);
+    const directMatch = values.find((entry) => ANALYSIS_KEY_CODE_GROUPS.includes(entry));
+    if (directMatch) {
+      return directMatch;
+    }
+  }
+
+  const scalarSources = [
+    report.parameters?.clientType,
+    report.parameters?.client_type,
+    report.clientType,
+    report.client_type,
+    report.category,
+    report.keyCodeGroup,
+    report.key_code_group,
+  ];
+  for (const source of scalarSources) {
+    const normalized = String(source || "").trim().toUpperCase();
+    if (ANALYSIS_KEY_CODE_GROUPS.includes(normalized)) {
+      return normalized;
+    }
+  }
+
+  const nameSources = [
+    report.name,
+    report.report_name,
+    report.reportName,
+    getAnalysisReportDisplayName(report),
+  ];
+  for (const source of nameSources) {
+    const match = String(source || "").trim().match(/^(NHCL|RFC)\b/i);
+    if (match) {
+      return String(match[1] || "").trim().toUpperCase();
+    }
+  }
+
+  return "";
+}
+
+function deriveComparisonKeyCodeGroupFromReportIds(reportIds = []) {
+  const reportMap = getAvailableAnalysisReportMap();
+  const groups = Array.from(
+    new Set(
+      ensureArray(reportIds)
+        .map((reportId) => reportMap.get(String(reportId || "").trim()))
+        .map((report) => getAnalysisReportKeyCodeGroup(report))
+        .filter(Boolean)
+    )
+  );
+
+  if (!groups.length) {
+    return "";
+  }
+
+  if (groups.length > 1) {
+    return "MIXED";
+  }
+
+  return groups[0];
+}
+
+function getComparisonReviewMailingListType() {
+  const comparisons = Array.isArray(state.analysis.comparisonRequests)
+    ? state.analysis.comparisonRequests
+    : [];
+  const selectedId = String(state.analysis.selectedComparisonId || "").trim();
+  const comparison = comparisons.find((entry) => entry.id === selectedId) || comparisons[0] || null;
+  const keyGroup = normalizeKeyCodeGroup(comparison?.keyCodeGroup || comparison?.codeList || "");
+  return keyGroup === "RFC" ? "rfc" : "nhcl";
+}
+
+function getDefaultComparisonName(index = 0) {
+  return `Comparison ${index + 1}`;
+}
+
+function resolveComparisonName(value, index = 0) {
+  return String(value || "").trim() || getDefaultComparisonName(index);
+}
+
+function getComparisonDisplayName(comparison = {}, index = 0) {
+  return resolveComparisonName(
+    comparison.comparisonName || comparison.name || comparison.label || "",
+    index
+  );
+}
+
+function hasCustomComparisonName(comparison = {}, index = 0) {
+  const rawName = String(
+    comparison.comparisonName || comparison.name || comparison.label || ""
+  ).trim();
+  return Boolean(rawName) && rawName !== getDefaultComparisonName(index);
+}
+
+function getPreferredComparisonId(comparisons = []) {
+  const lastEdited = comparisons.find((entry) => entry.id === state.analysis.lastEditedComparisonId);
+  if (lastEdited) {
+    return lastEdited.id;
+  }
+
+  const selected = comparisons.find((entry) => entry.id === state.analysis.selectedComparisonId);
+  if (selected) {
+    return selected.id;
+  }
+
+  const firstCustomNamed = comparisons.find((entry, index) => hasCustomComparisonName(entry, index));
+  return firstCustomNamed?.id || comparisons[0]?.id || "";
+}
+
+function focusComparisonReviewSummary() {
+  // intentionally no-op: preventing review navigation from forcing page-level scroll.
+}
+
+function invalidateComparisonReviewSummary() {
+  state.analysis.reviewSummary = null;
+  state.analysis.reviewSummaryMode = "review";
+}
+
+function getReviewBaselineListMap() {
+  const lists = Array.isArray(state.analysis.reviewBaselineLists)
+    ? state.analysis.reviewBaselineLists
+    : [];
+  const map = new Map();
+  lists.forEach((entry) => {
+    if (!entry || !entry.type) return;
+    const normalizedType = String(entry.type).trim().toLowerCase();
+    map.set(normalizedType, ensureArray(entry.items).map((item) => normalizeScf(item?.scf)).filter(Boolean));
+  });
+  return map;
+}
+
+function getReviewWorkingListMap() {
+  const lists = Array.isArray(state.analysis.reviewWorkingLists)
+    ? state.analysis.reviewWorkingLists
+    : [];
+  const map = new Map();
+  lists.forEach((entry) => {
+    if (!entry || !entry.type) return;
+    const normalizedType = String(entry.type).trim().toLowerCase();
+    map.set(normalizedType, ensureArray(entry.items).map((item) => {
+      const scf = normalizeScf(item?.scf);
+      if (!scf) return null;
+      return {
+        scf,
+        state: String(item?.state || item?.scope || "").trim(),
+      };
+    }).filter(Boolean));
+  });
+  return map;
+}
+
+function normalizeSummaryRows(rows) {
+  return (ensureArray(rows) || [])
+    .map((entry) => ({
+      scf: normalizeScf(entry?.scf || entry),
+      state: String(entry?.state || "").trim(),
+    }))
+    .filter((entry) => entry.scf);
+}
+
+function buildComparisonReviewSummaryFromClient() {
+  const baselineMap = getReviewBaselineListMap();
+  const workingMap = getReviewWorkingListMap();
+  const dnmSet = new Set(normalizeSummaryRows(baselineMap.get("dnm") || []).map((entry) => entry.scf));
+  const listTypes = ["nhcl", "rfc"];
+  const result = {};
+
+  listTypes.forEach((listType) => {
+    const baselineRows = normalizeSummaryRows(baselineMap.get(listType) || []);
+    const workingRows = normalizeSummaryRows(workingMap.get(listType) || []);
+    const baselineByScf = new Map();
+    const workingByScf = new Map();
+
+    baselineRows.forEach((entry) => {
+      baselineByScf.set(entry.scf, entry);
+    });
+    workingRows.forEach((entry) => {
+      workingByScf.set(entry.scf, entry);
+    });
+
+    const added = [];
+    const removed = [];
+    const blocked = [];
+
+    workingRows.forEach((entry) => {
+      if (!baselineByScf.has(entry.scf)) {
+        const blockedReason = dnmSet.has(entry.scf)
+          ? "Do Not Mail"
+          : "";
+        if (blockedReason) {
+          blocked.push({ ...entry, reason: blockedReason });
+        } else {
+          added.push(entry);
+        }
+      }
+    });
+
+    baselineRows.forEach((entry) => {
+      if (!workingByScf.has(entry.scf)) {
+        removed.push(entry);
+      }
+    });
+
+    result[listType] = {
+      added: added.sort((a, b) => a.scf.localeCompare(b.scf)),
+      removed: removed.sort((a, b) => a.scf.localeCompare(b.scf)),
+      blocked: blocked.sort((a, b) => a.scf.localeCompare(b.scf)),
+      addedCount: added.length,
+      removedCount: removed.length,
+      blockedCount: blocked.length,
+    };
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    lists: result,
+    summary: {
+      nhclAdded: result.nhcl.addedCount,
+      nhclRemoved: result.nhcl.removedCount,
+      rfcAdded: result.rfc.addedCount,
+      rfcRemoved: result.rfc.removedCount,
+      blockedCount: result.nhcl.blockedCount + result.rfc.blockedCount,
+    },
+    violations: [
+      ...result.nhcl.blocked,
+      ...result.rfc.blocked,
+    ],
+  };
+}
+
+function getReviewWorkingListPayload() {
+  return (ensureArray(state.analysis.reviewWorkingLists) || []).map((entry) => ({
+    type: entry.type,
+    items: normalizeSummaryRows(ensureArray(entry.items)).map((item) => ({
+      scf: item.scf,
+      state: String(item.state || item.scope || "").trim(),
+    })),
+  }));
+}
+
+function setComparisonSummaryNotes(notes = "") {
+  state.analysis.reviewSummaryNotes = String(notes || "").trim();
+}
+
+function ensureComparisonReviewPanelToolbar() {
+  const panel = el("analysis-comparison-review-panel");
+  if (!panel) {
+    return;
+  }
+  const hasSummarizeButton = !!panel.querySelector("#summarize-comparison-review-button");
+  const hasCompleteButton = !!panel.querySelector("#complete-comparison-review-button");
+
+  if (!hasSummarizeButton || !hasCompleteButton) {
+    renderComparisonReviewPanelShell();
+  }
+}
+
+function renderComparisonReviewPanelShell() {
+  const panel = el("analysis-comparison-review-panel");
+  if (!panel) {
+    return;
+  }
+  const detachedWindow = isAnalysisReviewPopupWindow();
+
+  panel.innerHTML = `
+    <div class="panel-heading">
+      <h3>Comparison Review</h3>
+      <p>${detachedWindow
+        ? "This detached review window can be moved anywhere, including a different monitor."
+        : "Choose a comparison, pick the primary report, and work through SCFs without changing the live lists."}</p>
+    </div>
+    <div class="action-row analysis-toolbar-actions">
+      <button id="back-to-comparison-setup-button" class="secondary-button">Back</button>
+      <button id="back-to-analysis-runs-from-review-button" class="secondary-button">Back to Report Setup</button>
+      <button id="open-comparison-review-popup-button" class="secondary-button"${detachedWindow ? " disabled" : ""}>${detachedWindow ? "Opened In New Window" : "Open In New Window"}</button>
+      <button id="summarize-comparison-review-button" class="secondary-button">Summarize</button>
+      <button id="complete-comparison-review-button" class="primary-button" disabled>Complete</button>
+      <button id="exit-comparison-review-button" class="secondary-button${detachedWindow ? "" : " is-hidden"}">${detachedWindow ? "Close Window" : "Exit"}</button>
+    </div>
+    <p id="analysis-comparison-selection-status" class="inline-status">Comparison review needs a valid page setup.</p>
+    <div id="analysis-comparison-results" class="comparison-results-block">
+      <div class="empty-state-block">Choose a comparison to start reviewing SCFs.</div>
+    </div>
+  `;
+}
+
+function getWorkingListEntries(listType) {
+  const list = getWorkingReferenceList(listType);
+  if (!list) {
+    return [];
+  }
+
+  return normalizeSummaryRows(list.items || []);
+}
+
+function buildSummaryRowSet(sourceRows) {
+  const map = new Map();
+  ensureArray(sourceRows || []).forEach((entry) => {
+    const scf = normalizeScf(entry?.scf || entry);
+    if (!scf) {
+      return;
+    }
+    map.set(scf, {
+      scf,
+      state: String(entry?.state || entry?.scope || "").trim(),
+    });
+  });
+  return map;
+}
+
+function buildListDeltasForCompletion(listType) {
+  const listTypeNormalized = String(listType || "").trim().toLowerCase();
+  const baselineRows = buildSummaryRowSet(
+    (state.analysis.reviewBaselineLists || [])
+      .find((entry) => entry.type === listTypeNormalized)
+      ?.items || []
+  );
+  const workingRows = buildSummaryRowSet(
+    (state.analysis.reviewWorkingLists || [])
+      .find((entry) => entry.type === listTypeNormalized)
+      ?.items || []
+  );
+  const added = [];
+  const removed = [];
+
+  workingRows.forEach((entry, scf) => {
+    if (!baselineRows.has(scf)) {
+      added.push(entry);
+    }
+  });
+
+  baselineRows.forEach((entry, scf) => {
+    if (!workingRows.has(scf)) {
+      removed.push(entry);
+    }
+  });
+
+  return {
+    type: listTypeNormalized,
+    added,
+    removed,
+  };
+}
+
+function setComparisonReviewSummary(summary) {
+  state.analysis.reviewSummary = summary || null;
+  state.analysis.reviewSummaryMode = "summary";
+  if (!summary) {
+    state.analysis.reviewSummaryMode = "review";
+  }
+}
+
+function summarizeComparisonReview() {
+  try {
+    syncComparisonRequestsFromLinks();
+    const context = ensureComparisonReviewSelection();
+    if (!context?.comparison) {
+      setStatus("analysis-comparison-selection-status", "Choose a comparison before summarizing.");
+      return;
+    }
+
+    const summary = buildComparisonReviewSummaryFromClient();
+    setComparisonReviewSummary(summary);
+    renderAnalysisComparisonReviewPanel();
+    if (el("analysis-review-summary-approved")) {
+      el("analysis-review-summary-approved").checked = false;
+    }
+    setStatus(
+      "analysis-comparison-selection-status",
+      "Review summary generated. Approve to enable Complete."
+    );
+  } catch (error) {
+    setStatus(
+      "analysis-comparison-selection-status",
+      `Unable to generate summary: ${error.message || "Unknown error"}`
+    );
+  }
+}
+
+async function completeComparisonReview() {
+  syncComparisonRequestsFromLinks();
+  const completeButton = el("complete-comparison-review-button");
+  const summaryMode = state.analysis.reviewSummaryMode || "review";
+  let summary = state.analysis.reviewSummary || {};
+  const summaryNeedsRefresh = summaryMode !== "summary" || !summary.generatedAt;
+
+  if (summaryNeedsRefresh) {
+    try {
+      summary = buildComparisonReviewSummaryFromClient();
+      setComparisonReviewSummary(summary);
+      renderAnalysisComparisonReviewPanel();
+      const summaryCheckbox = el("analysis-review-summary-approved");
+      if (summaryCheckbox) {
+        summaryCheckbox.checked = false;
+      }
+      setStatus(
+        "analysis-comparison-selection-status",
+        "Review summary has been regenerated. Approve to enable Complete."
+      );
+    } catch (error) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        `Run summary before completing: ${error.message || "Unable to build summary."}`
+      );
+      return;
+    }
+  }
+
+  if (state.analysis.reviewSummaryMode !== "summary") {
+    setStatus("analysis-comparison-selection-status", "Open the Summary view before completing.");
+    return;
+  }
+
+  const approvedNow = state.analysis.reviewSummaryMode === "summary" && el("analysis-review-summary-approved")?.checked;
+  const actualSummary = state.analysis.reviewSummary || summary;
+  const hasViolations = Boolean(actualSummary.violations?.length);
+  const canComplete = !!actualSummary.generatedAt && !hasViolations;
+  if (!canComplete) {
+    setStatus(
+      "analysis-comparison-selection-status",
+      "Run a summary and clear all Do Not Mail violations before completing."
+    );
+    if (completeButton) completeButton.disabled = true;
+    return;
+  }
+  if (!approvedNow) {
+    setStatus("analysis-comparison-selection-status", "Approve the summary before continuing.");
+    return;
+  }
+  if (completeButton) {
+    completeButton.disabled = true;
+  }
+
+  try {
+    ensureComparisonReviewWorkingLists();
+    const changes = ["nhcl", "rfc"].map((type) => buildListDeltasForCompletion(type));
+    const totalAdds = changes.reduce((count, change) => count + change.added.length, 0);
+    const totalRemoves = changes.reduce((count, change) => count + change.removed.length, 0);
+
+    for (const change of changes) {
+      for (const removed of change.removed) {
+        const scf = normalizeScf(removed?.scf);
+        if (!scf) {
+          continue;
+        }
+        try {
+          await apiRequest(`/api/analysis/reference-lists/${encodeURIComponent(change.type)}/items/${encodeURIComponent(scf)}`, {
+            method: "DELETE",
+          });
+        } catch (error) {
+          const missingRegex = /was not found/i;
+          if (!missingRegex.test(error.message || "")) {
+            throw error;
+          }
+        }
+      }
+    }
+
+    for (const change of changes) {
+      if (!change.added.length) {
+        continue;
+      }
+      await apiRequest(`/api/analysis/reference-lists/${encodeURIComponent(change.type)}/items`, {
+        method: "POST",
+        body: {
+          entries: change.added.map((entry) => ({
+            scf: normalizeScf(entry.scf),
+            state: String(entry.state || "").trim(),
+          })),
+          actor: "Local User",
+          sourceName: state.analysis.runName || getDefaultAnalysisName(),
+          state: "",
+          reason: state.analysis.reviewSummaryNotes || `Complete comparison review for run ${state.analysis.currentRunId || "local-session"}`,
+          scfs: [],
+        },
+      });
+    }
+
+    await loadReferenceLists();
+    state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
+    state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
+    setComparisonReviewSummary(actualSummary);
+    state.analysis.reviewSummaryMode = "summary";
+
+    const completionTimestamp = new Date().toISOString();
+    const savedSetupResponse = await apiRequest("/api/analysis/setups", {
+      method: "POST",
+      body: {
+        ...buildAnalysisPayload("complete"),
+        id: state.analysis.currentSetupId || undefined,
+        completedAt: completionTimestamp,
+        results: {
+          comparisonReview: {
+            summary: actualSummary,
+            notes: state.analysis.reviewSummaryNotes || "",
+            completedAt: completionTimestamp,
+            totals: {
+              added: totalAdds,
+              removed: totalRemoves,
+            },
+          },
+        },
+        referenceListsSnapshot: cloneData(state.referenceLists || []),
+      },
+    });
+    const savedSetup = savedSetupResponse.setup || {};
+    state.analysis.currentSetupId = savedSetup.id || state.analysis.currentSetupId;
+    persistAnalysisSetupId(state.analysis.currentSetupId);
+    syncAnalysisMeta({
+      runName: savedSetup.run_name || savedSetup.runName || state.analysis.runName || getDefaultAnalysisName(),
+      notes: savedSetup.notes || state.analysis.runNotes || "",
+      createdAt: savedSetup.created_at || savedSetup.createdAt || null,
+      updatedAt: savedSetup.updated_at || savedSetup.updatedAt || completionTimestamp,
+    });
+    setStatus("analysis-status-text", savedSetup.status || "complete");
+    setStatus("analysis-status-detail", "Comparison review completed and saved.");
+    renderAnalysisComparisonReviewPanel();
+    setStatus(
+      "analysis-comparison-selection-status",
+      `Comparison complete. Added ${totalAdds} and removed ${totalRemoves} SCFs across NHCL/RFC lists.`
+    );
+    renderAnalysisComparisonReviewPanel();
+  } catch (error) {
+    setStatus("analysis-comparison-selection-status", `Unable to complete comparison: ${error.message}`);
+  } finally {
+    if (completeButton) {
+      const canNowComplete = !!state.analysis.reviewSummary && !state.analysis.reviewSummary?.violations?.length;
+      const approvedNow = el("analysis-review-summary-approved")?.checked;
+      completeButton.disabled = !approvedNow || !canNowComplete;
+    }
+  }
+}
+
+async function exportMailerCurrentMailingList() {
+  const type = state.analysis.mailingListType;
+  if (!["nhcl", "rfc"].includes(type)) {
+    setStatus("mailing-list-status", "Mailer export is available for NHCL and RFC only.");
+    return;
+  }
+  const btn = el("mailing-list-mailer-export-button");
+  if (!btn) return;
+  btn.disabled = true;
+  setStatus("mailing-list-status", `Exporting ${type.toUpperCase()} for mailer...`);
+  try {
+    await apiDownload(`/api/analysis/reference-lists/${type}/export?format=mailer`, `${type}-mailer.xlsx`);
+    setStatus("mailing-list-status", `${type.toUpperCase()} mailer export ready.`);
+  } catch (error) {
+    setStatus("mailing-list-status", `Mailer export failed: ${error.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function shouldLockSummary() {
+  return !state.analysis.currentRunId;
+}
+
+function normalizeReviewPageSize(value) {
+  if (String(value || "").trim().toLowerCase() === "all") {
+    return "all";
+  }
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return 100;
+  }
+  return Math.max(1, Math.floor(numericValue));
+}
+
+function getComparisonReviewPagination(totalRows, selectedIndex = -1) {
+  const total = Math.max(0, Number(totalRows) || 0);
+  const pageSize = normalizeReviewPageSize(state.analysis.reviewPageSize);
+
+  if (pageSize === "all") {
+    state.analysis.reviewPageNumber = 1;
+    return {
+      pageSize,
+      totalPages: total > 0 ? 1 : 1,
+      currentPage: 1,
+      startIndex: 0,
+      endIndex: total,
+    };
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(
+    totalPages,
+    Math.max(1, Number(state.analysis.reviewPageNumber) || 1)
+  );
+  state.analysis.reviewPageNumber = currentPage;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  return {
+    pageSize,
+    totalPages,
+    currentPage,
+    startIndex,
+    endIndex,
+  };
+}
+
+function focusSelectedReviewRow(scf) {
+  const normalizedScf = normalizeScf(scf);
+  if (!normalizedScf) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    const selectedRow = document.querySelector(`[data-review-row-scf="${normalizedScf}"]`);
+    if (!(selectedRow instanceof HTMLElement)) {
+      return;
+    }
+    const spreadsheetArea = selectedRow.closest(".analysis-review-spreadsheet-area");
+    if (spreadsheetArea instanceof HTMLElement) {
+      const rowRect = selectedRow.getBoundingClientRect();
+      const areaRect = spreadsheetArea.getBoundingClientRect();
+      const rowHeight = rowRect.height;
+      const topPadding = 8;
+      const bottomPadding = 8;
+
+      if (rowRect.top < areaRect.top + topPadding) {
+        spreadsheetArea.scrollTop -= (areaRect.top + topPadding - rowRect.top);
+      } else if (rowRect.bottom > areaRect.bottom - bottomPadding) {
+        spreadsheetArea.scrollTop += (rowRect.bottom - (areaRect.bottom - bottomPadding));
+      } else if (rowHeight > areaRect.height) {
+        spreadsheetArea.scrollTop = Math.max(
+          0,
+          spreadsheetArea.scrollTop + (rowRect.top - areaRect.top) - topPadding
+        );
+      }
+    }
+    selectedRow.focus({ preventScroll: true });
+  });
+}
+
+function getReviewFloatingPanelStyle() {
+  const panelState = state.analysis.reviewFloatingPanel || {};
+  const x = Number.isFinite(Number(panelState.x)) ? Number(panelState.x) : 16;
+  const y = Number.isFinite(Number(panelState.y)) ? Number(panelState.y) : 16;
+  return `left:${Math.max(0, x)}px; top:${Math.max(0, y)}px;`;
+}
+
+function bindComparisonReviewFloatingPanel() {
+  if (isAnalysisReviewPopupWindow()) {
+    return;
+  }
+  const panel = el("analysis-review-floating-panel");
+  const handle = el("analysis-review-floating-handle");
+  const page = panel?.closest(".analysis-comparison-review-page");
+  if (!(panel instanceof HTMLElement) || !(handle instanceof HTMLElement) || !(page instanceof HTMLElement)) {
+    return;
+  }
+
+  handle.addEventListener("mousedown", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    if (event.target.closest("button, input, select, textarea, a")) {
+      return;
+    }
+
+    event.preventDefault();
+    const pageRect = page.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const originX = panelRect.left - pageRect.left;
+    const originY = panelRect.top - pageRect.top;
+
+    const onMouseMove = (moveEvent) => {
+      const nextX = originX + (moveEvent.clientX - startX);
+      const nextY = originY + (moveEvent.clientY - startY);
+      const maxX = Math.max(0, page.clientWidth - panel.offsetWidth);
+      const maxY = Math.max(0, page.clientHeight - 80);
+      state.analysis.reviewFloatingPanel = {
+        x: Math.min(maxX, Math.max(0, nextX)),
+        y: Math.min(maxY, Math.max(0, nextY)),
+      };
+      panel.style.left = `${state.analysis.reviewFloatingPanel.x}px`;
+      panel.style.top = `${state.analysis.reviewFloatingPanel.y}px`;
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  });
+
+  el("analysis-review-floating-reset")?.addEventListener("click", () => {
+    state.analysis.reviewFloatingPanel = { x: 16, y: 16 };
+    panel.style.left = "16px";
+    panel.style.top = "16px";
+  });
+}
+
+function syncReviewPageToSelectedScf(comparisonId, scf) {
+  const comparison = getComparisonReviewComparisonById(comparisonId);
+  if (!comparison) {
+    return;
+  }
+
+  const reports = getComparisonReviewReports(comparison);
+  if (!reports.length) {
+    return;
+  }
+
+  const primaryReportId = state.analysis.reviewPrimaryReportIds[comparison.id];
+  const primaryReport = reports.find((report) => report.id === primaryReportId) || reports[0];
+  if (!primaryReport) {
+    return;
+  }
+
+  const selectedScf = normalizeScf(scf);
+  if (!selectedScf) {
+    return;
+  }
+
+  const pageSize = normalizeReviewPageSize(state.analysis.reviewPageSize);
+  if (pageSize === "all") {
+    state.analysis.reviewPageNumber = 1;
+    return;
+  }
+
+  const sortedFilteredRows = getSortedFilteredPrimaryRows(buildPrimaryNavigatorRows(primaryReport));
+  const selectedIndex = sortedFilteredRows.findIndex((entry) => entry.scf === selectedScf);
+  if (selectedIndex < 0) {
+    return;
+  }
+
+  state.analysis.reviewPageNumber = Math.floor(selectedIndex / pageSize) + 1;
+}
+
+function selectComparisonReviewScf(comparisonId, scf, options = {}) {
+  const normalizedScf = normalizeScf(scf);
+  if (!comparisonId || !normalizedScf) {
+    return;
+  }
+
+  const shouldScrollSummary = options.scrollSummary === true;
+  const preservePage = options.preservePage === true;
+  state.analysis.reviewSelectedScfs[comparisonId] = normalizedScf;
+  if (!preservePage) {
+    syncReviewPageToSelectedScf(comparisonId, normalizedScf);
+  }
+  renderAnalysisComparisonReviewPanel();
+  if (shouldScrollSummary) {
+    focusComparisonReviewSummary();
+  }
+  focusSelectedReviewRow(normalizedScf);
+}
+
+function createComparisonLink(index = 0, source = {}) {
+  const now = new Date().toISOString();
+  const rawReportIds = Array.isArray(source.selectedReportIds) && source.selectedReportIds.length
+    ? source.selectedReportIds
+    : Array.isArray(source.reportIds) && source.reportIds.length
+      ? source.reportIds
+    : [source.reportAId, source.reportBId];
+  const reportIds = Array.from(
+    new Set(
+      rawReportIds
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 5);
+  const comparisonName = resolveComparisonName(
+    source.name || source.comparisonName || source.label || "",
+    index
+  );
+
+  return {
+    id: String(source.id || createClientId("comparison")).trim(),
+    comparisonName,
+    name: comparisonName,
+    keyCodeGroup: normalizeKeyCodeGroup(source.keyCodeGroup || source.key_code_group || source.clientType),
+    reportIds,
+    selectedReportIds: reportIds,
+    reportAId: reportIds[0] || "",
+    reportBId: reportIds[1] || "",
+    matchField: String(source.matchField || "SCF Grouping").trim() || "SCF Grouping",
+    metricColumns: Array.isArray(source.metricColumns) && source.metricColumns.length
+      ? source.metricColumns
+      : ["Sum of Mailed", "Sum of Opp Count", "Sum of In Force", "Sum of Sold", "Sold Rate"],
+    createdAt: source.createdAt || source.created_at || now,
+    updatedAt: source.updatedAt || source.updated_at || now,
+  };
+}
+
+function normalizeComparisonMetricKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function getReportRowsWithScf(report) {
+  const rows = Array.isArray(report?.rows) ? report.rows : [];
+  return rows
+    .map((row, index) => {
+      const scf = Object.entries(row || {}).reduce((found, [key, rawValue]) => {
+        if (found) return found;
+        if (String(key).endsWith("__label")) return "";
+        if (!normalizeComparisonMetricKey(key).includes("scf")) return "";
+        return normalizeScf(rawValue);
+      }, "");
+      return scf ? { scf, row, index } : null;
+    })
+    .filter(Boolean);
+}
+
+function filterScfEntriesByReportKeyCodeGroup(report, entries = []) {
+  const expectedGroup = getAnalysisReportKeyCodeGroup(report);
+  if (!expectedGroup) {
+    return entries;
+  }
+
+  const expectedKeyValue = expectedGroup === "RFC" ? "RFC" : "N";
+  const matchingEntries = entries.filter((entry) => {
+    const rowKey = String(entry?.row?.["Key"] ?? entry?.row?.key ?? "").trim().toUpperCase();
+    return rowKey === expectedKeyValue;
+  });
+
+  return matchingEntries.length ? matchingEntries : entries;
+}
+
+function getReportEntriesForKeyCodeGroup(report, entries = []) {
+  return filterScfEntriesByReportKeyCodeGroup(report, ensureArray(entries));
+}
+
+function getReportExportRowsWithScf(report) {
+  const rows = Array.isArray(report?.exportRows) ? report.exportRows : [];
+  return rows
+    .map((row, index) => {
+      const scf = Object.entries(row || {}).reduce((found, [key, rawValue]) => {
+        if (found) return found;
+        if (String(key).endsWith("__label")) return "";
+        if (!normalizeComparisonMetricKey(key).includes("scf")) return "";
+        return normalizeScf(rawValue);
+      }, "");
+      return scf ? { scf, row, index } : null;
+    })
+    .filter(Boolean);
+}
+
+function formatNavigatorCount(value) {
+  return Number(value || 0).toLocaleString("en-US");
+}
+
+function formatNavigatorRate(value) {
+  return `${Number(value || 0).toFixed(2)}%`;
+}
+
+function formatWholeNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  const numeric = Number(String(value).replace(/[$,%()\s,]/g, ""));
+  if (!Number.isFinite(numeric)) {
+    return "-";
+  }
+
+  return Math.round(numeric).toLocaleString("en-US");
+}
+
+function formatRateDecimalValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  const numeric = Number(String(value).replace(/[$,%()\s,]/g, ""));
+  if (!Number.isFinite(numeric)) {
+    return String(value);
+  }
+
+  return numeric.toFixed(10);
+}
+
+function getAnalysisReportScfMetricCacheKey(reportId, scf) {
+  return `${String(reportId || "").trim()}::${normalizeScf(scf)}`;
+}
+
+function getCachedAnalysisReportScfMetrics(reportId, scf) {
+  const key = getAnalysisReportScfMetricCacheKey(reportId, scf);
+  return state.analysis.reportScfMetricCache[key] || null;
+}
+
+async function requestAnalysisReportScfMetrics(reportId, scf) {
+  const normalizedReportId = String(reportId || "").trim();
+  const normalizedScf = normalizeScf(scf);
+  if (!normalizedReportId || !normalizedScf) {
+    return null;
+  }
+
+  const cacheKey = getAnalysisReportScfMetricCacheKey(normalizedReportId, normalizedScf);
+  const cached = state.analysis.reportScfMetricCache[cacheKey];
+  if (cached?.status === "ready") {
+    return cached.row || null;
+  }
+  if (cached?.status === "loading" && cached.promise) {
+    return cached.promise;
+  }
+
+  const requestPromise = apiRequest(
+    `/api/analysis/reports/${encodeURIComponent(normalizedReportId)}/scf-metrics?scf=${encodeURIComponent(normalizedScf)}`
+  )
+    .then((payload) => {
+      const nextRow = payload?.metrics?.row || null;
+      state.analysis.reportScfMetricCache[cacheKey] = {
+        status: "ready",
+        row: nextRow,
+        updatedAt: Date.now(),
+      };
+      renderAnalysisComparisonReviewPanel();
+      return nextRow;
+    })
+    .catch((error) => {
+      state.analysis.reportScfMetricCache[cacheKey] = {
+        status: "error",
+        row: null,
+        error: error instanceof Error ? error.message : String(error || "Unable to load SCF metrics."),
+        updatedAt: Date.now(),
+      };
+      renderAnalysisComparisonReviewPanel();
+      return null;
+    });
+
+  state.analysis.reportScfMetricCache[cacheKey] = {
+    status: "loading",
+    row: cached?.row || null,
+    promise: requestPromise,
+    updatedAt: Date.now(),
+  };
+
+  return requestPromise;
+}
+
+function reportHasPremiumExportColumns(report) {
+  const columns = Array.isArray(report?.exportColumns) ? report.exportColumns : [];
+  const labels = new Set(
+    columns.map((column) => normalizeComparisonMetricKey(column?.label || column?.normalized || column?.key || ""))
+  );
+  return (
+    labels.has("total monthly premium") &&
+    labels.has("in force monthly premium") &&
+    labels.has("total converted monthly premiums")
+  );
+}
+
+function reportNeedsExactScfMetricFetch(report, rowEntry) {
+  if (!rowEntry?.scf) {
+    return false;
+  }
+  return true;
+}
+
+function buildSyntheticNavigatorRow({
+  scf,
+  mailed = 0,
+  oppCount = 0,
+  inForce = 0,
+  sold = 0,
+  totalMonthlyPremium = 0,
+  inForceMonthlyPremium = 0,
+  totalConvertedMonthlyPremiums = 0,
+  soldRate = null,
+  inForceRate = null,
+  convertedRate = null,
+}) {
+  const safeMailed = Number(mailed || 0);
+  const safeOppCount = Number(oppCount || 0);
+  const safeInForce = Number(inForce || 0);
+  const safeSold = Number(sold || 0);
+  const safeTotalMonthlyPremium = Number(totalMonthlyPremium || 0);
+  const safeInForceMonthlyPremium = Number(inForceMonthlyPremium || 0);
+  const safeTotalConvertedMonthlyPremiums = Number(totalConvertedMonthlyPremiums || 0);
+  const rateDenominator = safeMailed > 0 ? safeMailed * 14.86 : 0;
+  const safeSoldRate = Number.isFinite(Number(soldRate))
+    ? Number(soldRate)
+    : rateDenominator > 0
+      ? (safeTotalMonthlyPremium * 100) / rateDenominator
+      : safeMailed > 0
+        ? (safeSold / safeMailed) * 100
+        : 0;
+  const safeInForceRate = Number.isFinite(Number(inForceRate))
+    ? Number(inForceRate)
+    : rateDenominator > 0
+      ? (safeInForceMonthlyPremium * 100) / rateDenominator
+      : safeMailed > 0
+        ? (safeInForce / safeMailed) * 100
+        : 0;
+  const safeConvertedRate = Number.isFinite(Number(convertedRate))
+    ? Number(convertedRate)
+    : rateDenominator > 0
+      ? (safeTotalConvertedMonthlyPremiums * 100) / rateDenominator
+      : safeMailed > 0
+        ? (safeOppCount / safeMailed) * 100
+        : 0;
+
+  return {
+    "SCF Grouping": scf,
+    "scf grouping": scf,
+    "Sum of Mailed": formatNavigatorCount(safeMailed),
+    "sum of mailed": formatNavigatorCount(safeMailed),
+    "Sum of Opp Count": formatNavigatorCount(safeOppCount),
+    "sum of opp count": formatNavigatorCount(safeOppCount),
+    "Sum of In Force": formatNavigatorCount(safeInForce),
+    "sum of in force": formatNavigatorCount(safeInForce),
+    "Sum of Sold": formatNavigatorCount(safeSold),
+    "sum of sold": formatNavigatorCount(safeSold),
+    "Sum of Total Monthly Premium": safeTotalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+    "sum of total monthly premium": safeTotalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+    "Sum of In Force Monthly Premium": safeInForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+    "sum of in force monthly premium": safeInForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+    "Sum of Total Converted Monthly Premiums": safeTotalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+    "sum of total converted monthly premiums": safeTotalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+    "Sold Rate": safeSoldRate.toFixed(10),
+    "sold rate": safeSoldRate.toFixed(10),
+    "In Force Rate": safeInForceRate.toFixed(10),
+    "in force rate": safeInForceRate.toFixed(10),
+    "Converted Rate": safeConvertedRate.toFixed(10),
+    "converted rate": safeConvertedRate.toFixed(10),
+  };
+}
+
+function getComparisonSelectedReportIds(link) {
+  return Array.from(
+    new Set(
+      ensureArray(link?.selectedReportIds ?? link?.reportIds)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 5);
+}
+
+function setComparisonSelectedReportIds(link, nextIds) {
+  const selectedReportIds = Array.from(
+    new Set(
+      ensureArray(nextIds)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 5);
+  link.selectedReportIds = selectedReportIds;
+  link.reportIds = selectedReportIds;
+  link.reportAId = selectedReportIds[0] || "";
+  link.reportBId = selectedReportIds[1] || "";
+  return selectedReportIds;
+}
+
+function buildExportScfAggregateMap(report) {
+  const exportRows = getReportEntriesForKeyCodeGroup(report, getReportExportRowsWithScf(report));
+  const aggregateMap = new Map();
+
+  exportRows.forEach((entry) => {
+    const scf = normalizeScf(entry?.scf);
+    if (!scf) {
+      return;
+    }
+
+    const row = entry?.row || {};
+    const current = aggregateMap.get(scf) || {
+      scf,
+      mailed: 0,
+      oppCount: 0,
+      inForce: 0,
+      sold: 0,
+      totalMonthlyPremium: 0,
+      inForceMonthlyPremium: 0,
+      totalConvertedMonthlyPremiums: 0,
+      soldRateWeightedTotal: 0,
+      soldRateWeight: 0,
+      inForceRateWeightedTotal: 0,
+      inForceRateWeight: 0,
+      convertedRateWeightedTotal: 0,
+      convertedRateWeight: 0,
+    };
+
+    current.mailed += getRowMetricNumber(row, "Mailed");
+    current.oppCount += getRowMetricNumber(row, "Opp Count");
+    current.inForce += getRowMetricNumber(row, "In Force");
+    current.sold += getRowMetricNumber(row, "Sold");
+    current.totalMonthlyPremium += getRowMetricNumber(row, "Total Monthly Premium");
+    current.inForceMonthlyPremium += getRowMetricNumber(row, "In Force Monthly Premium");
+    current.totalConvertedMonthlyPremiums += getRowMetricNumber(row, "Total Converted Monthly Premiums");
+    const mailed = getRowMetricNumber(row, "Mailed");
+    const soldRate = getRowMetricNumber(row, "Sold Rate");
+    const inForceRate = getRowMetricNumber(row, "In Force Rate");
+    const convertedRate = getRowMetricNumber(row, "Converted Rate");
+    if (mailed > 0 && Number.isFinite(soldRate)) {
+      current.soldRateWeightedTotal += soldRate * mailed;
+      current.soldRateWeight += mailed;
+    }
+    if (mailed > 0 && Number.isFinite(inForceRate)) {
+      current.inForceRateWeightedTotal += inForceRate * mailed;
+      current.inForceRateWeight += mailed;
+    }
+    if (mailed > 0 && Number.isFinite(convertedRate)) {
+      current.convertedRateWeightedTotal += convertedRate * mailed;
+      current.convertedRateWeight += mailed;
+    }
+    aggregateMap.set(scf, current);
+  });
+
+  return aggregateMap;
+}
+
+function getUnifiedReportScfEntries(report) {
+  const summaryEntries = getReportEntriesForKeyCodeGroup(report, getReportRowsWithScf(report));
+  const summaryMap = new Map(summaryEntries.map((entry) => [entry.scf, entry]));
+  const exportAggregateMap = buildExportScfAggregateMap(report);
+  const combinedScfs = Array.from(
+    new Set([
+      ...summaryMap.keys(),
+      ...exportAggregateMap.keys(),
+    ])
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  return combinedScfs.map((scf) => {
+    const summaryEntry = summaryMap.get(scf);
+    if (summaryEntry) {
+      return {
+        scf,
+        row: summaryEntry.row,
+        source: "summary",
+      };
+    }
+
+    const aggregateEntry = exportAggregateMap.get(scf) || { scf };
+    return {
+      scf,
+      row: buildSyntheticNavigatorRow({
+        ...aggregateEntry,
+        soldRate: aggregateEntry.soldRateWeight > 0
+          ? aggregateEntry.soldRateWeightedTotal / aggregateEntry.soldRateWeight
+          : null,
+        inForceRate: aggregateEntry.inForceRateWeight > 0
+          ? aggregateEntry.inForceRateWeightedTotal / aggregateEntry.inForceRateWeight
+          : null,
+        convertedRate: aggregateEntry.convertedRateWeight > 0
+          ? aggregateEntry.convertedRateWeightedTotal / aggregateEntry.convertedRateWeight
+          : null,
+      }),
+      source: "export-aggregate",
+    };
+  });
+}
+
+function findReportScfMatch(report, scf) {
+  const normalizedScf = normalizeScf(scf);
+  if (!normalizedScf) {
+    return null;
+  }
+
+  const summaryEntries = filterScfEntriesByReportKeyCodeGroup(
+    report,
+    getReportRowsWithScf(report).filter((entry) => entry.scf === normalizedScf)
+  );
+  const summaryMatch = summaryEntries[0] || null;
+  if (summaryMatch) {
+    return {
+      ...summaryMatch,
+      source: "summary",
+    };
+  }
+
+  const aggregateMatch = getUnifiedReportScfEntries(report).find((entry) => entry.scf === normalizedScf);
+  if (aggregateMatch) {
+    return {
+      ...aggregateMatch,
+      source: aggregateMatch.source || "export-aggregate",
+    };
+  }
+
+  const exportEntries = filterScfEntriesByReportKeyCodeGroup(
+    report,
+    getReportExportRowsWithScf(report).filter((entry) => entry.scf === normalizedScf)
+  );
+  const exportMatch = exportEntries[0] || null;
+  if (exportMatch) {
+    return {
+      ...exportMatch,
+      source: "export",
+    };
+  }
+
+  return null;
+}
+
+function findReportRowByScf(report, scf) {
+  return findReportScfMatch(report, scf);
+}
+
+function getRowMetricValue(row, metricLabel) {
+  const target = normalizeComparisonMetricKey(metricLabel);
+  const entries = Object.entries(row || {});
+  const exactEntry = entries.find(([key]) => normalizeComparisonMetricKey(key) === target);
+  if (exactEntry) {
+    return exactEntry[1];
+  }
+  const fuzzyEntry = entries.find(([key]) => normalizeComparisonMetricKey(key).includes(target));
+  return fuzzyEntry ? fuzzyEntry[1] : "";
+}
+
+function getRowMetricRawValueByAliases(row, metricLabels = []) {
+  if (!Array.isArray(metricLabels) || !metricLabels.length) {
+    return "";
+  }
+
+  for (const metricLabel of metricLabels) {
+    const rawValue = getRowMetricValue(row, metricLabel);
+    if (rawValue === null || rawValue === undefined) {
+      continue;
+    }
+    if (String(rawValue).trim() === "") {
+      continue;
+    }
+    return rawValue;
+  }
+
+  const entries = Object.entries(row || {});
+  const fallbackEntry = entries.find(([key, rawValue]) => {
+    const normalized = normalizeComparisonMetricKey(key);
+    if (normalized.endsWith("__label")) {
+      return false;
+    }
+    if (!normalized.includes("mailed")) {
+      return false;
+    }
+    if (normalized.includes("rate")) {
+      return false;
+    }
+    return !(rawValue === null || rawValue === undefined || String(rawValue).trim() === "");
+  });
+
+  if (!fallbackEntry) {
+    return "";
+  }
+
+  return fallbackEntry[1];
+}
+
+function getTotalMailedFromRow(row) {
+  const rawValue = getRowMetricRawValueByAliases(row, [
+    "Total Mailed",
+    "Sum of Mailed",
+    "Mailed",
+    "Mailed Count",
+    "Mail Count",
+    "Total Mail",
+    "total_mail",
+    "total_mailed",
+    "quantity mailed",
+    "quantityMailed",
+    "mail count",
+    "mailing total",
+  ]);
+  if (rawValue === "" || rawValue === null || rawValue === undefined) {
+    return "";
+  }
+  return rawValue;
+}
+
+function getRowMetricNumber(row, metricLabel) {
+  const rawValue = getRowMetricValue(row, metricLabel);
+  const numeric = Number(String(rawValue ?? "").replace(/[$,%(),\s]/g, ""));
+  return Number.isNaN(numeric) ? 0 : numeric;
+}
+
+function getRowMetricDisplayValue(row, metricLabel) {
+  const target = normalizeComparisonMetricKey(metricLabel);
+  const labelEntry = Object.entries(row || {}).find(([key]) => {
+    if (!String(key).endsWith("__label")) return false;
+    const baseKey = String(key).slice(0, -7);
+    return normalizeComparisonMetricKey(baseKey) === target;
+  });
+  const rawValue = labelEntry ? labelEntry[1] : getRowMetricValue(row, metricLabel);
+  if (rawValue === null || rawValue === undefined || rawValue === "") {
+    return "-";
+  }
+
+  if (target.includes("rate")) {
+    return formatRateDecimalValue(rawValue);
+  }
+
+  return String(rawValue);
+}
+
+function getRowStateValue(row) {
+  const entries = Object.entries(row || {});
+  const preferredEntry = entries.find(([key]) => {
+    const normalized = normalizeComparisonMetricKey(key);
+    return normalized === "state" || normalized.endsWith(" state") || normalized.includes("mailing to state");
+  });
+  if (preferredEntry) {
+    return String(preferredEntry[1] || "").trim();
+  }
+  return "";
+}
+
+function getReviewMetricDisplayName(metricKey) {
+  const normalized = String(metricKey || "").trim();
+  if (normalized === "inForceRate") return "In Force Rate";
+  if (normalized === "convertedRate") return "Converted Rate";
+  return "Sold Rate";
+}
+
+function buildPrimaryNavigatorRows(report) {
+  return getUnifiedReportScfEntries(report).map((entry) => ({
+    scf: entry.scf,
+    row: entry.row,
+    mailed: getRowMetricNumber(entry.row, "Sum of Mailed"),
+    soldRate: getRowMetricNumber(entry.row, "Sold Rate"),
+    inForceRate: getRowMetricNumber(entry.row, "In Force Rate"),
+    convertedRate: getRowMetricNumber(entry.row, "Converted Rate"),
+  }));
+}
+
+function getSortedFilteredPrimaryRows(rows = []) {
+  const thresholdMetric = String(state.analysis.reviewThresholdMetric || "soldRate").trim();
+  const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
+  const thresholdNumber = thresholdValue === "" ? null : Number(thresholdValue);
+  const filteredRows = rows.filter((entry) => {
+    if (thresholdNumber === null || Number.isNaN(thresholdNumber)) {
+      return true;
+    }
+    return Number(entry?.[thresholdMetric] || 0) >= thresholdNumber;
+  });
+
+  const sortKey = String(state.analysis.reviewTableSort?.key || "soldRate").trim();
+  const sortDirection = state.analysis.reviewTableSort?.direction === "asc" ? "asc" : "desc";
+  const directionFactor = sortDirection === "asc" ? 1 : -1;
+  return [...filteredRows].sort((a, b) => {
+    if (sortKey === "scf") {
+      return a.scf.localeCompare(b.scf) * directionFactor;
+    }
+    return (Number(a?.[sortKey] || 0) - Number(b?.[sortKey] || 0)) * directionFactor;
+  });
+}
+
+function removeWorkingListEntriesBelowRate(listType, rows = [], metricKey, thresholdValue) {
+  const normalizedListType = String(listType || "").trim().toLowerCase();
+  const normalizedMetricKey = String(metricKey || "soldRate").trim();
+  const thresholdNumber = Number(thresholdValue);
+  if (!Number.isFinite(thresholdNumber)) {
+    return { removedCount: 0, affectedScfs: [] };
+  }
+
+  ensureComparisonReviewWorkingLists();
+  const list = getWorkingReferenceList(normalizedListType);
+  if (!list) {
+    return { removedCount: 0, affectedScfs: [] };
+  }
+
+  const scfsToRemove = new Set(
+    rows
+      .filter((entry) => Number(entry?.[normalizedMetricKey] || 0) < thresholdNumber)
+      .map((entry) => normalizeScf(entry?.scf))
+      .filter(Boolean)
+  );
+
+  if (!scfsToRemove.size) {
+    return { removedCount: 0, affectedScfs: [] };
+  }
+
+  const originalItems = Array.isArray(list.items) ? list.items : [];
+  const remainingItems = originalItems.filter((entry) => !scfsToRemove.has(normalizeScf(entry?.scf)));
+  const removedCount = originalItems.length - remainingItems.length;
+  list.items = remainingItems;
+  list.count = remainingItems.length;
+  list.updatedAt = new Date().toISOString();
+  invalidateComparisonReviewSummary();
+
+  return {
+    removedCount,
+    affectedScfs: Array.from(scfsToRemove),
+  };
+}
+
+function getComparisonReviewComparisonById(comparisonId) {
+  const comparisons = Array.isArray(state.analysis.comparisonRequests)
+    ? state.analysis.comparisonRequests
+    : [];
+  return comparisons.find((entry) => entry.id === comparisonId) || null;
+}
+
+function getComparisonReviewReports(comparison) {
+  if (!comparison) return [];
+  const reportMap = new Map((state.analysis.savedReports || []).map((report) => [report.id, report]));
+  return (comparison.reportIds || [])
+    .map((reportId) => reportMap.get(reportId))
+    .filter(Boolean);
+}
+
+function ensureComparisonReviewSelection() {
+  const comparisons = Array.isArray(state.analysis.comparisonRequests)
+    ? state.analysis.comparisonRequests
+    : [];
+  if (!comparisons.length) {
+    state.analysis.selectedComparisonId = "";
+    return null;
+  }
+
+  const preferredId = getPreferredComparisonId(comparisons);
+  const selectedComparison = comparisons.find((entry) => entry.id === preferredId) || comparisons[0];
+  state.analysis.selectedComparisonId = selectedComparison.id;
+
+  const reports = getComparisonReviewReports(selectedComparison);
+  if (!reports.length) {
+    return {
+      comparison: selectedComparison,
+      reports: [],
+      primaryReport: null,
+      primaryRows: [],
+      selectedScf: "",
+      selectedIndex: -1,
+    };
+  }
+
+  const savedPrimaryId = state.analysis.reviewPrimaryReportIds[selectedComparison.id];
+  const primaryReport = reports.find((report) => report.id === savedPrimaryId) || reports[0];
+  state.analysis.reviewPrimaryReportIds[selectedComparison.id] = primaryReport.id;
+
+  const primaryRows = getUnifiedReportScfEntries(primaryReport);
+  const savedScf = normalizeScf(state.analysis.reviewSelectedScfs[selectedComparison.id] || "");
+  const selectedScf = savedScf || (primaryRows[0]?.scf || "");
+  state.analysis.reviewSelectedScfs[selectedComparison.id] = selectedScf;
+  const selectedIndex = primaryRows.findIndex((entry) => entry.scf === selectedScf);
+
+  return {
+    comparison: selectedComparison,
+    reports,
+    primaryReport,
+    primaryRows,
+    selectedScf,
+    selectedIndex,
+  };
+}
+
+function getWorkingListEntry(listType, scf) {
+  const list = getWorkingReferenceList(listType);
+  const normalizedScf = normalizeScf(scf);
+  return (list?.items || []).find((entry) => normalizeScf(entry.scf) === normalizedScf) || null;
+}
+
+function getDoNotMailStatusForScf(scf, stateValue = "") {
+  const normalizedScf = normalizeScf(scf);
+  const entry = getWorkingListEntry("dnm", normalizedScf);
+  if (entry) {
+    const scope = String(entry.state || entry.scope || "").trim();
+    return {
+      isDoNotMail: true,
+      entry,
+      label: scope || "Do Not Mail",
+    };
+  }
+
+  const normalizedState = String(stateValue || "").trim().toLowerCase();
+  const dnmList = getWorkingReferenceList("dnm");
+  const groupedScfMatch = (dnmList?.stateGroups || []).find((group) =>
+    Array.isArray(group?.scfs)
+    && group.scfs.some((groupScf) => normalizeScf(groupScf) === normalizedScf)
+  );
+  if (groupedScfMatch) {
+    return {
+      isDoNotMail: true,
+      entry: groupedScfMatch,
+      label: groupedScfMatch.label || groupedScfMatch.state || "Do Not Mail",
+    };
+  }
+
+  const stateGroupMatch = (dnmList?.stateGroups || []).find((group) => {
+    if (!group?.isActive) return false;
+    const groupNames = [
+      String(group.state || "").trim().toLowerCase(),
+      String(group.label || "").trim().toLowerCase(),
+    ].filter(Boolean);
+    return normalizedState && groupNames.includes(normalizedState);
+  });
+
+  return {
+    isDoNotMail: Boolean(stateGroupMatch),
+    entry: stateGroupMatch || null,
+    label: stateGroupMatch?.label || stateGroupMatch?.state || "Do Not Mail",
+  };
+}
+
+function updateWorkingReferenceListEntry(listType, scf, shouldAdd, stateValue = "") {
+  const normalizedScf = normalizeScf(scf);
+  if (!normalizedScf) return;
+  if (shouldAdd && listType !== "dnm") {
+    const doNotMailMatch = getDoNotMailStatusForScf(normalizedScf);
+    if (doNotMailMatch.isDoNotMail) {
+      return;
+    }
+  }
+  ensureComparisonReviewWorkingLists();
+  const list = getWorkingReferenceList(listType);
+  if (!list) return;
+
+  if (shouldAdd) {
+    if (list.items.some((entry) => normalizeScf(entry.scf) === normalizedScf)) {
+      return;
+    }
+    list.items.unshift({
+      scf: normalizedScf,
+      state: String(stateValue || "").trim(),
+      scope: String(stateValue || "").trim(),
+      addedAt: new Date().toISOString(),
+      addedBy: "Local User",
+      reason: "Working analysis review",
+      sourceAnalysis: state.analysis.runName || getDefaultAnalysisName(),
+    });
+    list.count = list.items.length;
+    list.updatedAt = new Date().toISOString();
+    invalidateComparisonReviewSummary();
+    return;
+  }
+
+  list.items = (list.items || []).filter((entry) => normalizeScf(entry.scf) !== normalizedScf);
+  list.count = list.items.length;
+  list.updatedAt = new Date().toISOString();
+  invalidateComparisonReviewSummary();
+}
+
+function downloadClientFile(fileName, content, contentType) {
+  const blob = new Blob([content], { type: contentType });
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(href);
+}
+
+function exportWorkingComparisonList() {
+  const context = ensureComparisonReviewSelection();
+  const comparison = context?.comparison;
+  if (!comparison) {
+    setStatus("analysis-comparison-selection-status", "Choose a comparison first.");
+    return;
+  }
+
+  const listType = String(comparison.keyCodeGroup || "NHCL").trim().toLowerCase();
+  const list = getWorkingReferenceList(listType);
+  if (!list) {
+    setStatus("analysis-comparison-selection-status", `Working ${listType.toUpperCase()} list is not available.`);
+    return;
+  }
+
+  const rows = (list.items || [])
+    .map((entry) => ({
+      SCF: normalizeScf(entry.scf),
+      State: String(entry.state || entry.scope || "").trim(),
+    }))
+    .filter((entry) => entry.SCF)
+    .sort((a, b) => a.SCF.localeCompare(b.SCF));
+  const csv = [
+    "SCF,State",
+    ...rows.map((entry) => `${entry.SCF},${String(entry.State || "").replace(/,/g, " ")}`),
+  ].join("\n");
+  downloadClientFile(
+    `${listType}-working-${new Date().toISOString().slice(0, 10)}.csv`,
+    csv,
+    "text/csv;charset=utf-8"
+  );
+  setStatus(
+    "analysis-comparison-selection-status",
+    `Downloaded the working ${listType.toUpperCase()} list. Live lists were not changed.`
+  );
+}
+
+function splitCsvValue(value) {
+  return String(value || "")
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function syncAnalysisMeta(meta = {}) {
+  const runName = el("analysis-run-name");
+  const notes = el("analysis-run-notes");
+  const created = el("analysis-run-created-date");
+  const updated = el("analysis-run-updated-date");
+
+  if (meta.runName !== undefined) {
+    state.analysis.runName = meta.runName || "";
+  }
+  if (meta.notes !== undefined) {
+    state.analysis.runNotes = meta.notes || "";
+  }
+  if (runName && meta.runName !== undefined) runName.value = meta.runName;
+  if (notes && meta.notes !== undefined) notes.value = meta.notes;
+  if (created) created.textContent = `Created: ${formatDate(meta.createdAt)}`;
+  if (updated) updated.textContent = `Last Saved: ${formatDate(meta.updatedAt)}`;
+}
+
+function renderComparisonPullOptions() {
+  const selectA = el("comparison-report-a");
+  const selectB = el("comparison-report-b");
+  if (!selectA || !selectB) return;
+
+  const options = state.analysis.reportPulls.map((pull, index) => ({
+    id: pull.id,
+    label: pull.analysisLabel || `Report Pull ${index + 1}`,
+  }));
+
+  [selectA, selectB].forEach((select) => {
+    const previous = select.value;
+    select.innerHTML = "";
+    select.appendChild(new Option("Select report pull", ""));
+    options.forEach((option) => {
+      select.appendChild(new Option(option.label, option.id));
+    });
+    select.value = options.some((option) => option.id === previous) ? previous : "";
+  });
+}
+
+function renderAnalysisPulls() {
+  const container = el("analysis-report-pulls");
+  if (!container) return;
+
+  container.innerHTML = "";
+  if (!state.analysis.reportPulls.length) {
+    container.innerHTML = '<div class="empty-state-block">No report pulls yet. Click Add Report Pull to start.</div>';
+    renderComparisonPullOptions();
+    return;
+  }
+
+  state.analysis.reportPulls.forEach((pull, index) => {
+    const autoAnalysisLabel = buildAutoAnalysisLabel(pull, index);
+    const normalizedKeyCode = String((pull.keyCodes || [])[0] || "").trim().toUpperCase();
+    const keyCodeOptions = Array.from(
+      new Set(
+        [
+          ...ANALYSIS_CLIENT_TYPE_OPTIONS,
+          ...(normalizedKeyCode ? [normalizedKeyCode] : []),
+        ].filter(Boolean)
+      )
+    );
+    const normalizedClientType = String(pull.clientType || "").trim().toUpperCase();
+    const clientTypeOptions = Array.from(
+      new Set(
+        [
+          ...ANALYSIS_CLIENT_TYPE_OPTIONS,
+          ...(normalizedClientType ? [normalizedClientType] : []),
+        ].filter(Boolean)
+      )
+    );
+    const card = document.createElement("article");
+    card.className = "analysis-pull-card";
+    card.setAttribute("data-pull-id", pull.id);
+    card.innerHTML = `
+      <div class="analysis-pull-head">
+        <div class="analysis-pull-title-row">
+          <div>
+            <span class="field-label">Report Pull ${index + 1}</span>
+            <strong>${esc(autoAnalysisLabel)}</strong>
+          </div>
+          <button class="secondary-button table-action-button" data-action="remove-analysis-pull" data-pull-id="${esc(pull.id)}">Remove</button>
+        </div>
+      </div>
+      <div class="analysis-pull-grid">
+        <div class="field-stack">
+          <label class="field-label">Salesforce Report ID</label>
+          <input class="field-input" data-pull-field="reportId" data-pull-id="${esc(pull.id)}" type="text" value="${esc(pull.reportId || "")}" />
+        </div>
+        <div class="field-stack">
+          <label class="field-label">Analysis Label</label>
+          <div class="field-input analysis-readonly-field">${esc(autoAnalysisLabel)}</div>
+        </div>
+        <div class="field-stack">
+          <label class="field-label">Key Codes</label>
+          <select class="field-input" data-pull-field="keyCodes" data-pull-id="${esc(pull.id)}">
+            <option value=""${normalizedKeyCode ? "" : " selected"}>Select Key Code</option>
+            ${keyCodeOptions.map((option) => `
+              <option value="${esc(option)}"${normalizedKeyCode === option ? " selected" : ""}>${esc(option)}</option>
+            `).join("")}
+          </select>
+        </div>
+        <div class="field-stack">
+          <label class="field-label">Selected Years</label>
+          <input class="field-input" data-pull-field="years" data-pull-id="${esc(pull.id)}" type="text" value="${esc((pull.years || []).join(", "))}" placeholder="2025, 2026" />
+        </div>
+        <div class="field-stack">
+          <label class="field-label">Start Date</label>
+          <input class="field-input" data-pull-field="startDate" data-pull-id="${esc(pull.id)}" type="date" value="${esc(normalizeIsoDateInput(pull.dateRange?.startDate || ""))}" />
+        </div>
+        <div class="field-stack">
+          <label class="field-label">End Date</label>
+          <input class="field-input" data-pull-field="endDate" data-pull-id="${esc(pull.id)}" type="date" value="${esc(normalizeIsoDateInput(pull.dateRange?.endDate || ""))}" />
+        </div>
+        <div class="field-stack">
+          <label class="field-label">SCF Filter</label>
+          <input class="field-input" data-pull-field="scf" data-pull-id="${esc(pull.id)}" type="text" value="${esc(pull.scf || "")}" />
+        </div>
+        <div class="field-stack">
+          <label class="field-label">Client / List Type</label>
+          <select class="field-input" data-pull-field="clientType" data-pull-id="${esc(pull.id)}">
+            ${clientTypeOptions.map((option) => `
+              <option value="${esc(option)}"${normalizedClientType === option ? " selected" : ""}>${esc(option)}</option>
+            `).join("")}
+          </select>
+        </div>
+        <div class="field-stack analysis-pull-wide">
+          <label class="field-label">Notes</label>
+          <textarea class="field-input multiline-input" data-pull-field="notes" data-pull-id="${esc(pull.id)}">${esc(pull.notes || "")}</textarea>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+
+  renderComparisonPullOptions();
+}
+
+function renderAnalysisWorkspace() {
+  renderAnalysisPulls();
+}
+
+function updateAnalysisPullCardPreview(pullId) {
+  const normalizedPullId = String(pullId || "").trim();
+  if (!normalizedPullId) {
+    return;
+  }
+
+  syncAnalysisPullFromForm(normalizedPullId);
+
+  const pullIndex = state.analysis.reportPulls.findIndex((entry) => entry.id === normalizedPullId);
+  if (pullIndex === -1) {
+    return;
+  }
+
+  const pull = state.analysis.reportPulls[pullIndex];
+  const card = document.querySelector(`[data-pull-id="${normalizedPullId}"]`);
+  if (!(card instanceof HTMLElement)) {
+    return;
+  }
+
+  const nextLabel = buildAutoAnalysisLabel(pull, pullIndex);
+  const title = card.querySelector(".analysis-pull-title-row strong");
+  if (title) {
+    title.textContent = nextLabel;
+  }
+
+  const readonlyLabel = card.querySelector(".analysis-readonly-field");
+  if (readonlyLabel) {
+    readonlyLabel.textContent = nextLabel;
+  }
+}
+
+function syncAnalysisPullFromForm(pullId) {
+  const normalizedPullId = String(pullId || "").trim();
+  if (!normalizedPullId) {
+    return null;
+  }
+
+  const pull = state.analysis.reportPulls.find((entry) => entry.id === normalizedPullId);
+  const card = document.querySelector(`[data-pull-id="${normalizedPullId}"]`);
+  if (!pull || !(card instanceof HTMLElement)) {
+    return pull || null;
+  }
+
+  const keyCodeField = card.querySelector('[data-pull-field="keyCodes"]');
+  if (keyCodeField instanceof HTMLSelectElement || keyCodeField instanceof HTMLInputElement) {
+    pull.keyCodes = splitCsvValue(keyCodeField.value);
+  }
+
+  const clientTypeField = card.querySelector('[data-pull-field="clientType"]');
+  if (clientTypeField instanceof HTMLSelectElement || clientTypeField instanceof HTMLInputElement) {
+    pull.clientType = String(clientTypeField.value || "").trim();
+  }
+
+  const startDateField = card.querySelector('[data-pull-field="startDate"]');
+  const endDateField = card.querySelector('[data-pull-field="endDate"]');
+  const currentDateRange = pull.dateRange || { startDate: "", endDate: "" };
+  if (startDateField instanceof HTMLInputElement) {
+    currentDateRange.startDate = normalizeIsoDateInput(startDateField.value || "");
+  }
+  if (endDateField instanceof HTMLInputElement) {
+    currentDateRange.endDate = normalizeIsoDateInput(endDateField.value || "");
+  }
+  pull.dateRange =
+    currentDateRange.startDate || currentDateRange.endDate
+      ? { ...currentDateRange }
+      : null;
+
+  return pull;
+}
+
+function legacyCreateComparisonLink(index = 0) {
+  return {
+    id: createClientId("comparison"),
+    reportAId: "",
+    reportBId: "",
+    matchField: "SCF Grouping",
+    metricColumns: [
+      "Sum of Mailed",
+      "Sum of Opp Count",
+      "Sum of In Force",
+      "Sum of Sold",
+      "Sold Rate",
+    ],
+    label: `Comparison ${index + 1}`,
+    comparisonName: `Comparison ${index + 1}`,
+  };
+}
+
+function readComparisonMetricColumns(link) {
+  if (Array.isArray(link?.metricColumns) && link.metricColumns.length) {
+    return link.metricColumns;
+  }
+  return ["Sum of Mailed", "Sum of Opp Count", "Sum of In Force", "Sum of Sold", "Sold Rate"];
+}
+
+function legacyRenderComparisonResultCards() {
+  const container = el("analysis-comparison-results");
+  if (!container) return;
+  const selectedId = state.analysis.selectedComparisonId || "";
+  const allResults = Array.isArray(state.analysis.comparisonResults)
+    ? state.analysis.comparisonResults
+    : [];
+  const results = selectedId
+    ? allResults.filter((comparison) => comparison.id === selectedId)
+    : allResults;
+  if (!results.length) {
+    container.innerHTML = '<div class="empty-state-block">No comparisons yet.</div>';
+    return;
+  }
+
+  container.innerHTML = results
+    .map((comparison, index) => {
+      const summary = comparison.summary || {};
+      const mismatchRows = Array.isArray(comparison.rows)
+        ? comparison.rows.filter((row) => {
+            if (!row.inReportA || !row.inReportB) {
+              return true;
+            }
+            return Array.isArray(row.metrics)
+              && row.metrics.some((metric) => Number(metric.difference || 0) !== 0);
+          }).slice(0, 12)
+        : [];
+
+      const mismatchItems = mismatchRows.length
+        ? `<ul class="comparison-issue-list">${mismatchRows
+            .map((row) => {
+              const issueText = !row.inReportA
+                ? `Only in ${comparison.reportBLabel}`
+                : !row.inReportB
+                  ? `Only in ${comparison.reportALabel}`
+                  : (row.metrics || [])
+                      .filter((metric) => Number(metric.difference || 0) !== 0)
+                      .map(
+                        (metric) =>
+                          `${metric.metricLabel}: ${metric.reportAValue ?? "-"} vs ${metric.reportBValue ?? "-"}`
+                      )
+                      .join(" | ");
+              return `<li><strong>${esc(row.matchValue || "")}</strong> ${esc(issueText || "")}</li>`;
+            })
+            .join("")}</ul>`
+        : "<p>All matched rows are aligned for the selected metrics.</p>";
+
+      const cardClass =
+        Number(summary.onlyInReportA || 0) === 0 && Number(summary.onlyInReportB || 0) === 0 && !mismatchRows.length
+          ? "comparison-summary-card is-match"
+          : "comparison-summary-card is-mismatch";
+
+      return `
+        <article class="${cardClass}">
+          <h4>${esc(comparison.comparisonName || comparison.reportALabel || `Comparison ${index + 1}`)}</h4>
+          <p>${esc(comparison.reportALabel || "")} vs ${esc(comparison.reportBLabel || "")}</p>
+          <div class="comparison-summary-meta">
+            <span>Matched SCFs: ${Number(summary.inBoth || 0)}</span>
+            <span>Only in first: ${Number(summary.onlyInReportA || 0)}</span>
+            <span>Only in second: ${Number(summary.onlyInReportB || 0)}</span>
+            <span>Match field: ${esc(comparison.matchField || "SCF Grouping")}</span>
+          </div>
+          ${mismatchItems}
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function legacyRenderAnalysisComparePanel() {
+  const container = el("analysis-comparison-links");
+  if (!container) return;
+
+  const reports = Array.isArray(state.analysis.savedReports) ? state.analysis.savedReports : [];
+  if (reports.length < 2) {
+    container.innerHTML =
+      '<div class="empty-state-block">Run at least two analysis reports before building comparisons.</div>';
+    legacyRenderComparisonResultCards();
+    return;
+  }
+
+  if (!state.analysis.comparisonLinks.length) {
+    state.analysis.comparisonLinks = [createComparisonLink(0)];
+  }
+
+  container.innerHTML = state.analysis.comparisonLinks
+    .map((link, index) => {
+      const metricText = readComparisonMetricColumns(link).join(", ");
+      const options = reports
+        .map((report) => {
+          const selectedA = report.id === link.reportAId ? " selected" : "";
+          const selectedB = report.id === link.reportBId ? " selected" : "";
+          const label = `${getAnalysisReportDisplayName(report)} (${report.status || "complete"}, ${Number(
+            report.result_count || report.resultCount || 0
+          )} rows)`;
+          return {
+            a: `<option value="${esc(report.id)}"${selectedA}>${esc(label)}</option>`,
+            b: `<option value="${esc(report.id)}"${selectedB}>${esc(label)}</option>`,
+          };
+        });
+
+      return `
+        <article class="analysis-pull-card" data-comparison-id="${esc(link.id)}">
+          <div class="analysis-pull-head">
+            <div class="analysis-pull-title-row">
+              <div>
+                <span class="field-label">Comparison ${index + 1}</span>
+                <strong>${esc(link.comparisonName || link.label || `Comparison ${index + 1}`)}</strong>
+              </div>
+              <button class="secondary-button table-action-button" data-action="remove-comparison-link" data-comparison-id="${esc(link.id)}">Remove</button>
+            </div>
+          </div>
+          <div class="analysis-pull-grid">
+            <div class="field-stack">
+              <label class="field-label">Comparison Name</label>
+              <input class="field-input" data-comparison-field="comparisonName" data-comparison-id="${esc(link.id)}" type="text" value="${esc(link.comparisonName || link.label || `Comparison ${index + 1}`)}" placeholder="Enter comparison name" />
+            </div>
+            <div class="field-stack">
+              <label class="field-label">First Report</label>
+              <select class="field-input" data-comparison-field="reportAId" data-comparison-id="${esc(link.id)}">
+                <option value="">Select first report</option>
+                ${options.map((option) => option.a).join("")}
+              </select>
+            </div>
+            <div class="field-stack">
+              <label class="field-label">Second Report</label>
+              <select class="field-input" data-comparison-field="reportBId" data-comparison-id="${esc(link.id)}">
+                <option value="">Select second report</option>
+                ${options.map((option) => option.b).join("")}
+              </select>
+            </div>
+            <div class="field-stack">
+              <label class="field-label">Match Field</label>
+              <input class="field-input" data-comparison-field="matchField" data-comparison-id="${esc(link.id)}" type="text" value="${esc(link.matchField || "SCF Grouping")}" />
+            </div>
+            <div class="field-stack analysis-pull-wide">
+              <label class="field-label">Metrics to Compare</label>
+              <input class="field-input" data-comparison-field="metricColumns" data-comparison-id="${esc(link.id)}" type="text" value="${esc(metricText)}" placeholder="Sum of Mailed, Sum of Opp Count, Sum of In Force, Sum of Sold" />
+            </div>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+
+  legacyRenderComparisonResultCards();
+}
+
+function legacyRenderAnalysisComparisonReviewPanel() {
+  const select = el("analysis-comparison-select");
+  if (!select) {
+    legacyRenderComparisonResultCards();
+    return;
+  }
+
+  const results = Array.isArray(state.analysis.comparisonResults)
+    ? state.analysis.comparisonResults
+    : [];
+
+  select.innerHTML = "";
+  select.appendChild(new Option("Select a comparison", ""));
+  results.forEach((comparison, index) => {
+    select.appendChild(
+      new Option(
+        comparison.comparisonName || `${comparison.reportALabel || "Comparison"} vs ${comparison.reportBLabel || index + 1}`,
+        comparison.id
+      )
+    );
+  });
+
+  if (results.some((comparison) => comparison.id === state.analysis.selectedComparisonId)) {
+    select.value = state.analysis.selectedComparisonId;
+  } else {
+    state.analysis.selectedComparisonId = results[0]?.id || "";
+    select.value = state.analysis.selectedComparisonId;
+  }
+
+  legacyRenderComparisonResultCards();
+}
+
+function getAvailableAnalysisReports() {
+  const reports = Array.isArray(state.analysis.savedReports) ? state.analysis.savedReports : [];
+  return reports.map((report) => {
+    const rowCount = Number(report.result_count || report.resultCount || 0);
+    const rawStatus = String(report.status || "").trim().toLowerCase();
+    const keyCodeGroup = getAnalysisReportKeyCodeGroup(report);
+    let status = "not_imported";
+    if (rawStatus === "complete") {
+      status = rowCount > 0 ? "ready" : "missing_data";
+    } else if (rawStatus === "failed") {
+      status = "error";
+    } else if (rawStatus) {
+      status = "missing_data";
+    }
+
+    return {
+      id: String(report.id || "").trim(),
+      name: String(getAnalysisReportDisplayName(report) || report.id || "Untitled report").trim(),
+      report_name: String(report.report_name || report.reportName || "").trim(),
+      reportName: String(report.reportName || report.report_name || "").trim(),
+      salesforceReportId: String(report.parameters?.report_id || "").trim(),
+      category: keyCodeGroup || String(report.parameters?.client_type || report.report_type || report.reportType || "").trim(),
+      keyCodeGroup,
+      key_code_group: keyCodeGroup,
+      clientType: String(report.clientType || report.parameters?.clientType || "").trim(),
+      client_type: String(report.client_type || report.parameters?.client_type || "").trim(),
+      parameters: report.parameters || {},
+      importedAt: report.created_at || report.createdAt || null,
+      rowCount,
+      status,
+      statusLabel: status.replace(/_/g, " "),
+      message:
+        String(report.error_message || report.errorMessage || report.results_summary || report.resultsSummary || "").trim(),
+    };
+  });
+}
+
+function getAvailableAnalysisReportMap() {
+  return new Map(getAvailableAnalysisReports().map((report) => [report.id, report]));
+}
+
+function setComparisonSetupNextButtonsDisabled(disabled) {
+  ["analysis-home-next-button", "complete-comparison-setup-button"].forEach((id) => {
+    const button = el(id);
+    if (button) {
+      button.disabled = Boolean(disabled);
+    }
+  });
+}
+
+function validateAnalysisComparisonSetup() {
+  hydrateComparisonLinksFromDom();
+  const errorsById = {};
+  const summaryErrors = [];
+  const reports = getAvailableAnalysisReports();
+  const reportMap = new Map(reports.map((report) => [report.id, report]));
+  const readyReports = reports.filter((report) => report.status === "ready");
+  const links = Array.isArray(state.analysis.comparisonLinks) ? state.analysis.comparisonLinks : [];
+
+  if (readyReports.length < 2) {
+    summaryErrors.push("At least two ready reports are required to build a comparison.");
+  }
+
+  if (!links.length) {
+    summaryErrors.push("At least one comparison is required.");
+  }
+
+  links.forEach((link, index) => {
+    const errors = [];
+    const selectedIds = getComparisonSelectedReportIds(link);
+
+    if (selectedIds.length < 2) {
+      errors.push("Select 2 to 5 reports for this comparison.");
+    }
+
+    if (selectedIds.length > 5) {
+      errors.push("A comparison can include up to 5 reports.");
+    }
+
+    const derivedKeyCodeGroup = deriveComparisonKeyCodeGroupFromReportIds(selectedIds);
+    if (selectedIds.length >= 2 && derivedKeyCodeGroup === "MIXED") {
+      errors.push("Select reports from only one key code list for each comparison.");
+    } else if (selectedIds.length >= 2 && !derivedKeyCodeGroup) {
+      errors.push("Selected reports must have an NHCL or RFC key code list.");
+    }
+
+    selectedIds.forEach((reportId) => {
+      const report = reportMap.get(reportId);
+      if (!report) {
+        errors.push("One or more selected reports are no longer available.");
+        return;
+      }
+      if (report.status !== "ready") {
+        errors.push("Selected reports must be in Ready status.");
+      }
+    });
+
+    errorsById[link.id] = Array.from(new Set(errors));
+  });
+
+  return {
+    isValid:
+      summaryErrors.length === 0
+      && links.length > 0
+      && links.every((link) => (errorsById[link.id] || []).length === 0),
+    summaryErrors,
+    errorsById,
+    reports,
+  };
+}
+
+function renderAvailableReports() {
+  const container = el("analysis-available-reports");
+  if (!container) return;
+
+  const reports = getAvailableAnalysisReports();
+  const readyStatus = el("analysis-ready-report-status");
+  const readyCount = reports.filter((report) => report.status === "ready").length;
+  if (readyStatus) {
+    readyStatus.textContent = reports.length
+      ? `${readyCount} ready report${readyCount === 1 ? "" : "s"} available for comparison setup.`
+      : "";
+  }
+
+  if (!reports.length) {
+    container.innerHTML = `
+      <div class="empty-state-block">
+        No reports have been added to this analysis yet. Go back to the report setup page to add reports.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = reports
+    .map((report) => `
+      <article class="analysis-report-card">
+        <div class="analysis-report-card-head">
+          <div>
+            <span class="field-label">Available Report</span>
+            <strong>${esc(report.name)}</strong>
+          </div>
+          <span class="analysis-report-status is-${esc(report.status)}">${esc(report.statusLabel)}</span>
+        </div>
+        <div class="analysis-report-card-meta">
+          <span><strong>ID:</strong> ${esc(report.salesforceReportId || "Not available")}</span>
+          <span><strong>Type:</strong> ${esc(report.category || "Not available")}</span>
+          <span><strong>Created:</strong> ${esc(formatDate(report.importedAt))}</span>
+          <span><strong>Rows:</strong> ${Number(report.rowCount || 0)}</span>
+        </div>
+        ${report.message ? `<p>${esc(report.message)}</p>` : ""}
+      </article>
+    `)
+    .join("");
+}
+
+function renderAnalysisSetupHome() {
+  const container = el("analysis-comparison-links");
+  if (!container) return;
+
+  if (!state.analysis.comparisonLinks.length) {
+    state.analysis.comparisonLinks = [createComparisonLink(0)];
+  }
+
+  const validation = validateAnalysisComparisonSetup();
+  const summary = el("analysis-comparison-validation-summary");
+  if (summary) {
+    summary.textContent = validation.summaryErrors.join(" ");
+  }
+
+  container.innerHTML = state.analysis.comparisonLinks
+    .map((link, index) => {
+      const errors = validation.errorsById[link.id] || [];
+      const selectedIds = getComparisonSelectedReportIds(link);
+      logComparisonDebug("render comparison picker", link.id, selectedIds);
+      const comparisonName = resolveComparisonName(link.comparisonName || "", index);
+      const reportCards = validation.reports.length
+        ? validation.reports
+            .map((report) => {
+              const checked = selectedIds.includes(report.id) ? " checked" : "";
+              const disabled = report.status !== "ready" && !selectedIds.includes(report.id) ? " disabled" : "";
+              const optionClass = report.status !== "ready" && !selectedIds.includes(report.id)
+                ? "analysis-report-picker-option is-disabled"
+                : "analysis-report-picker-option";
+              return `
+                <div
+                  class="${optionClass} comparison-report-option"
+                  data-comparison-report-option="true"
+                  data-comparison-id="${esc(link.id)}"
+                  data-report-id="${esc(report.id)}"
+                  role="checkbox"
+                  aria-checked="${selectedIds.includes(report.id) ? "true" : "false"}"
+                  tabindex="${disabled ? "-1" : "0"}"
+                >
+                  <input
+                    type="checkbox"
+                    class="comparison-report-checkbox"
+                    data-report-checkbox="true"
+                    data-comparison-id="${esc(link.id)}"
+                    value="${esc(report.id)}"
+                    aria-label="Select report ${esc(report.name)}"
+                    ${checked}${disabled}
+                  />
+                  <span class="analysis-report-picker-copy">
+                    <strong>${esc(report.name)}</strong>
+                    <span>${esc(report.category || "Report")} | ${Number(report.rowCount || 0)} rows | ${esc(report.statusLabel)}</span>
+                  </span>
+                </div>
+              `;
+            })
+            .join("")
+        : `
+          <div class="empty-state-block">
+            No reports have been added to this analysis yet. Go back to the report setup page to add reports.
+          </div>
+        `;
+
+      return `
+        <article class="analysis-pull-card analysis-comparison-card ${errors.length ? "is-invalid" : ""}" data-comparison-id="${esc(link.id)}">
+          <div class="analysis-comparison-card-head">
+            <div>
+              <span class="field-label">Comparison ${index + 1}</span>
+              <strong>${esc(comparisonName)}</strong>
+            </div>
+            <button class="secondary-button table-action-button" data-action="remove-comparison-link" data-comparison-id="${esc(link.id)}"${state.analysis.comparisonLinks.length === 1 ? " disabled" : ""}>Remove Comparison</button>
+          </div>
+          <div class="analysis-comparison-grid">
+            <div class="field-stack">
+              <label class="field-label">Comparison Name</label>
+              <input class="field-input" data-comparison-field="comparisonName" data-comparison-id="${esc(link.id)}" type="text" value="${esc(comparisonName)}" placeholder="Example: NHCL October vs November" />
+            </div>
+            <div class="field-stack analysis-comparison-wide">
+              <span class="field-label">Reports</span>
+              <p class="analysis-selection-count">${selectedIds.length} of 5 reports selected</p>
+              <p class="analysis-comparison-helper">Select 2 to 5 reports for this comparison.</p>
+              <div class="analysis-report-picker">
+                ${reportCards}
+              </div>
+            </div>
+          </div>
+          ${errors.length ? `<p class="analysis-comparison-error">${esc(errors.join(" "))}</p>` : ""}
+        </article>
+      `;
+    })
+    .join("");
+
+  if (comparisonDebugEnabled) {
+    const existingDebug = el("comparison-debug-log");
+    if (!existingDebug) {
+      const debugBlock = document.createElement("pre");
+      debugBlock.id = "comparison-debug-log";
+      debugBlock.className = "analysis-comparison-debug-log";
+      container.insertAdjacentElement("afterend", debugBlock);
+      comparisonDebugLogContainer = debugBlock;
+    } else {
+      comparisonDebugLogContainer = existingDebug;
+      comparisonDebugLogContainer.textContent = "";
+    }
+  }
+
+  bindComparisonDebugDocumentLogging(container);
+  bindAnalysisComparisonPickerInteractions(container);
+  runComparisonDebugAutoTest(container);
+
+  setComparisonSetupNextButtonsDisabled(!validation.isValid);
+
+  renderAvailableReports();
+}
+
+function toggleComparisonReportSelection(comparisonId, reportId, shouldSelect) {
+  const link = state.analysis.comparisonLinks.find((entry) => entry.id === comparisonId);
+  if (!link) return false;
+
+  const currentIds = getComparisonSelectedReportIds(link);
+  if (shouldSelect) {
+    if (currentIds.length >= 5 && !currentIds.includes(reportId)) {
+      setStatus("analysis-comparison-status", "A comparison can include up to 5 reports.");
+      renderAnalysisSetupHome();
+      return false;
+    }
+    if (!currentIds.includes(reportId)) {
+      currentIds.push(reportId);
+    }
+    setComparisonSelectedReportIds(link, currentIds);
+  } else {
+    setComparisonSelectedReportIds(
+      link,
+      currentIds.filter((entry) => entry !== reportId)
+    );
+  }
+
+  const derivedKeyCodeGroup = deriveComparisonKeyCodeGroupFromReportIds(link.reportIds);
+  if (derivedKeyCodeGroup && derivedKeyCodeGroup !== "MIXED") {
+    link.keyCodeGroup = derivedKeyCodeGroup;
+  }
+  state.analysis.lastEditedComparisonId = comparisonId;
+  link.updatedAt = new Date().toISOString();
+  renderAnalysisSetupHome();
+  return true;
+}
+
+function describeComparisonClickTarget(target) {
+  if (!(target instanceof Element)) {
+    return null;
+  }
+  const checkbox = target.closest('[data-report-checkbox="true"]');
+  const row = target.closest("[data-comparison-report-option]");
+  const rowCheckbox = row?.querySelector('[data-report-checkbox="true"]');
+  const targetStyle = window.getComputedStyle(target);
+  const rowStyle = row instanceof Element ? window.getComputedStyle(row) : null;
+  return {
+    tagName: target.tagName,
+    className: target.className || "",
+    id: target.id || "",
+    inputType: target instanceof HTMLInputElement ? target.type : "",
+    checked: target instanceof HTMLInputElement ? target.checked : "",
+    disabled: target instanceof HTMLInputElement ? target.disabled : "",
+    pointerEvents: targetStyle.pointerEvents,
+    checkboxReached: checkbox instanceof HTMLInputElement,
+    comparisonId: row?.getAttribute("data-comparison-id") || "",
+    reportId: row?.getAttribute("data-report-id") || "",
+    rowClassName: row instanceof HTMLElement ? row.className : "",
+    rowPointerEvents: rowStyle?.pointerEvents || "",
+    rowDisabled: rowCheckbox instanceof HTMLInputElement ? rowCheckbox.disabled : "",
+  };
+}
+
+function bindComparisonDebugDocumentLogging(container) {
+  if (!comparisonDebugEnabled || comparisonDebugListenersBound) {
+    return;
+  }
+
+  const logEvent = (phase, event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    if (!(container instanceof HTMLElement) || !container.contains(target)) {
+      return;
+    }
+    logComparisonDebug(`comparison document ${phase}`, describeComparisonClickTarget(target));
+  };
+
+  document.addEventListener("click", (event) => logEvent("click-capture", event), true);
+  document.addEventListener("click", (event) => logEvent("click-bubble", event), false);
+  comparisonDebugListenersBound = true;
+}
+
+function runComparisonDebugAutoTest(container) {
+  if (!comparisonDebugEnabled || comparisonDebugAutoTestRan) {
+    return;
+  }
+  comparisonDebugAutoTestRan = true;
+  window.setTimeout(() => {
+    if (!(container instanceof HTMLElement)) {
+      return;
+    }
+    const firstRow = container.querySelector("[data-comparison-report-option]");
+    if (!(firstRow instanceof HTMLElement)) {
+      logComparisonDebug("comparison auto test", "no row found");
+      return;
+    }
+    const beforeCount = container.querySelector(".analysis-selection-count")?.textContent || "";
+    logComparisonDebug("comparison auto test before", beforeCount, describeComparisonClickTarget(firstRow));
+    firstRow.click();
+    window.setTimeout(() => {
+      const afterCount = el("analysis-comparison-links")?.querySelector(".analysis-selection-count")?.textContent || "";
+      logComparisonDebug("comparison auto test after", afterCount);
+    }, 0);
+  }, 300);
+}
+
+function bindAnalysisComparisonPickerInteractions(container) {
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+
+  container
+    .querySelectorAll("[data-comparison-report-option]")
+    .forEach((option) => {
+      if (!(option instanceof HTMLElement)) {
+        return;
+      }
+
+      const checkbox = option.querySelector('[data-report-checkbox="true"]');
+      if (!(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+
+      const toggleFromRow = (event) => {
+        if (checkbox.disabled) {
+          logComparisonDebug("comparison row blocked disabled", describeComparisonClickTarget(event.target));
+          return;
+        }
+
+        const target = event.target;
+        const clickedCheckbox = target instanceof HTMLInputElement && target.hasAttribute("data-report-checkbox");
+        if (clickedCheckbox) {
+          event.preventDefault();
+        }
+        const comparisonId = String(checkbox.getAttribute("data-comparison-id") || "").trim();
+        const reportId = String(checkbox.value || "").trim();
+        if (!comparisonId || !reportId) {
+          return;
+        }
+        const link = state.analysis.comparisonLinks.find((entry) => entry.id === comparisonId);
+        const currentlySelected = getComparisonSelectedReportIds(link).includes(reportId);
+        const nextSelectedIds = currentlySelected
+          ? getComparisonSelectedReportIds(link).filter((entry) => entry !== reportId)
+          : [...getComparisonSelectedReportIds(link), reportId].slice(0, 5);
+        logComparisonDebug(
+          "comparison report row clicked",
+          comparisonId,
+          reportId,
+          currentlySelected,
+          nextSelectedIds
+        );
+        toggleComparisonReportSelection(comparisonId, reportId, !currentlySelected);
+      };
+
+      option.addEventListener("click", toggleFromRow);
+      option.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+        event.preventDefault();
+        toggleFromRow(event);
+      });
+    });
+}
+
+function refreshAnalysisSetupValidationUi() {
+  const validation = validateAnalysisComparisonSetup();
+  const summary = el("analysis-comparison-validation-summary");
+  if (summary) {
+    summary.textContent = validation.summaryErrors.join(" ");
+  }
+  setComparisonSetupNextButtonsDisabled(!validation.isValid);
+}
+
+function hydrateComparisonLinksFromDom() {
+  const homePanel = el("analysis-home-panel");
+  if (!homePanel) {
+    return;
+  }
+
+  const comparisonCards = Array.from(
+    homePanel.querySelectorAll("[data-comparison-id]")
+  );
+
+  comparisonCards.forEach((card) => {
+    const comparisonId = String(card.getAttribute("data-comparison-id") || "").trim();
+    if (!comparisonId) {
+      return;
+    }
+
+    const link = state.analysis.comparisonLinks.find((entry) => entry.id === comparisonId);
+    if (!link) {
+      return;
+    }
+
+    const nameInput = card.querySelector('[data-comparison-field="comparisonName"]');
+    if (nameInput instanceof HTMLInputElement) {
+      link.comparisonName = String(nameInput.value || "").trim();
+    }
+
+    const selectedIds = getComparisonSelectedReportIds(link);
+    setComparisonSelectedReportIds(link, selectedIds);
+    const derivedKeyCodeGroup = deriveComparisonKeyCodeGroupFromReportIds(selectedIds);
+    if (derivedKeyCodeGroup && derivedKeyCodeGroup !== "MIXED") {
+      link.keyCodeGroup = derivedKeyCodeGroup;
+    }
+  });
+}
+
+function renderAnalysisComparePanel() {
+  renderAnalysisSetupHome();
+}
+
+function renderReviewSummaryRows(title, rows) {
+  if (!rows.length) {
+    return `
+      <article class="panel analysis-review-summary-card">
+        <h4>${esc(title)}</h4>
+        <p class="analysis-review-summary-empty">No items.</p>
+      </article>
+    `;
+  }
+
+  return `
+    <article class="panel analysis-review-summary-card">
+      <h4>${esc(title)} (${rows.length})</h4>
+      <div class="analysis-review-summary-list">
+        ${rows
+          .map((entry) => `
+            <div class="analysis-review-summary-line">
+              <strong>${esc(entry.scf)}</strong>
+              ${entry.state ? `<span>${esc(entry.state)}</span>` : ""}
+              ${entry.reason ? `<span class="analysis-review-summary-reason">${esc(entry.reason)}</span>` : ""}
+            </div>
+          `)
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderAnalysisComparisonSummaryView() {
+  const container = el("analysis-comparison-results");
+  const summary = state.analysis.reviewSummary || {};
+  const listSummary = summary.lists || {};
+  const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
+  const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
+  const canComplete = !!state.analysis.reviewSummary && !summary.violations?.length;
+
+  container.innerHTML = `
+    <section class="analysis-review-shell">
+      <article class="panel analysis-summary-heading">
+        <div class="analysis-review-toolbar">
+          <div>
+            <h3>Comparison Review Summary</h3>
+            <p>Review what will be added and removed for NHCL and RFC before completing.</p>
+          </div>
+          <button id="analysis-review-summary-back-button" class="secondary-button">Back to Review</button>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="analysis-review-summary-counts">
+          <span>NHCL Added: ${Number(summary.summary?.nhclAdded || 0)} </span>
+          <span>NHCL Removed: ${Number(summary.summary?.nhclRemoved || 0)} </span>
+          <span>RFC Added: ${Number(summary.summary?.rfcAdded || 0)} </span>
+          <span>RFC Removed: ${Number(summary.summary?.rfcRemoved || 0)} </span>
+          <span>Blocked Additions: ${Number(summary.summary?.blockedCount || 0)} </span>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h4>Approval</h4>
+        <p>Complete this comparison only when you confirm the review summary is correct.</p>
+        <label class="analysis-review-summary-approve">
+          <input id="analysis-review-summary-approved" type="checkbox" />
+          I approve this summary and want to move to completed review.
+        </label>
+        <div class="field-stack">
+          <label class="field-label" for="analysis-review-summary-notes">Review Notes</label>
+          <textarea id="analysis-review-summary-notes" class="field-input multiline-input" rows="3">${esc(state.analysis.reviewSummaryNotes || "")}</textarea>
+        </div>
+      </article>
+
+      <div class="analysis-review-summary-grid">
+        ${renderReviewSummaryRows("NHCL - Added", nhcl.added)}
+        ${renderReviewSummaryRows("NHCL - Removed", nhcl.removed)}
+        ${renderReviewSummaryRows("RFC - Added", rfc.added)}
+        ${renderReviewSummaryRows("RFC - Removed", rfc.removed)}
+      </div>
+    </section>
+  `;
+
+  el("analysis-review-summary-back-button")?.addEventListener("click", () => {
+    state.analysis.reviewSummaryMode = "review";
+    renderAnalysisComparisonReviewPanel();
+  });
+
+  el("analysis-review-summary-approved")?.addEventListener("change", () => {
+    const completeButton = el("complete-comparison-review-button");
+    const approved = el("analysis-review-summary-approved")?.checked;
+    const disableReason = summary.violations?.length;
+    if (completeButton) {
+      completeButton.disabled = !approved || !!disableReason;
+      completeButton.title = disableReason
+        ? canComplete
+          ? "Approval required to continue."
+          : "This summary has blocked Do Not Mail additions. Resolve before completing."
+        : "Click to complete this review and save the summary.";
+    }
+  });
+
+  const notesInput = el("analysis-review-summary-notes");
+  if (notesInput instanceof HTMLTextAreaElement) {
+    notesInput.value = state.analysis.reviewSummaryNotes || "";
+    notesInput.addEventListener("input", () => {
+      state.analysis.reviewSummaryNotes = notesInput.value || "";
+    });
+  }
+}
+
+function renderAnalysisComparisonReviewPanel() {
+  const container = el("analysis-comparison-results");
+  if (!container) return;
+  const detachedWindow = isAnalysisReviewPopupWindow();
+
+  ensureComparisonReviewPanelToolbar();
+
+  if (state.analysis.reviewSummaryMode === "summary") {
+    renderAnalysisComparisonSummaryView();
+    const canComplete = !!state.analysis.reviewSummary && !state.analysis.reviewSummary?.violations?.length;
+    const completeButton = el("complete-comparison-review-button");
+    const approvedCheckbox = el("analysis-review-summary-approved");
+    if (completeButton) {
+      completeButton.disabled = !approvedCheckbox?.checked || !canComplete;
+      completeButton.title = canComplete
+        ? (approvedCheckbox?.checked ? "Complete this review." : "Check approval before complete.")
+        : "Run a summary first and clear blocked Do Not Mail additions before completing.";
+    }
+    const summarizeButton = el("summarize-comparison-review-button");
+    if (summarizeButton) summarizeButton.textContent = "Resummarize";
+    return;
+  }
+  const completeButton = el("complete-comparison-review-button");
+  if (completeButton) {
+    completeButton.disabled = true;
+  }
+  const comparisons = syncComparisonRequestsFromLinks();
+
+  if (!comparisons.length) {
+    container.innerHTML = '<div class="empty-state-block">No comparisons yet.</div>';
+    return;
+  }
+
+  ensureComparisonReviewWorkingLists();
+  const context = ensureComparisonReviewSelection();
+  if (!context?.comparison) {
+    container.innerHTML = '<div class="empty-state-block">No comparisons yet.</div>';
+    return;
+  }
+
+  const { comparison, reports, primaryReport, primaryRows, selectedScf } = context;
+  const listType = String(comparison.keyCodeGroup || "NHCL").trim().toUpperCase();
+  const targetListType = listType.toLowerCase();
+  const selectedPrimaryRow = findReportRowByScf(primaryReport, selectedScf)?.row || null;
+  const selectedStateValue = getRowStateValue(selectedPrimaryRow);
+  const dnmStatus = getDoNotMailStatusForScf(selectedScf, selectedStateValue);
+  const targetListEntry = getWorkingListEntry(targetListType, selectedScf);
+  const primaryNavigatorRows = buildPrimaryNavigatorRows(primaryReport);
+  const sortedFilteredRows = getSortedFilteredPrimaryRows(primaryNavigatorRows);
+  const effectiveSelectedScf = selectedScf || (sortedFilteredRows[0]?.scf || "");
+  if (effectiveSelectedScf && effectiveSelectedScf !== selectedScf) {
+    state.analysis.reviewSelectedScfs[comparison.id] = effectiveSelectedScf;
+  }
+  const effectiveSelectedPrimaryRow = findReportRowByScf(primaryReport, effectiveSelectedScf)?.row || null;
+  const effectiveSelectedStateValue = getRowStateValue(effectiveSelectedPrimaryRow);
+  const effectiveDnmStatus = getDoNotMailStatusForScf(effectiveSelectedScf, effectiveSelectedStateValue);
+  const effectiveTargetListEntry = getWorkingListEntry(targetListType, effectiveSelectedScf);
+  const selectedIndex = sortedFilteredRows.findIndex((entry) => entry.scf === effectiveSelectedScf);
+  const pagination = getComparisonReviewPagination(sortedFilteredRows.length, selectedIndex);
+  const visibleRows = sortedFilteredRows.slice(pagination.startIndex, pagination.endIndex);
+  const selectedNavigatorEntry = sortedFilteredRows.find((entry) => entry.scf === effectiveSelectedScf) || null;
+  const thresholdMetric = String(state.analysis.reviewThresholdMetric || "soldRate").trim();
+  const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
+  const bulkMetric = String(state.analysis.reviewBulkMetric || "soldRate").trim();
+  const bulkThresholdValue = String(state.analysis.reviewBulkThresholdValue || "").trim();
+
+  const reportMetricsMarkup = reports.map((report) => {
+    const rowEntry = findReportRowByScf(report, effectiveSelectedScf);
+    const fallbackRow = rowEntry?.row || null;
+    const needsExactMetrics = reportNeedsExactScfMetricFetch(report, rowEntry);
+    const cachedMetrics = needsExactMetrics
+      ? getCachedAnalysisReportScfMetrics(report.id, effectiveSelectedScf)
+      : null;
+    if (needsExactMetrics && !cachedMetrics) {
+      requestAnalysisReportScfMetrics(report.id, effectiveSelectedScf);
+    }
+    const hasExactMetrics = cachedMetrics?.status === "ready";
+    const exactRow = hasExactMetrics ? cachedMetrics.row : null;
+    const row = hasExactMetrics ? exactRow : fallbackRow;
+    const isMetricLoading = needsExactMetrics && cachedMetrics?.status !== "ready";
+    const totalMailed = row ? getTotalMailedFromRow(row) : "";
+    const displayedTotalMailed = formatWholeNumber(totalMailed);
+    const foundLabel = !row
+      ? "SCF not in this report"
+      : exactRow
+        ? "SCF found"
+      : rowEntry?.source === "export" || rowEntry?.source === "export-aggregate"
+        ? "SCF found in report rows"
+        : "SCF found";
+    const soldRateDisplay = isMetricLoading
+      ? "Loading..."
+      : row
+        ? getRowMetricDisplayValue(row, "Sold Rate")
+        : "-";
+    const inForceRateDisplay = isMetricLoading
+      ? "Loading..."
+      : row
+        ? getRowMetricDisplayValue(row, "In Force Rate")
+        : "-";
+    const convertedRateDisplay = isMetricLoading
+      ? "Loading..."
+      : row
+        ? getRowMetricDisplayValue(row, "Converted Rate")
+        : "-";
+    const cardStatusLabel = isMetricLoading ? "Loading exact report metrics..." : foundLabel;
+    return `
+      <article class="analysis-review-metric-card">
+        <div class="analysis-review-metric-head">
+          <strong>${esc(getAnalysisReportDisplayName(report))}</strong>
+          <span>${esc(cardStatusLabel)}</span>
+        </div>
+        <div class="analysis-review-metric-grid">
+          <div>
+            <span class="field-label">Sold Rate</span>
+            <strong>${esc(soldRateDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">In Force Rate</span>
+            <strong>${esc(inForceRateDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Converted Rate</span>
+            <strong>${esc(convertedRateDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">TOTAL MAILED</span>
+            <strong>${esc(displayedTotalMailed)}</strong>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  const actionPrompt = !selectedScf
+    ? "Choose an SCF from the primary report to start the review."
+    : effectiveDnmStatus.isDoNotMail
+      ? `SCF ${effectiveSelectedScf} is on Do Not Mail${effectiveDnmStatus.label ? ` (${effectiveDnmStatus.label})` : ""} and cannot be added to ${listType}.`
+      : effectiveTargetListEntry
+        ? `SCF ${effectiveSelectedScf} is already on ${listType}.`
+        : `SCF ${effectiveSelectedScf} is not on ${listType}.`;
+
+  const actionButtons = effectiveDnmStatus.isDoNotMail
+    ? `
+          <p>SCF ${esc(effectiveSelectedScf)} is on Do Not Mail${effectiveDnmStatus.label ? ` (${esc(effectiveDnmStatus.label)})` : ""} and cannot be added to ${esc(listType)}.</p>
+          <p>No actions are available for Do Not Mail SCFs.</p>
+        `
+  : `
+          ${effectiveTargetListEntry ? `
+            <button id="analysis-review-remove-button" class="primary-button">Remove from ${esc(listType)}</button>
+          ` : `
+            <button id="analysis-review-add-button" class="primary-button">Add to ${esc(listType)}</button>
+          `}
+          <button id="analysis-review-export-button" class="secondary-button">Export Working ${esc(listType)}</button>
+          <button id="analysis-review-restore-button" class="secondary-button">Restore to Start Point</button>
+        `
+        ;
+
+  container.innerHTML = `
+    <section class="analysis-review-shell analysis-comparison-review-page">
+      <section id="analysis-review-floating-panel" class="analysis-review-floating-panel${detachedWindow ? " is-detached-window" : ""}" style="${detachedWindow ? "" : getReviewFloatingPanelStyle()}">
+      <div id="analysis-review-floating-handle" class="analysis-review-floating-handle">
+        <div>
+          <span class="field-label">Review Workspace</span>
+          <strong>${detachedWindow
+            ? "This review is detached in its own browser window. Move the whole window anywhere you want."
+            : "Drag this SCF review panel anywhere on the screen."}</strong>
+        </div>
+        <div class="action-row">
+          <button id="analysis-review-open-window-button" class="secondary-button"${detachedWindow ? " disabled" : ""}>${detachedWindow ? "Opened In New Window" : "Open In New Window"}</button>
+          <button id="analysis-review-floating-reset" class="secondary-button"${detachedWindow ? " disabled" : ""}>Reset Position</button>
+        </div>
+      </div>
+      <section class="analysis-review-sticky-panel">
+      <article class="panel analysis-review-toolbar-panel">
+        <div class="analysis-review-toolbar">
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-comparison-select">Comparison</label>
+            <select id="analysis-review-comparison-select" class="field-input">
+              ${comparisons.map((entry, index) => `
+                <option value="${esc(entry.id)}"${entry.id === comparison.id ? " selected" : ""}>
+                  ${esc(getComparisonDisplayName(entry, index))}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-primary-report">Primary Report</label>
+            <select id="analysis-review-primary-report" class="field-input">
+              ${reports.map((report) => `
+                <option value="${esc(report.id)}"${report.id === primaryReport?.id ? " selected" : ""}>
+                  ${esc(getAnalysisReportDisplayName(report))}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+          <div class="analysis-review-callout">
+            <span class="field-label">Working Copy Only</span>
+            <strong>Nothing on this page writes to the live NHCL, RFC, or DNM lists.</strong>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel analysis-review-bulk-panel">
+        <div class="panel-heading analysis-review-summary-heading">
+          <h3>Bulk Remove From Working ${esc(listType)}</h3>
+          <p>Based on the primary report only. This does not change the live lists.</p>
+        </div>
+        <div class="analysis-review-filter-bar">
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-bulk-metric">Remove if below</label>
+            <select id="analysis-review-bulk-metric" class="field-input">
+              <option value="soldRate"${bulkMetric === "soldRate" ? " selected" : ""}>Sold Rate</option>
+              <option value="inForceRate"${bulkMetric === "inForceRate" ? " selected" : ""}>In Force Rate</option>
+              <option value="convertedRate"${bulkMetric === "convertedRate" ? " selected" : ""}>Converted Rate</option>
+            </select>
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-bulk-threshold">Percent</label>
+            <input id="analysis-review-bulk-threshold" class="field-input" type="number" min="0" step="0.01" value="${esc(bulkThresholdValue)}" placeholder="ex: 1.50" />
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-bulk-remove-button">Working copy cleanup</label>
+            <button id="analysis-review-bulk-remove-button" class="secondary-button">Remove Below Threshold</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel analysis-review-summary-panel">
+        <div class="panel-heading analysis-review-summary-heading">
+          <h3>SCF Review</h3>
+          <p class="analysis-review-current-scf">Current SCF: <strong>${esc(effectiveSelectedScf || "Not selected")}</strong></p>
+          <div class="field-stack analysis-review-jump-field">
+            <label class="field-label" for="analysis-review-jump-scf">Go To SCF</label>
+            <div class="action-row">
+              <input id="analysis-review-jump-scf" class="field-input analysis-review-jump-input" type="text" inputmode="numeric" maxlength="3" value="${esc(effectiveSelectedScf || "")}" placeholder="955" />
+              <button id="analysis-review-jump-button" class="secondary-button">Open SCF</button>
+            </div>
+          </div>
+        </div>
+        <div class="analysis-review-arrow-row">
+          <button id="analysis-review-arrow-up" class="secondary-button"${selectedIndex <= 0 ? " disabled" : ""}>↑ Previous SCF</button>
+          <button id="analysis-review-arrow-down" class="secondary-button"${selectedIndex < 0 || selectedIndex >= sortedFilteredRows.length - 1 ? " disabled" : ""}>↓ Next SCF</button>
+        </div>
+        <div class="analysis-review-status-grid">
+          <article class="analysis-review-status-card${effectiveDnmStatus.isDoNotMail ? " is-dnm-alert" : ""}">
+            <span class="field-label">Do Not Mail</span>
+            <strong>${effectiveDnmStatus.isDoNotMail ? "Yes" : "No"}</strong>
+            <p>${esc(effectiveDnmStatus.isDoNotMail ? effectiveDnmStatus.label : "This SCF is not blocked by Do Not Mail.")}</p>
+          </article>
+          <article class="analysis-review-status-card">
+            <span class="field-label">${esc(listType)} List</span>
+            <strong>${effectiveTargetListEntry ? "On list" : "Not on list"}</strong>
+            <p>${esc(effectiveTargetListEntry ? (effectiveTargetListEntry.state || effectiveTargetListEntry.scope || "Included in working export.") : `This SCF is not currently on the ${listType} working list.`)}</p>
+          </article>
+          <article class="analysis-review-status-card">
+            <span class="field-label">Action</span>
+            <strong>${esc(actionPrompt)}</strong>
+            <div class="action-row">
+              ${actionButtons}
+            </div>
+          </article>
+        </div>
+      </article>
+
+      <article class="panel analysis-review-metrics-panel">
+        <div class="panel-heading">
+          <h3>Comparison Metrics</h3>
+          <p>Rates for SCF <strong>${esc(effectiveSelectedScf || "Not selected")}</strong> across every report in this comparison.</p>
+        </div>
+        <div class="analysis-review-metrics-grid">
+          ${reportMetricsMarkup}
+        </div>
+      </article>
+
+      </section>
+      </section>
+
+      <section class="analysis-review-spreadsheet-area">
+      <article class="panel analysis-review-primary-panel">
+        <div class="panel-heading">
+          <h3>Primary Report Navigator</h3>
+          <p>${esc(primaryReport ? getAnalysisReportDisplayName(primaryReport) : "No primary report selected")}</p>
+        </div>
+        <div class="analysis-review-filter-bar">
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-threshold-metric">Show SCFs Above</label>
+            <select id="analysis-review-threshold-metric" class="field-input">
+              <option value="soldRate"${thresholdMetric === "soldRate" ? " selected" : ""}>Sold Rate</option>
+              <option value="inForceRate"${thresholdMetric === "inForceRate" ? " selected" : ""}>In Force Rate</option>
+              <option value="convertedRate"${thresholdMetric === "convertedRate" ? " selected" : ""}>Converted Rate</option>
+            </select>
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-threshold-value">Percent</label>
+            <input id="analysis-review-threshold-value" class="field-input" type="number" min="0" step="0.01" value="${esc(thresholdValue)}" placeholder="ex: 2.50" />
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-threshold-clear">Reset Filter</label>
+            <button id="analysis-review-threshold-clear" class="secondary-button">Show All SCFs</button>
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-page-size">Rows Per Page</label>
+            <select id="analysis-review-page-size" class="field-input">
+              ${["25", "50", "100", "250", "all"].map((value) => `
+                <option value="${value}"${String(pagination.pageSize) === value ? " selected" : ""}>
+                  ${value === "all" ? "All rows" : `${value} rows`}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+        </div>
+        <div class="analysis-review-navigator">
+          <button id="analysis-review-prev-page" class="secondary-button"${pagination.currentPage <= 1 ? " disabled" : ""}>Previous Page</button>
+          <p>
+            ${sortedFilteredRows.length
+              ? `Page ${pagination.currentPage} of ${pagination.totalPages} | Viewing ${pagination.startIndex + 1}-${Math.min(sortedFilteredRows.length, pagination.endIndex)} of ${sortedFilteredRows.length}`
+              : "No SCFs available in this report."}
+          </p>
+          <button id="analysis-review-next-page" class="secondary-button"${pagination.currentPage >= pagination.totalPages ? " disabled" : ""}>Next Page</button>
+        </div>
+        <div class="analysis-review-filter-bar">
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-page-number">Go To Page</label>
+            <input id="analysis-review-page-number" class="field-input" type="number" min="1" max="${pagination.totalPages}" value="${pagination.currentPage}" />
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-page-go">Open Page</label>
+            <button id="analysis-review-page-go" class="secondary-button">Go</button>
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-prev-scf">SCF Navigation</label>
+            <div class="action-row">
+              <button id="analysis-review-prev-scf" class="secondary-button"${selectedIndex <= 0 ? " disabled" : ""}>Previous SCF</button>
+              <button id="analysis-review-next-scf" class="secondary-button"${selectedIndex < 0 || selectedIndex >= sortedFilteredRows.length - 1 ? " disabled" : ""}>Next SCF</button>
+            </div>
+          </div>
+        </div>
+        <div class="analysis-review-table-meta">
+          <span>Primary report SCFs: ${primaryNavigatorRows.length}</span>
+          <span>Showing after filter: ${sortedFilteredRows.length}</span>
+          <span>Current mailed pieces: ${selectedNavigatorEntry ? selectedNavigatorEntry.mailed.toLocaleString("en-US") : "-"}</span>
+        </div>
+        <div class="table-wrap analysis-review-primary-table">
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable-column" data-review-sort-key="scf">SCF${state.analysis.reviewTableSort.key === "scf" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
+                <th class="sortable-column" data-review-sort-key="mailed">Mailed${state.analysis.reviewTableSort.key === "mailed" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
+                <th class="sortable-column" data-review-sort-key="soldRate">Sold Rate${state.analysis.reviewTableSort.key === "soldRate" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
+                <th class="sortable-column" data-review-sort-key="inForceRate">In Force Rate${state.analysis.reviewTableSort.key === "inForceRate" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
+                <th class="sortable-column" data-review-sort-key="convertedRate">Converted Rate${state.analysis.reviewTableSort.key === "convertedRate" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${visibleRows.length ? visibleRows.map((entry) => `
+                <tr class="${entry.scf === effectiveSelectedScf ? "is-selected-row" : ""}" data-review-row-scf="${esc(entry.scf)}" tabindex="0">
+                  <td>${esc(entry.scf)}</td>
+                  <td>${entry.mailed.toLocaleString("en-US")}</td>
+                  <td>${esc(getRowMetricDisplayValue(entry.row, "Sold Rate"))}</td>
+                  <td>${esc(getRowMetricDisplayValue(entry.row, "In Force Rate"))}</td>
+                  <td>${esc(getRowMetricDisplayValue(entry.row, "Converted Rate"))}</td>
+                  <td><button class="secondary-button table-action-button" data-review-scf="${esc(entry.scf)}">Open</button></td>
+                </tr>
+              `).join("") : `<tr><td colspan="6" class="empty-cell">No SCFs were found in the selected primary report for this filter.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </article>
+      </section>
+    </section>
+  `;
+
+  bindComparisonReviewFloatingPanel();
+
+  el("analysis-review-open-window-button")?.addEventListener("click", () => {
+    openComparisonReviewPopup();
+  });
+
+  el("analysis-review-comparison-select")?.addEventListener("change", (event) => {
+    const nextId = String(event.target.value || "").trim();
+    state.analysis.selectedComparisonId = nextId;
+    state.analysis.lastEditedComparisonId = nextId;
+    state.analysis.reviewPageNumber = 1;
+    renderAnalysisComparisonReviewPanel();
+  });
+
+  el("analysis-review-primary-report")?.addEventListener("change", (event) => {
+    const nextReportId = String(event.target.value || "").trim();
+    state.analysis.reviewPrimaryReportIds[comparison.id] = nextReportId;
+    state.analysis.reviewSelectedScfs[comparison.id] = "";
+    state.analysis.reviewPageNumber = 1;
+    renderAnalysisComparisonReviewPanel();
+    focusComparisonReviewSummary();
+  });
+
+  el("analysis-review-page-size")?.addEventListener("change", (event) => {
+    state.analysis.reviewPageSize = normalizeReviewPageSize(event.target.value || 100);
+    state.analysis.reviewPageNumber = 1;
+    renderAnalysisComparisonReviewPanel();
+    focusComparisonReviewSummary();
+    focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
+  });
+
+  el("analysis-review-prev-page")?.addEventListener("click", () => {
+    if (pagination.currentPage <= 1) return;
+    state.analysis.reviewPageNumber = pagination.currentPage - 1;
+    renderAnalysisComparisonReviewPanel();
+    focusComparisonReviewSummary();
+  });
+
+  el("analysis-review-next-page")?.addEventListener("click", () => {
+    if (pagination.currentPage >= pagination.totalPages) return;
+    state.analysis.reviewPageNumber = pagination.currentPage + 1;
+    renderAnalysisComparisonReviewPanel();
+    focusComparisonReviewSummary();
+  });
+
+  el("analysis-review-page-go")?.addEventListener("click", () => {
+    const input = el("analysis-review-page-number");
+    const rawValue = input?.value || "1";
+    const requestedPage = Math.min(
+      pagination.totalPages,
+      Math.max(1, Math.floor(Number(rawValue) || 1))
+    );
+    state.analysis.reviewPageNumber = requestedPage;
+    renderAnalysisComparisonReviewPanel();
+    focusComparisonReviewSummary();
+  });
+
+  el("analysis-review-page-number")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    el("analysis-review-page-go")?.click();
+  });
+
+  el("analysis-review-arrow-up")?.addEventListener("click", () => {
+    if (selectedIndex <= 0) return;
+    selectComparisonReviewScf(comparison.id, sortedFilteredRows[selectedIndex - 1].scf);
+  });
+
+  el("analysis-review-arrow-down")?.addEventListener("click", () => {
+    if (selectedIndex < 0 || selectedIndex >= sortedFilteredRows.length - 1) return;
+    selectComparisonReviewScf(comparison.id, sortedFilteredRows[selectedIndex + 1].scf);
+  });
+
+  const jumpToReviewScf = () => {
+    const jumpInput = el("analysis-review-jump-scf");
+    const requestedScf = normalizeScf(jumpInput?.value || "");
+    if (!requestedScf) {
+      setStatus("analysis-comparison-selection-status", "Enter a valid 3-digit SCF to open it.");
+      return;
+    }
+    state.analysis.reviewThresholdValue = "";
+    setStatus(
+      "analysis-comparison-selection-status",
+      primaryNavigatorRows.some((entry) => entry.scf === requestedScf)
+        ? `Reviewing SCF ${requestedScf}.`
+        : `SCF ${requestedScf} is not in the current primary report. Showing list and Do Not Mail status.`
+    );
+    selectComparisonReviewScf(comparison.id, requestedScf);
+  };
+
+  el("analysis-review-jump-button")?.addEventListener("click", () => {
+    jumpToReviewScf();
+  });
+
+  el("analysis-review-jump-scf")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    jumpToReviewScf();
+  });
+
+  el("analysis-review-prev-scf")?.addEventListener("click", () => {
+    if (selectedIndex <= 0) return;
+    selectComparisonReviewScf(comparison.id, sortedFilteredRows[selectedIndex - 1].scf);
+  });
+
+  el("analysis-review-next-scf")?.addEventListener("click", () => {
+    if (selectedIndex < 0 || selectedIndex >= sortedFilteredRows.length - 1) return;
+    selectComparisonReviewScf(comparison.id, sortedFilteredRows[selectedIndex + 1].scf);
+  });
+
+  all("[data-review-sort-key]").forEach((header) => {
+    header.addEventListener("click", () => {
+      const sortKey = String(header.getAttribute("data-review-sort-key") || "").trim();
+      if (!sortKey) return;
+      const current = state.analysis.reviewTableSort;
+      state.analysis.reviewTableSort =
+        current.key === sortKey && current.direction === "desc"
+          ? { key: sortKey, direction: "asc" }
+          : { key: sortKey, direction: "desc" };
+      state.analysis.reviewPageNumber = 1;
+      renderAnalysisComparisonReviewPanel();
+      focusComparisonReviewSummary();
+      focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
+    });
+  });
+
+  el("analysis-review-threshold-metric")?.addEventListener("change", (event) => {
+    state.analysis.reviewThresholdMetric = String(event.target.value || "soldRate").trim();
+    state.analysis.reviewPageNumber = 1;
+    renderAnalysisComparisonReviewPanel();
+    focusComparisonReviewSummary();
+    focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
+  });
+
+  el("analysis-review-threshold-value")?.addEventListener("input", (event) => {
+    state.analysis.reviewThresholdValue = String(event.target.value || "").trim();
+    state.analysis.reviewPageNumber = 1;
+    renderAnalysisComparisonReviewPanel();
+    focusComparisonReviewSummary();
+    focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
+  });
+
+  el("analysis-review-threshold-clear")?.addEventListener("click", () => {
+    state.analysis.reviewThresholdValue = "";
+    state.analysis.reviewPageNumber = 1;
+    renderAnalysisComparisonReviewPanel();
+    focusComparisonReviewSummary();
+    focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
+  });
+
+  all("[data-review-scf]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const scf = button.getAttribute("data-review-scf");
+      if (!scf) return;
+      selectComparisonReviewScf(comparison.id, scf);
+    });
+  });
+
+  all("[data-review-row-scf]").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("[data-review-scf]")) {
+        return;
+      }
+      const scf = row.getAttribute("data-review-row-scf");
+      if (!scf) return;
+      selectComparisonReviewScf(comparison.id, scf);
+    });
+
+    row.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      const scf = row.getAttribute("data-review-row-scf");
+      if (!scf) return;
+      selectComparisonReviewScf(comparison.id, scf);
+    });
+  });
+
+  el("analysis-review-bulk-metric")?.addEventListener("change", (event) => {
+    state.analysis.reviewBulkMetric = String(event.target.value || "soldRate").trim();
+  });
+
+  el("analysis-review-bulk-threshold")?.addEventListener("input", (event) => {
+    state.analysis.reviewBulkThresholdValue = String(event.target.value || "").trim();
+  });
+
+  el("analysis-review-bulk-remove-button")?.addEventListener("click", () => {
+    const thresholdRaw = String(state.analysis.reviewBulkThresholdValue || "").trim();
+    const thresholdNumber = Number(thresholdRaw);
+    if (!thresholdRaw || !Number.isFinite(thresholdNumber) || thresholdNumber < 0) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        `Enter a valid percent to remove SCFs from the working ${listType} list.`
+      );
+      return;
+    }
+
+    const removalResult = removeWorkingListEntriesBelowRate(
+      targetListType,
+      primaryNavigatorRows,
+      state.analysis.reviewBulkMetric,
+      thresholdNumber
+    );
+    invalidateComparisonReviewSummary();
+
+    renderAnalysisComparisonReviewPanel();
+    setStatus(
+      "analysis-comparison-selection-status",
+      removalResult.removedCount
+        ? `${removalResult.removedCount} SCF(s) were removed from the working ${listType} list for falling below ${thresholdNumber.toFixed(2)}% ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in the primary report. Live lists were not changed.`
+        : `No SCFs were removed from the working ${listType} list below ${thresholdNumber.toFixed(2)}% ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in the primary report.`
+    );
+  });
+
+  el("analysis-review-add-button")?.addEventListener("click", () => {
+    if (!effectiveSelectedScf) return;
+    if (effectiveDnmStatus.isDoNotMail) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        `SCF ${effectiveSelectedScf} is on Do Not Mail and cannot be added to ${listType}.`
+      );
+      return;
+    }
+    updateWorkingReferenceListEntry(
+      targetListType,
+      effectiveSelectedScf,
+      true,
+      effectiveSelectedStateValue
+    );
+    renderAnalysisComparisonReviewPanel();
+    setStatus(
+      "analysis-comparison-selection-status",
+      `SCF ${effectiveSelectedScf} was added to the working ${listType} list. Live lists were not changed.`
+    );
+  });
+
+  el("analysis-review-remove-button")?.addEventListener("click", () => {
+    if (!effectiveSelectedScf) return;
+    if (effectiveDnmStatus.isDoNotMail) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        `SCF ${effectiveSelectedScf} is on Do Not Mail and cannot be removed from ${listType}.`
+      );
+      return;
+    }
+    if (!effectiveTargetListEntry) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        `SCF ${effectiveSelectedScf} is not on the working ${listType} list.`
+      );
+      return;
+    }
+    updateWorkingReferenceListEntry(targetListType, effectiveSelectedScf, false);
+    renderAnalysisComparisonReviewPanel();
+    setStatus(
+      "analysis-comparison-selection-status",
+      `SCF ${effectiveSelectedScf} was removed from the working ${listType} list. Live lists were not changed.`
+    );
+  });
+
+  el("analysis-review-export-button")?.addEventListener("click", () => {
+    if (effectiveDnmStatus.isDoNotMail) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        `SCF ${effectiveSelectedScf} is on Do Not Mail; working list export is not available from this SCF card.`
+      );
+      return;
+    }
+    exportWorkingComparisonList();
+  });
+
+  el("analysis-review-restore-button")?.addEventListener("click", () => {
+    if (effectiveDnmStatus.isDoNotMail) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        `SCF ${effectiveSelectedScf} is on Do Not Mail; restore is not available from this SCF card.`
+      );
+      return;
+    }
+    state.analysis.reviewWorkingLists = cloneData(state.analysis.reviewBaselineLists || []);
+    invalidateComparisonReviewSummary();
+    renderAnalysisComparisonReviewPanel();
+    setStatus(
+      "analysis-comparison-selection-status",
+      "Working lists were restored to the live start point."
+    );
+  });
+}
+
+function syncComparisonRequestsFromLinks() {
+  hydrateComparisonLinksFromDom();
+  state.analysis.comparisonRequests = (state.analysis.comparisonLinks || []).map((link, index) => {
+    const reportIds = getComparisonSelectedReportIds(link);
+    const derivedKeyCodeGroup = deriveComparisonKeyCodeGroupFromReportIds(reportIds);
+    const comparisonName = resolveComparisonName(
+      link.comparisonName || link.name || link.label || "",
+      index
+    );
+    const createdAt = link.createdAt || new Date().toISOString();
+    return {
+      id: link.id || createClientId("comparison"),
+      name: comparisonName,
+      comparisonName,
+      selectedReportIds: reportIds,
+      keyCodeGroup:
+        derivedKeyCodeGroup && derivedKeyCodeGroup !== "MIXED"
+          ? derivedKeyCodeGroup
+          : normalizeKeyCodeGroup(link.keyCodeGroup),
+      reportIds,
+      reportAId: reportIds[0] || "",
+      reportBId: reportIds[1] || "",
+      createdAt,
+      updatedAt: new Date().toISOString(),
+      matchField: String(link.matchField || "SCF Grouping").trim() || "SCF Grouping",
+      metricColumns: readComparisonMetricColumns(link),
+    };
+  });
+  return state.analysis.comparisonRequests;
+}
+
+async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
+  hydrateComparisonLinksFromDom();
+  syncComparisonRequestsFromLinks();
+  const payload = buildAnalysisPayload("draft");
+  const response = await apiRequest("/api/analysis/setups", {
+    method: "POST",
+    body: payload,
+  });
+  const setup = response.setup || {};
+  state.analysis.currentSetupId = setup.id || state.analysis.currentSetupId;
+  persistAnalysisSetupId(state.analysis.currentSetupId);
+  syncAnalysisMeta({
+    runName: setup.run_name || setup.runName || payload.runName,
+    notes: setup.notes || payload.notes,
+    createdAt: setup.created_at || setup.createdAt || null,
+    updatedAt: setup.updated_at || setup.updatedAt || null,
+  });
+  setStatus("analysis-status-text", setup.status || "Draft");
+  setStatus("analysis-status-detail", "Analysis setup saved.");
+  setStatus("analysis-comparison-status", statusMessage);
+  state.analysis.setupHydrated = true;
+  return setup;
+}
+
+function stopAnalysisRunPolling() {
+  if (state.analysis.runPollHandle) {
+    clearTimeout(state.analysis.runPollHandle);
+    state.analysis.runPollHandle = null;
+  }
+}
+
+function parseSortableValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "-") {
+    return { type: "empty", value: "" };
+  }
+
+  const numericCandidate = raw.replace(/[$,%(),\s]/g, "");
+  const numericValue = Number(numericCandidate);
+  if (!Number.isNaN(numericValue) && numericCandidate !== "") {
+    const isNegative = raw.startsWith("(") && raw.endsWith(")");
+    return { type: "number", value: isNegative ? -numericValue : numericValue };
+  }
+
+  const timestamp = Date.parse(raw);
+  if (!Number.isNaN(timestamp) && /[-/]/.test(raw)) {
+    return { type: "date", value: timestamp };
+  }
+
+  return { type: "text", value: raw.toLowerCase() };
+}
+
+function getSortedRows(tableId, rows, columns) {
+  const sortState = state.analysis.tableSorts[tableId];
+  if (!sortState || !Array.isArray(rows) || !Array.isArray(columns) || !columns[sortState.index]) {
+    return rows;
+  }
+
+  const column = columns[sortState.index];
+  const label = typeof column === "string" ? column : column.label;
+  const normalized = typeof column === "string" ? "" : column.normalized;
+
+  return [...rows].sort((rowA, rowB) => {
+    const valueA = rowA?.[label] ?? rowA?.[normalized] ?? "";
+    const valueB = rowB?.[label] ?? rowB?.[normalized] ?? "";
+    const parsedA = parseSortableValue(valueA);
+    const parsedB = parseSortableValue(valueB);
+
+    let comparison = 0;
+    if (parsedA.type === parsedB.type && ["number", "date"].includes(parsedA.type)) {
+      comparison = parsedA.value - parsedB.value;
+    } else {
+      comparison = String(parsedA.value).localeCompare(String(parsedB.value), undefined, { numeric: true });
+    }
+
+    return sortState.direction === "desc" ? -comparison : comparison;
+  });
+}
+
+function bindAnalysisResultSorts() {
+  const container = el("analysis-results-container");
+  if (!container || container.dataset.sortBound === "true") {
+    return;
+  }
+
+  container.dataset.sortBound = "true";
+  container.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const header = target.closest("[data-sort-table-id][data-sort-column-index]");
+    if (!(header instanceof HTMLElement)) return;
+
+    const tableId = header.getAttribute("data-sort-table-id");
+    const index = Number.parseInt(header.getAttribute("data-sort-column-index") || "", 10);
+    if (!tableId || !Number.isInteger(index)) return;
+
+    const current = state.analysis.tableSorts[tableId];
+    state.analysis.tableSorts[tableId] =
+      current && current.index === index && current.direction === "desc"
+        ? { index, direction: "asc" }
+        : { index, direction: "desc" };
+
+    if (state.analysis.resultMode === "run" && state.analysis.resultRun) {
+      renderAnalysisResults(state.analysis.resultRun);
+      return;
+    }
+
+    if (state.analysis.resultMode === "report" && state.analysis.resultReport) {
+      renderAnalysisSavedReport(state.analysis.resultReport);
+    }
+  });
+}
+
+async function pollAnalysisRun(runId) {
+  if (!runId) {
+    stopAnalysisRunPolling();
+    return;
+  }
+
+  try {
+    const response = await apiRequest(`/api/analysis/runs/${encodeURIComponent(runId)}`);
+    const run = response.run || {};
+    if ((run.id || "") !== runId) {
+      stopAnalysisRunPolling();
+      return;
+    }
+
+    loadRunIntoWorkspace(run);
+    await loadAnalysisReports();
+
+    const status = String(run.status || "").toLowerCase();
+    if (["complete", "partial", "failed"].includes(status)) {
+      stopAnalysisRunPolling();
+      return;
+    }
+
+    state.analysis.runPollHandle = setTimeout(() => {
+      pollAnalysisRun(runId);
+    }, 2000);
+  } catch (error) {
+    setStatus("analysis-status-detail", `Refresh failed: ${error.message}`);
+    state.analysis.runPollHandle = setTimeout(() => {
+      pollAnalysisRun(runId);
+    }, 3000);
+  }
+}
+
+function renderPullResultCard(pull, options = {}) {
+  const rows = Array.isArray(options.rows) ? options.rows : Array.isArray(pull.rows) ? pull.rows : [];
+  const columns = Array.isArray(options.columns)
+    ? options.columns
+    : Array.isArray(pull.columns)
+      ? pull.columns
+      : [];
+  const tableId = String(options.tableId || pull.id || pull.report_name || pull.analysisLabel || "analysis-table");
+  const sortedRows = getSortedRows(tableId, rows, columns);
+  const summaryValues = Array.isArray(options.summaryValues)
+    ? options.summaryValues
+    : Array.isArray(pull.summaryValues)
+      ? pull.summaryValues
+      : [];
+  const sortState = state.analysis.tableSorts[tableId];
+  const columnHeaders = columns.length
+    ? columns.map((column, index) => {
+        const isSorted = sortState && sortState.index === index;
+        const indicator = isSorted ? (sortState.direction === "desc" ? " ↓" : " ↑") : "";
+        return `<th class="sortable-column" data-sort-table-id="${esc(tableId)}" data-sort-column-index="${index}">${esc(column.label || column)}${indicator}</th>`;
+      }).join("")
+    : "";
+  const previewRows = sortedRows.slice(0, 25).map((row) => {
+    const cells = columns.length
+      ? columns
+          .map((column) => {
+            const label = typeof column === "string" ? column : column.label;
+            const normalized = typeof column === "string" ? "" : column.normalized;
+            const value = row?.[label] ?? row?.[normalized] ?? "";
+            return `<td>${esc(value)}</td>`;
+          })
+          .join("")
+      : `<td>${esc(JSON.stringify(row || {}))}</td>`;
+    return `<tr>${cells}</tr>`;
+  }).join("");
+  const parameters = options.parameters || pull.parameters || {};
+  const filterParts = [];
+  if (Array.isArray(parameters.key_codes) && parameters.key_codes.length) {
+    filterParts.push(`Key: ${parameters.key_codes.join(", ")}`);
+  }
+  if (parameters.start_date || parameters.end_date) {
+    filterParts.push(`Date: ${parameters.start_date || "?"} to ${parameters.end_date || "?"}`);
+  }
+  if (parameters.scf_filter) {
+    filterParts.push(`SCF: ${parameters.scf_filter}`);
+  }
+  if (parameters.client_type) {
+    filterParts.push(`List Type: ${parameters.client_type}`);
+  }
+  if (Array.isArray(parameters.selected_years) && parameters.selected_years.length) {
+    filterParts.push(`Years: ${parameters.selected_years.join(", ")}`);
+  }
+  if (parameters.notes) {
+    filterParts.push(`Notes: ${parameters.notes}`);
+  }
+
+  return `
+    <article class="panel">
+      <div class="panel-heading">
+        <h3>${esc(options.title || pull.analysisLabel || pull.report_name || "Report Pull")}</h3>
+        <p>Status: ${esc(options.status || pull.status || "Not run")} | Source rows: ${Number((options.inputRowCount ?? pull.rawRowCount) || 0)} | Exported rows: ${Number(options.exportRowCount ?? pull.exportRowCount ?? rows.length)}</p>
+        <p>Report ID: ${esc(options.reportId || pull.reportId || pull.parameters?.report_id || "")}</p>
+        ${filterParts.length ? `<p>Filters: ${esc(filterParts.join(" | "))}</p>` : ""}
+        ${options.summary ? `<p>${esc(options.summary)}</p>` : ""}
+        ${options.error ? `<p class="inline-status">Error: ${esc(options.error)}</p>` : ""}
+        ${options.downloadUrl ? `<p><a href="${esc(options.downloadUrl)}" download>Download export</a></p>` : ""}
+      </div>
+      ${summaryValues.length ? `
+        <div class="analysis-summary-grid">
+          ${summaryValues.map((entry) => `
+            <div class="analysis-summary-card">
+              <span class="field-label">${esc(entry.label || "")}</span>
+              <strong>${esc(entry.value ?? "")}</strong>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>${columnHeaders || "<th>Row Preview</th>"}</tr>
+          </thead>
+          <tbody>
+            ${previewRows || `<tr><td colspan="${Math.max(columns.length, 1)}" class="empty-cell">No rows returned for this report.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  `;
+}
+
+function renderAnalysisResults(run = null) {
+  const container = el("analysis-results-container");
+  if (!container) return;
+  state.analysis.resultMode = run ? "run" : "";
+  state.analysis.resultRun = run || null;
+  state.analysis.resultReport = null;
+
+  if (!run || !Array.isArray(run.reportPulls) || run.reportPulls.length === 0) {
+    container.innerHTML = '<div class="empty-state-block">No analysis results yet.</div>';
+    return;
+  }
+
+  const cards = run.reportPulls.map((pull) =>
+    renderPullResultCard(pull, { tableId: pull.id || pull.analysisLabel || "analysis-pull" })
+  ).join("");
+
+  container.innerHTML = `
+    <div class="panel">
+      <div class="panel-heading">
+        <h3>${esc(run.runName || "Analysis Run")}</h3>
+        <p>Status: ${esc(run.status || "")}</p>
+        <p>${esc(run.statusDetail || "")}</p>
+      </div>
+    </div>
+    ${cards}
+  `;
+  bindAnalysisResultSorts();
+}
+
+function renderAnalysisSavedReport(report = null) {
+  const container = el("analysis-results-container");
+  if (!container) return;
+  state.analysis.resultMode = report ? "report" : "";
+  state.analysis.resultRun = null;
+  state.analysis.resultReport = report || null;
+
+  if (!report) {
+    renderAnalysisResults(null);
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="panel">
+      <div class="panel-heading">
+        <h3>${esc(getAnalysisReportDisplayName(report) || "Saved Analysis Report")}</h3>
+        <p>Status: ${esc(report.status || "")}</p>
+        <p>${esc(report.results_summary || report.resultsSummary || "")}</p>
+      </div>
+    </div>
+    ${renderPullResultCard(report, {
+      title: getAnalysisReportDisplayName(report) || "Saved Analysis Report",
+      status: report.status || "",
+      inputRowCount: report.result_count || report.resultCount || 0,
+      exportRowCount: report.result_count || report.resultCount || 0,
+      reportId: report.parameters?.report_id || "",
+      parameters: report.parameters || {},
+      tableId: report.id || report.report_name || "analysis-report",
+      summary: report.results_summary || report.resultsSummary || "",
+      error: report.error_message || report.errorMessage || "",
+      downloadUrl: report.download_url || report.downloadUrl || "",
+      summaryValues: report.summaryValues || [],
+      rows: report.rows || [],
+      columns: report.columns || [],
+    })}
+  `;
+  bindAnalysisResultSorts();
+}
+
+async function renameSavedAnalysisReport(reportId) {
+  const report = (state.analysis.savedReports || []).find((entry) => entry.id === reportId);
+  if (!reportId || !report) return;
+  const trimmedName = String(state.analysis.editingReportTitle || "").trim();
+  if (!trimmedName) {
+    setStatus("analysis-status-detail", "Report title cannot be blank.");
+    return;
+  }
+
+  setStatus("analysis-status-detail", "Saving report title...");
+  try {
+    const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(reportId)}`, {
+      method: "PATCH",
+      body: {
+        reportName: trimmedName,
+      },
+    });
+    const updatedReport = response.report || null;
+    if (updatedReport) {
+      state.analysis.savedReports = (response.reports || state.analysis.savedReports || []).map((entry) =>
+        entry.id === updatedReport.id ? updatedReport : entry
+      );
+      if (state.analysis.currentReportId === updatedReport.id) {
+        state.analysis.currentReportId = updatedReport.id;
+        renderAnalysisSavedReport(updatedReport);
+      }
+    } else if (Array.isArray(response.reports)) {
+      state.analysis.savedReports = response.reports;
+    }
+    await loadAnalysisReports();
+    renderAnalysisComparePanel();
+    state.analysis.editingReportId = "";
+    state.analysis.editingReportTitle = "";
+    setStatus("analysis-status-detail", "Report title updated.");
+  } catch (error) {
+    setStatus("analysis-status-detail", `Unable to update report title: ${error.message}`);
+  }
+}
+
+function resetAnalysisWorkspace(clearPersistedSetup = true) {
+  stopAnalysisRunPolling();
+  state.analysis.currentSetupId = "";
+  state.analysis.currentRunId = "";
+  state.analysis.currentReportId = "";
+  state.analysis.reportPulls = [];
+  state.analysis.comparisonRequests = [];
+  state.analysis.comparisonLinks = [createComparisonLink(0)];
+  state.analysis.comparisonResults = [];
+  state.analysis.selectedComparisonId = "";
+  state.analysis.lastEditedComparisonId = "";
+  state.analysis.reviewPrimaryReportIds = {};
+  state.analysis.reviewSelectedScfs = {};
+  state.analysis.reviewBaselineLists = [];
+  state.analysis.reviewWorkingLists = [];
+  state.analysis.reviewSummary = null;
+  state.analysis.reviewSummaryMode = "review";
+  state.analysis.reviewSummaryNotes = "";
+  state.analysis.setupHydrated = false;
+  if (clearPersistedSetup) {
+    persistAnalysisSetupId("");
+  }
+  syncAnalysisMeta({
+    runName: getDefaultAnalysisName(),
+    notes: "",
+    createdAt: null,
+    updatedAt: null,
+  });
+  setStatus("analysis-status-text", "Draft");
+  setStatus("analysis-status-detail", "Add one or more report pulls, then run the analysis.");
+  renderAnalysisWorkspace();
+  renderAnalysisResults(null);
+}
+
+function loadSetupIntoWorkspace(setup) {
+  stopAnalysisRunPolling();
+  state.analysis.currentSetupId = setup.id || "";
+  persistAnalysisSetupId(state.analysis.currentSetupId);
+  state.analysis.currentRunId = "";
+  state.analysis.currentReportId = "";
+  state.analysis.reportPulls = Array.isArray(setup.reportPulls) && setup.reportPulls.length
+    ? setup.reportPulls.map((pull, index) => ({
+        ...createEmptyPull(index),
+        ...pull,
+        dateRange: pull.dateRange
+          ? {
+              startDate: normalizeIsoDateInput(pull.dateRange.startDate || ""),
+              endDate: normalizeIsoDateInput(pull.dateRange.endDate || ""),
+            }
+          : null,
+      }))
+    : [];
+  state.analysis.comparisonRequests = Array.isArray(setup.comparisonRequests)
+    ? setup.comparisonRequests
+    : [];
+  state.analysis.comparisonLinks = state.analysis.comparisonRequests.length
+    ? state.analysis.comparisonRequests.map((entry, index) => createComparisonLink(index, entry))
+    : [createComparisonLink(0)];
+  state.analysis.comparisonResults = [];
+  state.analysis.selectedComparisonId = "";
+  state.analysis.lastEditedComparisonId = "";
+  state.analysis.reviewPrimaryReportIds = {};
+  state.analysis.reviewSelectedScfs = {};
+  state.analysis.reviewBaselineLists = [];
+  state.analysis.reviewWorkingLists = [];
+  const comparisonReview = getComparisonReviewResultFromEntry(setup);
+  state.analysis.reviewSummary = comparisonReview?.summary || null;
+  state.analysis.reviewSummaryMode = comparisonReview?.summary ? "summary" : "review";
+  state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
+  state.analysis.setupHydrated = true;
+  syncAnalysisMeta({
+    runName: setup.run_name || setup.runName || "",
+    notes: setup.notes || "",
+    createdAt: setup.created_at || setup.createdAt || null,
+    updatedAt: setup.updated_at || setup.updatedAt || null,
+  });
+  setStatus("analysis-status-text", setup.status || "Draft");
+  setStatus("analysis-status-detail", "Saved analysis setup loaded.");
+  renderAnalysisWorkspace();
+  renderAnalysisResults(null);
+}
+
+function loadRunIntoWorkspace(run) {
+  state.analysis.currentRunId = run.id || "";
+  state.analysis.currentSetupId = run.setupId || "";
+  persistAnalysisSetupId(state.analysis.currentSetupId);
+  state.analysis.currentReportId = "";
+  state.analysis.reportPulls = Array.isArray(run.reportPulls) && run.reportPulls.length
+    ? run.reportPulls.map((pull, index) => ({
+        ...createEmptyPull(index),
+        ...pull,
+        dateRange: pull.dateRange
+          ? {
+              startDate: normalizeIsoDateInput(pull.dateRange.startDate || ""),
+              endDate: normalizeIsoDateInput(pull.dateRange.endDate || ""),
+            }
+          : null,
+      }))
+    : [];
+  state.analysis.comparisonRequests = Array.isArray(run.comparisonRequests)
+    ? run.comparisonRequests
+    : [];
+  state.analysis.comparisonLinks = state.analysis.comparisonRequests.length
+    ? state.analysis.comparisonRequests.map((entry, index) => createComparisonLink(index, entry))
+    : [createComparisonLink(0)];
+  state.analysis.comparisonResults = [];
+  state.analysis.selectedComparisonId = "";
+  state.analysis.lastEditedComparisonId = "";
+  state.analysis.reviewPrimaryReportIds = {};
+  state.analysis.reviewSelectedScfs = {};
+  state.analysis.reviewBaselineLists = [];
+  state.analysis.reviewWorkingLists = [];
+  const comparisonReview = getComparisonReviewResultFromEntry(run);
+  state.analysis.reviewSummary = comparisonReview?.summary || null;
+  state.analysis.reviewSummaryMode = comparisonReview?.summary ? "summary" : "review";
+  state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
+  syncAnalysisMeta({
+    runName: run.runName || "",
+    notes: run.notes || "",
+    createdAt: run.createdAt || null,
+    updatedAt: run.updatedAt || null,
+  });
+  setStatus("analysis-status-text", run.status || "Complete");
+  setStatus("analysis-status-detail", run.statusDetail || "Analysis run loaded.");
+  renderAnalysisWorkspace();
+  renderAnalysisResults(run);
+}
+
+function buildAnalysisPayload(statusOverride) {
+  const runName = String(el("analysis-run-name")?.value || state.analysis.runName || "").trim() || getDefaultAnalysisName();
+  const notes = String(el("analysis-run-notes")?.value || state.analysis.runNotes || "").trim();
+  state.analysis.runName = runName;
+  state.analysis.runNotes = notes;
+  const reportPulls = state.analysis.reportPulls.map((pull, index) => ({
+    id: pull.id,
+    reportId: String(pull.reportId || "").trim(),
+    analysisLabel: buildAutoAnalysisLabel(pull, index),
+    keyCodes: Array.isArray(pull.keyCodes) ? pull.keyCodes : [],
+    years: Array.isArray(pull.years) ? pull.years : [],
+    dateRange:
+      pull.dateRange?.startDate && pull.dateRange?.endDate
+        ? {
+            startDate: normalizeIsoDateInput(pull.dateRange.startDate),
+            endDate: normalizeIsoDateInput(pull.dateRange.endDate),
+          }
+        : null,
+    scf: normalizeScf(pull.scf),
+    clientType: String(pull.clientType || "").trim(),
+    notes: String(pull.notes || "").trim(),
+  }));
+
+  return {
+    id: state.analysis.currentSetupId || undefined,
+    runName,
+    status: statusOverride || "draft",
+    notes,
+    reportPulls,
+    comparisonRequests: state.analysis.comparisonRequests,
+    results: state.analysis.reviewSummary
+      ? {
+          comparisonReview: {
+            summary: state.analysis.reviewSummary,
+            notes: state.analysis.reviewSummaryNotes || "",
+            completedAt: new Date().toISOString(),
+          },
+        }
+      : null,
+  };
+}
+
+function validateAnalysisPulls() {
+  if (!state.analysis.reportPulls.length) {
+    return "Add at least one report pull first.";
+  }
+
+  for (let index = 0; index < state.analysis.reportPulls.length; index += 1) {
+    const pull = state.analysis.reportPulls[index];
+    const label = buildAutoAnalysisLabel(pull, index);
+    const reportId = String(pull.reportId || "").trim();
+    const keyCode = String((pull.keyCodes || [])[0] || "").trim();
+
+    if (!reportId) {
+      return `${label} is missing a Salesforce Report ID.`;
+    }
+
+    if (!/^[A-Za-z0-9]{15,18}$/.test(reportId)) {
+      return `${label} has an invalid Salesforce Report ID.`;
+    }
+
+    if (!keyCode) {
+      return `${label} is missing a Key Code.`;
+    }
+  }
+
+  return "";
+}
+
+function bindAnalysisSubtabs() {
+  all("[data-analysis-subtab]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const target = button.getAttribute("data-analysis-subtab");
+      if (target === "mailing-lists" && state.analysis.panel === "compare-review") {
+        openMailingListsPopup(getComparisonReviewMailingListType());
+        return;
+      }
+      setAnalysisSubtab(target);
+      if (target === "mailing-lists") {
+        loadAndRenderMailingList(state.analysis.mailingListType || "dnm");
+        return;
+      }
+      loadAnalysisReports();
+    });
+  });
+}
+
+async function loadAnalysisReports() {
+  const tbody = el("analysis-history-body");
+  if (!tbody) return;
+  const payload = await apiRequest("/api/analysis/reports");
+  const rows = payload.reports || [];
+  state.analysis.reportScfMetricCache = {};
+  state.analysis.savedReports = rows;
+  const validReportIds = new Set(rows.map((report) => String(report.id || "").trim()).filter(Boolean));
+  setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => validReportIds.has(id)));
+  const empty = el("analysis-history-empty-row");
+  if (empty) empty.remove();
+  tbody.innerHTML = "";
+  if (!rows.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = '<td colspan="7" class="empty-cell">No analysis reports yet.</td>';
+    tbody.appendChild(row);
+    updateAnalysisReportSelectionUi();
+    return;
+  }
+  rows.forEach((report) => {
+    const isEditing = state.analysis.editingReportId === report.id;
+    const isSelected = getSelectedAnalysisReportIds().includes(report.id);
+    const titleCell = isEditing
+      ? `<input class="field-input" data-edit-report-title="${esc(report.id)}" type="text" value="${esc(
+          state.analysis.editingReportTitle || getAnalysisReportDisplayName(report)
+        )}" />`
+      : esc(getAnalysisReportDisplayName(report));
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><input type="checkbox" data-select-report="${esc(report.id)}" aria-label="Select ${esc(getAnalysisReportDisplayName(report))}"${isSelected ? " checked" : ""} /></td>
+      <td>${titleCell}</td>
+      <td>${formatDate(report.created_at || report.createdAt)}</td>
+      <td>${esc(report.status || "idle")}</td>
+      <td>${Number(report.result_count || report.resultCount || 0)}</td>
+      <td>${report.download_url || report.downloadUrl ? `<a href="${esc(report.download_url || report.downloadUrl)}" download>Download</a>` : "No file"}</td>
+      <td>
+        ${isEditing
+          ? `<button class="secondary-button table-action-button" data-save-report-title="${esc(report.id)}">Save</button>
+             <button class="secondary-button table-action-button" data-cancel-report-title="${esc(report.id)}">Cancel</button>`
+          : `<button class="secondary-button table-action-button" data-edit-report="${esc(report.id)}">Edit Title</button>`}
+        <button class="secondary-button table-action-button" data-view-report="${esc(report.id)}">View</button>
+        <button class="secondary-button table-action-button" data-delete-report="${esc(report.id)}">Delete</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  all("[data-select-report]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const id = input.getAttribute("data-select-report");
+      if (!id) return;
+      const selected = new Set(getSelectedAnalysisReportIds());
+      if (input.checked) {
+        selected.add(id);
+      } else {
+        selected.delete(id);
+      }
+      setSelectedAnalysisReportIds(Array.from(selected));
+      updateAnalysisReportSelectionUi();
+    });
+  });
+
+  all("[data-edit-report-title]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const id = input.getAttribute("data-edit-report-title");
+      if (!id) return;
+      state.analysis.editingReportId = id;
+      state.analysis.editingReportTitle = input.value;
+    });
+  });
+
+  all("[data-edit-report]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-edit-report");
+      if (!id) return;
+      const report = rows.find((entry) => entry.id === id);
+      state.analysis.editingReportId = id;
+      state.analysis.editingReportTitle = report ? getAnalysisReportDisplayName(report) : "";
+      loadAnalysisReports();
+    });
+  });
+
+  all("[data-save-report-title]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-save-report-title");
+      if (!id) return;
+      button.disabled = true;
+      try {
+        await renameSavedAnalysisReport(id);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+
+  all("[data-cancel-report-title]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-cancel-report-title");
+      if (!id) return;
+      if (state.analysis.editingReportId === id) {
+        state.analysis.editingReportId = "";
+        state.analysis.editingReportTitle = "";
+      }
+      loadAnalysisReports();
+    });
+  });
+
+  all("[data-view-report]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-view-report");
+      if (!id) return;
+      setStatus("analysis-status-detail", `Loading analysis report ${id}...`);
+      const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`);
+      const report = response.report || {};
+      state.analysis.currentReportId = report.id || "";
+      if (report.run_id || report.runId) {
+        const runResponse = await apiRequest(
+          `/api/analysis/runs/${encodeURIComponent(report.run_id || report.runId)}`
+        );
+        loadRunIntoWorkspace(runResponse.run || {});
+      }
+      renderAnalysisSavedReport(report);
+      state.analysis.subtab = "runs";
+      showAnalysisPanel("workspace");
+    });
+  });
+
+  all("[data-delete-report]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-delete-report");
+      if (!id) return;
+      if (!confirm("Delete this report?")) return;
+      const row = button.closest("tr");
+      button.disabled = true;
+      try {
+        await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        state.analysis.savedReports = state.analysis.savedReports.filter((report) => report.id !== id);
+        if (row) {
+          row.remove();
+        }
+        if (state.analysis.currentReportId === id) {
+          state.analysis.currentReportId = "";
+          renderAnalysisResults(null);
+          setStatus("analysis-status-detail", "Analysis report deleted.");
+        }
+        await loadAnalysisReports();
+        renderAnalysisComparePanel();
+      } catch (error) {
+        button.disabled = false;
+        setStatus("analysis-status-detail", `Delete failed: ${error.message}`);
+      }
+    });
+  });
+
+  updateAnalysisReportSelectionUi();
+}
+
+function updateAnalysisReportSelectionUi() {
+  const selectedIds = getSelectedAnalysisReportIds();
+  const rows = ensureArray(state.analysis.savedReports);
+  const rowIds = rows.map((report) => String(report.id || "").trim()).filter(Boolean);
+  const selectedCount = selectedIds.filter((id) => rowIds.includes(id)).length;
+  const selectAll = el("analysis-select-all-reports");
+  if (selectAll instanceof HTMLInputElement) {
+    selectAll.checked = rowIds.length > 0 && selectedCount === rowIds.length;
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
+  }
+  const deleteButton = el("analysis-delete-selected-button");
+  if (deleteButton) {
+    deleteButton.disabled = selectedCount === 0;
+    deleteButton.textContent = selectedCount > 0 ? `Delete Selected (${selectedCount})` : "Delete Selected";
+  }
+}
+
+async function deleteSelectedAnalysisReports() {
+  const selectedIds = getSelectedAnalysisReportIds();
+  if (!selectedIds.length) {
+    return;
+  }
+
+  const reportNames = ensureArray(state.analysis.savedReports)
+    .filter((report) => selectedIds.includes(report.id))
+    .map((report) => getAnalysisReportDisplayName(report));
+  const message = selectedIds.length === 1
+    ? `Delete this report?\n\n${reportNames[0] || selectedIds[0]}`
+    : `Delete these ${selectedIds.length} reports?\n\n${reportNames.slice(0, 10).join("\n")}${reportNames.length > 10 ? "\n..." : ""}`;
+
+  if (!confirm(message)) {
+    return;
+  }
+
+  setStatus("analysis-status-detail", `Deleting ${selectedIds.length} analysis report${selectedIds.length === 1 ? "" : "s"}...`);
+  const deleteButton = el("analysis-delete-selected-button");
+  if (deleteButton) {
+    deleteButton.disabled = true;
+  }
+
+  try {
+    const response = await apiRequest("/api/analysis/reports/bulk-delete", {
+      method: "POST",
+      body: { reportIds: selectedIds },
+    });
+    const deletedIds = ensureArray(response.deletedIds).map((entry) => String(entry || "").trim()).filter(Boolean);
+    const deletedIdSet = new Set(deletedIds);
+    state.analysis.savedReports = ensureArray(response.reports);
+    setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => !deletedIdSet.has(id)));
+    if (state.analysis.currentReportId && deletedIdSet.has(state.analysis.currentReportId)) {
+      state.analysis.currentReportId = "";
+      renderAnalysisResults(null);
+    }
+    await loadAnalysisReports();
+    renderAnalysisComparePanel();
+    setStatus("analysis-status-detail", `Deleted ${deletedIds.length} analysis report${deletedIds.length === 1 ? "" : "s"}.`);
+  } catch (error) {
+    setStatus("analysis-status-detail", `Delete failed: ${error.message}`);
+    updateAnalysisReportSelectionUi();
+  }
+}
+
+async function loadAnalysisSetups() {
+  const tbody = el("analysis-setup-body");
+  if (!tbody) return;
+  const setupsPayload = await apiRequest("/api/analysis/setups");
+  const setups = (setupsPayload.setups || []).filter((entry) => !entry.archived);
+  const defaultName = getDefaultAnalysisName();
+  const setup = choosePreferredAnalysisSetup(setups);
+  const rows = [{
+    id: setup?.id || "__current_month_analysis__",
+    sourceType: setup ? "setup" : "draft",
+    name: defaultName,
+    stage: setup && (setup.completed_at || setup.completedAt) ? "Completed" : "Open",
+    status: setup?.status || "draft",
+    createdAt: setup?.created_at || setup?.createdAt || null,
+    updatedAt: setup?.updated_at || setup?.updatedAt || null,
+    completedAt: setup?.completed_at || setup?.completedAt || null,
+    reportPullCount: Array.isArray(setup?.reportPulls) ? setup.reportPulls.length : 0,
+  }];
+  const empty = el("analysis-setup-empty-row");
+  if (empty) empty.remove();
+  tbody.innerHTML = "";
+
+  rows.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${esc(entry.name)}</td>
+      <td>${esc(entry.stage)}</td>
+      <td>${esc(entry.status)}</td>
+      <td>${formatDate(entry.createdAt)}</td>
+      <td>${formatDate(entry.updatedAt)}</td>
+      <td>${formatDate(entry.completedAt)}</td>
+      <td>${Number(entry.reportPullCount || 0)}</td>
+      <td><button class="secondary-button" data-open-analysis-entry="${esc(entry.id)}" data-entry-type="${esc(entry.sourceType)}">Open</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  all("[data-open-analysis-entry]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-open-analysis-entry");
+      const type = button.getAttribute("data-entry-type");
+      if (!id || !type) return;
+      setStatus("analysis-setup-status", `Loading analysis ${id}...`);
+      if (type === "setup") {
+        const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(id)}`);
+        const setupEntry = response.setup || {};
+        loadSetupIntoWorkspace(setupEntry);
+        const landing = resolveAnalysisLandingFromEntry(setupEntry);
+        state.analysis.reviewSummaryMode = landing.summaryMode;
+        showAnalysisPanel(landing.panel);
+      } else {
+        resetAnalysisWorkspace();
+        showAnalysisPanel("workspace");
+      }
+      setStatus("analysis-setup-status", `Loaded analysis ${defaultName}.`);
+    });
+  });
+}
+
+async function loadAnalysisSetupView() {
+  try {
+    await loadAnalysisReports();
+  } catch (error) {
+    setStatus("analysis-comparison-status", `Unable to load available reports: ${error.message}`);
+  }
+
+  const persistedSetupId = state.analysis.currentSetupId || readPersistedAnalysisSetupId();
+  if (persistedSetupId && !state.analysis.setupHydrated) {
+    try {
+      const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(persistedSetupId)}`);
+      loadSetupIntoWorkspace(response.setup || {});
+      state.analysis.currentSetupId = persistedSetupId;
+      persistAnalysisSetupId(persistedSetupId);
+    } catch (error) {
+      persistAnalysisSetupId("");
+      setStatus("analysis-comparison-status", `Unable to restore saved comparison setup: ${error.message}`);
+    }
+  }
+
+  state.analysis.setupHydrated = true;
+  if (state.analysis.panel === "compare-review") {
+    renderComparisonReviewPanelShell();
+    try {
+      renderAnalysisComparisonReviewPanel();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "Unknown error");
+      const comparisonReviewPanel = el("analysis-comparison-review-panel");
+      if (comparisonReviewPanel) {
+        const statusText = comparisonReviewPanel.querySelector("#analysis-comparison-selection-status");
+        if (statusText) {
+          statusText.textContent = `Unable to open comparison review: ${message}`;
+        }
+        const results = comparisonReviewPanel.querySelector("#analysis-comparison-results");
+        if (results) {
+          results.innerHTML = `<div class="empty-state-block">Comparison review failed to render. ${esc(message)}</div>`;
+        }
+      }
+      setStatus("analysis-comparison-selection-status", `Unable to open comparison review: ${message}`);
+    }
+    return;
+  }
+  renderAnalysisSetupHome();
+}
+
+function bindAnalysisButtons() {
+  const startNew = el("start-new-analysis-button");
+  const openPrevious = el("open-previous-analysis-button");
+  const viewReports = el("view-analysis-history-button");
+  const backButtons = all("#analysis-previous-back-button, #back-to-analysis-home-button");
+  const addPullButton = el("add-analysis-pull-button");
+  const saveSetupButton = el("save-analysis-setup-button");
+  const runAnalysisButton = el("run-analysis-button");
+  const pullContainer = el("analysis-report-pulls");
+  const runNameInput = el("analysis-run-name");
+  const runNotesInput = el("analysis-run-notes");
+  const continueButton = el("analysis-continue-button");
+  const deleteSelectedReportsButton = el("analysis-delete-selected-button");
+  const selectAllReportsCheckbox = el("analysis-select-all-reports");
+  const compareContainer = el("analysis-comparison-links");
+  const addComparisonButton = el("add-comparison-link-button");
+  const saveComparisonSetupButton = el("save-comparison-setup-button");
+  const analysisHomeNextButton = el("analysis-home-next-button");
+  const completeComparisonSetupButton = el("complete-comparison-setup-button");
+  const analysisSetupBackButton = el("analysis-setup-back-button");
+  const runComparisonsButton = el("run-report-comparisons-button");
+  const backToRunsButton = el("back-to-analysis-runs-button");
+  const exitComparisonSetupButton = el("exit-comparison-setup-button");
+  const saveComparisonReviewButton = el("save-comparison-review-button");
+  const backToComparisonSetupButton = el("back-to-comparison-setup-button");
+  const backToAnalysisRunsFromReviewButton = el("back-to-analysis-runs-from-review-button");
+  const exitComparisonReviewButton = el("exit-comparison-review-button");
+  const comparisonReviewPanel = el("analysis-comparison-review-panel");
+
+  startNew?.addEventListener("click", () => {
+    state.analysis.subtab = "runs";
+    resetAnalysisWorkspace();
+    showAnalysisPanel("workspace");
+  });
+  openPrevious?.addEventListener("click", () => {
+    showAnalysisPanel("previous");
+    loadAnalysisSetups();
+  });
+  viewReports?.addEventListener("click", () => {
+    state.analysis.subtab = "runs";
+    showAnalysisPanel("workspace");
+    loadAnalysisReports();
+  });
+  backButtons.forEach((button) =>
+    button.addEventListener("click", () => {
+      resetAnalysisWorkspace();
+      openAnalysisList();
+    })
+  );
+
+  addPullButton?.addEventListener("click", () => {
+    state.analysis.reportPulls.push(createEmptyPull(state.analysis.reportPulls.length));
+    renderAnalysisWorkspace();
+    setStatus("analysis-status-detail", "Report pull added.");
+  });
+
+  runNameInput?.addEventListener("input", () => {
+    state.analysis.runName = String(runNameInput.value || "");
+  });
+
+  runNotesInput?.addEventListener("input", () => {
+    state.analysis.runNotes = String(runNotesInput.value || "");
+  });
+
+  continueButton?.addEventListener("click", async () => {
+    setStatus("analysis-comparison-status", "Loading saved reports...");
+    try {
+      await loadAnalysisSetupView();
+      showAnalysisPanel("home");
+      setStatus("analysis-comparison-status", "Choose the reports and key code list for each comparison.");
+    } catch (error) {
+      setStatus("analysis-comparison-status", `Unable to load reports: ${error.message}`);
+    }
+  });
+
+  analysisSetupBackButton?.addEventListener("click", () => {
+    state.analysis.subtab = "runs";
+    showAnalysisPanel("workspace");
+  });
+
+  pullContainer?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
+    const pullId = target.getAttribute("data-pull-id");
+    const field = target.getAttribute("data-pull-field");
+    if (!pullId || !field) return;
+    const pull = state.analysis.reportPulls.find((entry) => entry.id === pullId);
+    if (!pull) return;
+
+    const value = target.value;
+    if (field === "keyCodes") {
+      pull.keyCodes = splitCsvValue(value);
+    } else if (field === "years") {
+      pull.years = splitCsvValue(value)
+        .map((entry) => Number.parseInt(entry, 10))
+        .filter((entry) => Number.isInteger(entry));
+    } else if (field === "startDate" || field === "endDate") {
+      const current = pull.dateRange || { startDate: "", endDate: "" };
+      current[field] = normalizeIsoDateInput(value);
+      pull.dateRange = current.startDate && current.endDate ? current : { ...current };
+    } else if (field === "scf") {
+      pull.scf = value;
+    } else {
+      pull[field] = value;
+    }
+
+    if (field === "keyCodes" || field === "clientType" || field === "startDate" || field === "endDate") {
+      updateAnalysisPullCardPreview(pullId);
+    }
+  });
+
+  pullContainer?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLSelectElement || target instanceof HTMLInputElement) {
+      const pullId = target.getAttribute("data-pull-id");
+      const field = target.getAttribute("data-pull-field");
+      if (pullId && field) {
+        const pull = state.analysis.reportPulls.find((entry) => entry.id === pullId);
+        if (pull) {
+          const value = target.value;
+          if (field === "keyCodes") {
+            pull.keyCodes = splitCsvValue(value);
+          } else if (field === "clientType") {
+            pull.clientType = value;
+          } else if (field === "startDate" || field === "endDate") {
+            const current = pull.dateRange || { startDate: "", endDate: "" };
+            current[field] = normalizeIsoDateInput(value);
+            pull.dateRange = current.startDate && current.endDate ? current : { ...current };
+          }
+          updateAnalysisPullCardPreview(pullId);
+        }
+      }
+    }
+  });
+
+  pullContainer?.addEventListener("blur", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
+    const field = target.getAttribute("data-pull-field");
+    const pullId = target.getAttribute("data-pull-id");
+    if ((field === "startDate" || field === "endDate") && pullId) {
+      updateAnalysisPullCardPreview(pullId);
+    }
+  }, true);
+
+  pullContainer?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.getAttribute("data-action") !== "remove-analysis-pull") return;
+    const pullId = target.getAttribute("data-pull-id");
+    if (!pullId) return;
+    state.analysis.reportPulls = state.analysis.reportPulls.filter((entry) => entry.id !== pullId);
+    renderAnalysisWorkspace();
+    setStatus("analysis-status-detail", "Report pull removed.");
+  });
+
+  saveSetupButton?.addEventListener("click", async () => {
+    const validationError = validateAnalysisPulls();
+    if (validationError) {
+      setStatus("analysis-status-detail", validationError);
+      return;
+    }
+    saveSetupButton.disabled = true;
+    setStatus("analysis-status-detail", "Saving analysis setup...");
+    try {
+      const payload = buildAnalysisPayload("draft");
+      const response = await apiRequest("/api/analysis/setups", {
+        method: "POST",
+        body: payload,
+      });
+      const setup = response.setup || {};
+      state.analysis.currentSetupId = setup.id || state.analysis.currentSetupId;
+      persistAnalysisSetupId(state.analysis.currentSetupId);
+      syncAnalysisMeta({
+        runName: setup.run_name || setup.runName || payload.runName,
+        notes: setup.notes || payload.notes,
+        createdAt: setup.created_at || setup.createdAt || null,
+        updatedAt: setup.updated_at || setup.updatedAt || null,
+      });
+      setStatus("analysis-status-text", setup.status || "Draft");
+      setStatus("analysis-status-detail", "Analysis setup saved.");
+    } catch (error) {
+      setStatus("analysis-status-detail", `Save failed: ${error.message}`);
+    } finally {
+      saveSetupButton.disabled = false;
+    }
+  });
+
+  runAnalysisButton?.addEventListener("click", async () => {
+    const validationError = validateAnalysisPulls();
+    if (validationError) {
+      setStatus("analysis-status-detail", validationError);
+      return;
+    }
+    runAnalysisButton.disabled = true;
+    setStatus("analysis-status-text", "Running");
+    setStatus("analysis-status-detail", "Starting analysis...");
+    try {
+      const savePayload = buildAnalysisPayload("draft");
+      const saveResponse = await apiRequest("/api/analysis/setups", {
+        method: "POST",
+        body: savePayload,
+      });
+      const savedSetup = saveResponse.setup || {};
+      state.analysis.currentSetupId = savedSetup.id || state.analysis.currentSetupId;
+      persistAnalysisSetupId(state.analysis.currentSetupId);
+      const runResponse = await apiRequest("/api/analysis/runs", {
+        method: "POST",
+        body: {
+          ...buildAnalysisPayload("running"),
+          setupId: state.analysis.currentSetupId || undefined,
+        },
+      });
+      const run = runResponse.run || {};
+      state.analysis.currentRunId = run.id || "";
+      syncAnalysisMeta({
+        runName: savePayload.runName,
+        notes: savePayload.notes,
+        createdAt: savedSetup.created_at || savedSetup.createdAt || null,
+        updatedAt: savedSetup.updated_at || savedSetup.updatedAt || null,
+      });
+      setStatus("analysis-status-text", run.status || "Running");
+      setStatus("analysis-status-detail", `Analysis queued: ${run.id || "run created"}.`);
+      await loadAnalysisReports();
+      if (run.id) {
+        stopAnalysisRunPolling();
+        pollAnalysisRun(run.id);
+      }
+    } catch (error) {
+      setStatus("analysis-status-text", "Failed");
+      setStatus("analysis-status-detail", `Run failed: ${error.message}`);
+    } finally {
+      runAnalysisButton.disabled = false;
+    }
+  });
+
+  addComparisonButton?.addEventListener("click", () => {
+    if (getAvailableAnalysisReports().filter((report) => report.status === "ready").length < 2) {
+      setStatus(
+        "analysis-comparison-status",
+        "At least two ready reports are required to build a comparison."
+      );
+      return;
+    }
+    state.analysis.comparisonLinks.push(
+      createComparisonLink(state.analysis.comparisonLinks.length)
+    );
+    renderAnalysisComparePanel();
+    setStatus("analysis-comparison-status", "Comparison row added.");
+  });
+
+  saveComparisonSetupButton?.addEventListener("click", async () => {
+    saveComparisonSetupButton.disabled = true;
+    setStatus("analysis-comparison-status", "Saving comparison setup...");
+    try {
+      await saveComparisonSetup("Comparison setup saved.");
+    } catch (error) {
+      setStatus("analysis-comparison-status", `Unable to save comparison setup: ${error.message}`);
+    } finally {
+      saveComparisonSetupButton.disabled = false;
+    }
+  });
+
+  const handleCompleteComparisonSetup = async (button) => {
+    const validation = validateAnalysisComparisonSetup();
+    renderAnalysisSetupHome();
+    if (!validation.isValid) {
+      setStatus("analysis-comparison-status", "Fix the comparison errors before continuing.");
+      return;
+    }
+
+    if (button) {
+      button.disabled = true;
+    }
+    setStatus("analysis-comparison-status", "Saving comparison setup...");
+    try {
+      await saveComparisonSetup("Comparison setup saved.");
+      state.analysis.selectedComparisonId = getPreferredComparisonId(state.analysis.comparisonRequests || []);
+      await loadReferenceLists();
+      state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
+      state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
+      showAnalysisPanel("compare-review");
+      ensureVisibleAnalysisPanel();
+      setStatus("analysis-comparison-selection-status", "Review the comparison and work from the testing copy of the lists.");
+    } catch (error) {
+      setStatus("analysis-comparison-status", `Unable to save comparisons: ${error.message}`);
+    } finally {
+      if (button) {
+        button.disabled = false;
+      }
+    }
+  };
+
+  analysisHomeNextButton?.addEventListener("click", async () => {
+    await handleCompleteComparisonSetup(analysisHomeNextButton);
+  });
+
+  completeComparisonSetupButton?.addEventListener("click", async () => {
+    await handleCompleteComparisonSetup(completeComparisonSetupButton);
+  });
+
+  backToRunsButton?.addEventListener("click", () => {
+    showAnalysisPanel("workspace");
+  });
+
+  exitComparisonSetupButton?.addEventListener("click", () => {
+    showAnalysisPanel("home");
+  });
+
+  saveComparisonReviewButton?.addEventListener("click", async () => {
+    saveComparisonReviewButton.disabled = true;
+    setStatus("analysis-comparison-status", "Saving comparison setup...");
+    try {
+      await saveComparisonSetup("Comparison setup saved.");
+    } catch (error) {
+      setStatus("analysis-comparison-status", `Unable to save comparison setup: ${error.message}`);
+    } finally {
+      saveComparisonReviewButton.disabled = false;
+    }
+  });
+
+  backToComparisonSetupButton?.addEventListener("click", () => {
+    showAnalysisPanel("home");
+  });
+
+  backToAnalysisRunsFromReviewButton?.addEventListener("click", () => {
+    showAnalysisPanel("workspace");
+  });
+
+  exitComparisonReviewButton?.addEventListener("click", () => {
+    showAnalysisPanel("home");
+  });
+
+  comparisonReviewPanel?.addEventListener("click", (event) => {
+    const target = event.target instanceof HTMLElement ? event.target.closest("button") : null;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    if (target.id === "back-to-comparison-setup-button" && !target.disabled) {
+      showAnalysisPanel("home");
+      return;
+    }
+
+    if (target.id === "back-to-analysis-runs-from-review-button" && !target.disabled) {
+      showAnalysisPanel("workspace");
+      return;
+    }
+
+    if (target.id === "exit-comparison-review-button" && !target.disabled) {
+      if (isAnalysisReviewPopupWindow()) {
+        window.close();
+      } else {
+        showAnalysisPanel("home");
+      }
+      return;
+    }
+
+    if (target.id === "open-comparison-review-popup-button" && !target.disabled) {
+      openComparisonReviewPopup();
+      return;
+    }
+
+    if (target.id === "summarize-comparison-review-button" && !target.disabled) {
+      summarizeComparisonReview();
+      return;
+    }
+
+    if (target.id === "complete-comparison-review-button" && !target.disabled) {
+      void completeComparisonReview();
+    }
+  });
+
+  deleteSelectedReportsButton?.addEventListener("click", async () => {
+    await deleteSelectedAnalysisReports();
+  });
+
+  selectAllReportsCheckbox?.addEventListener("change", () => {
+    const reportIds = ensureArray(state.analysis.savedReports)
+      .map((report) => String(report.id || "").trim())
+      .filter(Boolean);
+    if (selectAllReportsCheckbox.checked) {
+      setSelectedAnalysisReportIds(reportIds);
+    } else {
+      setSelectedAnalysisReportIds([]);
+    }
+    all("[data-select-report]").forEach((input) => {
+      input.checked = selectAllReportsCheckbox.checked;
+    });
+    updateAnalysisReportSelectionUi();
+  });
+
+  compareContainer?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const comparisonId = target.getAttribute("data-comparison-id");
+    const field = target.getAttribute("data-comparison-field");
+    if (!comparisonId || !field) return;
+    const link = state.analysis.comparisonLinks.find((entry) => entry.id === comparisonId);
+    if (!link) return;
+    link[field] = target.value;
+    link.updatedAt = new Date().toISOString();
+    state.analysis.lastEditedComparisonId = comparisonId;
+    if (field === "comparisonName") {
+      const comparisonCard = target.closest("[data-comparison-id]");
+      const comparisonTitle = comparisonCard?.querySelector(".analysis-comparison-card-head strong");
+      if (comparisonTitle) {
+        const comparisonIndex = state.analysis.comparisonLinks.findIndex((entry) => entry.id === comparisonId);
+        comparisonTitle.textContent = resolveComparisonName(target.value, comparisonIndex >= 0 ? comparisonIndex : 0);
+      }
+    }
+    refreshAnalysisSetupValidationUi();
+  });
+
+  compareContainer?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.getAttribute("data-action") !== "remove-comparison-link") return;
+    const comparisonId = target.getAttribute("data-comparison-id");
+    if (!comparisonId) return;
+    state.analysis.comparisonLinks = state.analysis.comparisonLinks.filter(
+      (entry) => entry.id !== comparisonId
+    );
+    if (!state.analysis.comparisonLinks.length) {
+      state.analysis.comparisonLinks = [createComparisonLink(0)];
+    }
+    renderAnalysisComparePanel();
+    setStatus("analysis-comparison-status", "Comparison removed.");
+  });
+
+  runComparisonsButton?.addEventListener("click", () => {
+    renderAnalysisComparisonReviewPanel();
+  });
+}
+
+function bindMonthlyActions() {
+  const monthInput = el("report-month");
+  if (monthInput && !monthInput.value) {
+    const now = new Date();
+    now.setUTCMonth(now.getUTCMonth() - 1);
+    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    monthInput.value = month;
+  }
+
+  const runReportButton = el("run-report-button");
+  const clearMonthlyOutputButton = el("clear-monthly-output-button");
+  const allReportsButton = el("monthly-run-all-button");
+  const outputEmptyState = el("preview-empty-state");
+  const outputResults = el("preview-results");
+  const monthlyOutputRunList = el("monthly-output-run-list");
+  const normalizeSelectableMonthlyReportType = (reportType) => {
+    const normalized = String(reportType || "").trim();
+    return MONTHLY_SELECTABLE_REPORT_TYPES.includes(normalized)
+      ? normalized
+      : "transaction-summary";
+  };
+
+  const getPreviousMonthValue = () => {
+    const previousMonth = new Date();
+    previousMonth.setUTCMonth(previousMonth.getUTCMonth() - 1);
+    return `${previousMonth.getUTCFullYear()}-${String(previousMonth.getUTCMonth() + 1).padStart(2, "0")}`;
+  };
+
+  const normalizeReportMonth = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+
+    const compactMatch = raw.match(/^(\d{4})-(\d{1,2})$/);
+    const slashMatch = raw.match(/^(\d{4})\/(\d{1,2})$/);
+    const monthNameMatch = raw.match(
+      /^\s*(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+(\d{4})\s*$/i
+    );
+    const match = compactMatch || slashMatch || monthNameMatch;
+
+    let yearRaw = "";
+    let monthRaw = "";
+
+    if (!match) return "";
+
+    if (monthNameMatch) {
+      yearRaw = monthNameMatch[2];
+      const monthName = monthNameMatch[1].toLowerCase().slice(0, 3);
+      const monthLookup = {
+        jan: 1,
+        feb: 2,
+        mar: 3,
+        apr: 4,
+        may: 5,
+        jun: 6,
+        jul: 7,
+        aug: 8,
+        sep: 9,
+        oct: 10,
+        nov: 11,
+        dec: 12,
+      };
+      monthRaw = monthLookup[monthName] || "";
+    } else {
+      [, yearRaw, monthRaw] = match;
+    }
+
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      return "";
+    }
+    return `${year}-${String(month).padStart(2, "0")}`;
+  };
+
+  const getCurrentMonthSelection = () => {
+    const month = normalizeReportMonth(monthInput?.value);
+    if (month) {
+      return month;
+    }
+    const fallback = getPreviousMonthValue();
+    if (monthInput) {
+      monthInput.value = fallback;
+    }
+    return fallback;
+  };
+
+  const formatMonthOrDefault = (month) => formatRunMonth(month || getPreviousMonthValue());
+
+  const getRunSortTime = (run) =>
+    new Date(run?.updatedAt || run?.createdAt || 0).getTime();
+
+  const isMonthlyRunStillActive = (run) => {
+    const status = String(run?.status || "").trim().toLowerCase();
+    if (!status || status === "complete" || status === "failed") {
+      return false;
+    }
+    const lastUpdatedAt = getRunSortTime(run);
+    if (!Number.isFinite(lastUpdatedAt) || lastUpdatedAt <= 0) {
+      return false;
+    }
+    return Date.now() - lastUpdatedAt <= MONTHLY_STALE_RUN_MS;
+  };
+
+  const normalizeMonthlyRunForDisplay = (run) => {
+    if (!run) {
+      return run;
+    }
+    const artifacts = ensureArray(run?.artifacts).filter(isMonthlyOutputDownloadArtifact);
+    if (artifacts.length) {
+      return {
+        ...run,
+        status: "complete",
+        statusDetail:
+          run?.statusDetail ||
+          "Saved report artifacts are available for download.",
+      };
+    }
+    if (isMonthlyRunStillActive(run)) {
+      return run;
+    }
+    const status = String(run?.status || "").trim().toLowerCase();
+    if (status !== "running") {
+      return run;
+    }
+    return {
+      ...run,
+      status: "failed",
+      statusDetail:
+        "This older report run did not finish. Use the last completed output below or rerun this report.",
+    };
+  };
+
+  const getMonthlyRunDisplayPriority = (run) => {
+    const normalizedRun = normalizeMonthlyRunForDisplay(run);
+    const status = String(normalizedRun?.status || "").trim().toLowerCase();
+    if (status === "running") return 3;
+    if (status === "complete") return 2;
+    if (status === "failed") return 1;
+    return 0;
+  };
+
+  const getArtifactDisplayLabel = (artifact) => {
+    const kind = String(artifact?.kind || "").trim().toLowerCase();
+    if (kind === "spreadsheet") return "Download Excel";
+    if (kind === "print") return "Download PDF";
+    return artifact?.label || "Download File";
+  };
+
+  const isMonthlyOutputDownloadArtifact = (artifact) => {
+    const kind = String(artifact?.kind || "").trim().toLowerCase();
+    return kind === "spreadsheet" || kind === "print";
+  };
+
+  const buildMonthlyArtifactMarkup = (run, artifact) => {
+    const label = getArtifactDisplayLabel(artifact);
+    const safeUrl = esc(String(artifact?.url || ""));
+    const safeName = esc(String(artifact?.fileName || `${run.reportType || "month-end-report"}.dat`));
+    const safeLabel = esc(label);
+    const safeFileName = esc(String(artifact?.fileName || "No file"));
+    const monthLabel = esc(String(run?.reportMonthLabel || formatMonthOrDefault(run?.reportMonth)));
+
+    return `
+      <div class="monthly-output-run-artifact">
+        <span class="field-label">${safeLabel}</span>
+        <strong>${safeFileName}</strong>
+        <p class="monthly-output-run-artifact-copy">Month: ${monthLabel}</p>
+        <div class="monthly-output-run-actions">
+          <button
+            class="secondary-button monthly-output-download-button"
+            data-download-url="${safeUrl}"
+            data-download-name="${safeName}"
+          >
+            ${safeLabel}
+          </button>
+        </div>
+      </div>
+    `;
+  };
+
+  const buildMonthlyRunCardMarkup = (run) => {
+    const displayRun = normalizeMonthlyRunForDisplay(run);
+    const reportName = esc(String(displayRun?.reportName || MONTHLY_REPORT_LABELS[displayRun?.reportType] || "Month-End Report"));
+    const monthLabel = esc(String(displayRun?.reportMonthLabel || formatMonthOrDefault(displayRun?.reportMonth)));
+    const status = esc(String(displayRun?.status || "queued"));
+    const statusDetail = esc(
+      String(
+        displayRun?.statusDetail || (String(displayRun?.status || "").toLowerCase() === "complete" ? "Completed." : "Waiting for output.")
+      )
+    );
+    const artifacts = ensureArray(displayRun?.artifacts).filter(isMonthlyOutputDownloadArtifact);
+    const artifactMarkup = artifacts.length
+      ? artifacts.map((artifact) => buildMonthlyArtifactMarkup(displayRun, artifact)).join("")
+      : `<p class="monthly-output-run-empty">Artifacts are not ready yet for ${monthLabel}.</p>`;
+
+    return `
+      <article class="monthly-output-run-card">
+        <div class="monthly-output-run-heading">
+          <div>
+            <span class="field-label">Report Output</span>
+            <strong>${reportName}</strong>
+            <p class="monthly-output-run-meta">Month: ${monthLabel}</p>
+          </div>
+          <div class="monthly-output-run-status">
+            <span class="field-label">Status</span>
+            <strong>${status}</strong>
+          </div>
+        </div>
+        <p>${statusDetail}</p>
+        <div class="monthly-output-run-list">
+          ${artifactMarkup}
+        </div>
+      </article>
+    `;
+  };
+
+  const getLatestVisibleRunsForMonth = (runs, month) => {
+    const selectedMonth = String(month || "").trim();
+    if (!selectedMonth) {
+      return [];
+    }
+
+    const latestByType = new Map();
+    ensureArray(runs)
+      .filter((entry) => String(entry?.reportMonth || "").trim() === selectedMonth)
+      .sort((left, right) => {
+        const priorityDifference = getMonthlyRunDisplayPriority(right) - getMonthlyRunDisplayPriority(left);
+        if (priorityDifference) {
+          return priorityDifference;
+        }
+        return getRunSortTime(right) - getRunSortTime(left);
+      })
+      .forEach((entry) => {
+        const typeKey = String(entry?.reportType || "").trim();
+        if (typeKey && !latestByType.has(typeKey)) {
+          latestByType.set(typeKey, normalizeMonthlyRunForDisplay(entry));
+        }
+      });
+
+    return [...latestByType.values()].sort((left, right) => {
+      const leftIndex = MONTHLY_ALL_REPORT_TYPES.indexOf(String(left?.reportType || "").trim());
+      const rightIndex = MONTHLY_ALL_REPORT_TYPES.indexOf(String(right?.reportType || "").trim());
+      const normalizedLeftIndex = leftIndex >= 0 ? leftIndex : MONTHLY_ALL_REPORT_TYPES.length;
+      const normalizedRightIndex = rightIndex >= 0 ? rightIndex : MONTHLY_ALL_REPORT_TYPES.length;
+      return normalizedLeftIndex - normalizedRightIndex || getRunSortTime(right) - getRunSortTime(left);
+    });
+  };
+
+  const renderMonthlyOutputRuns = (runs, primaryRun = null) => {
+    if (!outputResults || !outputEmptyState || !monthlyOutputRunList) {
+      return;
+    }
+
+    const visibleRuns = ensureArray(runs);
+    if (!visibleRuns.length) {
+      clearMonthlyOutput();
+      return;
+    }
+
+    outputEmptyState.classList.add("is-hidden");
+    outputResults.classList.remove("is-hidden");
+    monthlyOutputRunList.innerHTML = visibleRuns.map((run) => buildMonthlyRunCardMarkup(run)).join("");
+
+    const highlightedRun = primaryRun || visibleRuns[0];
+    if (highlightedRun?.reportMonthLabel) {
+      const displayLabel = getModeLabel();
+      if (state.monthly.reportRunMode === "all") {
+        setStatus("report-status-text", `${MONTHLY_ALL_REPORT_LABEL} for ${highlightedRun.reportMonthLabel}`);
+      } else {
+        setStatus("report-status-text", `${displayLabel} for ${highlightedRun.reportMonthLabel}`);
+      }
+    }
+    setStatus(
+      "report-status-detail",
+      highlightedRun?.statusDetail || `Showing ${visibleRuns.length} saved month-end report output item(s).`
+    );
+  };
+
+  const setMonthlyOutput = (run, allRuns = []) => {
+    if (!run || !outputResults || !outputEmptyState) return;
+    const selectedMonth = String(run.reportMonth || getCurrentMonthSelection()).trim();
+    const visibleRuns = getLatestVisibleRunsForMonth(allRuns, selectedMonth);
+    renderMonthlyOutputRuns(visibleRuns.length ? visibleRuns : [run], run);
+    const reportName = run.reportName || MONTHLY_REPORT_LABELS[run.reportType] || "Month-End Report";
+
+    if (run.reportMonthLabel) {
+      const displayLabel = getModeLabel();
+      if (state.monthly.reportRunMode === "all") {
+        setStatus("report-status-text", `${MONTHLY_ALL_REPORT_LABEL} for ${run.reportMonthLabel}`);
+      } else {
+        setStatus("report-status-text", `${displayLabel} for ${run.reportMonthLabel}`);
+      }
+    }
+    setStatus("report-status-detail", run.statusDetail || `Latest output: ${reportName}.`);
+  };
+
+  const clearMonthlyOutput = () => {
+    if (!outputResults || !outputEmptyState) return;
+    if (outputResults) {
+      outputResults.classList.add("is-hidden");
+    }
+    outputEmptyState.classList.remove("is-hidden");
+    if (monthlyOutputRunList) {
+      monthlyOutputRunList.innerHTML = "";
+    }
+  };
+
+  const attachBatchLetterArtifacts = (run, allRuns, runIds) => {
+    if (!run || !Array.isArray(allRuns) || !Array.isArray(runIds) || !runIds.length) {
+      return run;
+    }
+
+    const runClone = cloneData(run);
+    const currentArtifacts = Array.isArray(runClone.artifacts) ? runClone.artifacts : [];
+    const hasLetterArtifact = currentArtifacts.some((artifact) =>
+      ["summary-letter", "summary-letter-preview", "print"].includes(String(artifact?.kind || "").trim())
+    );
+    if (hasLetterArtifact) {
+      return runClone;
+    }
+
+    const matchingLetterRun = allRuns.find((entry) => {
+      const runId = String(entry?.id || "").trim();
+      return (
+        runIds.includes(runId) &&
+        String(entry?.reportType || "").trim() === "final-summary-letter" &&
+        String(entry?.reportMonth || "").trim() === String(runClone.reportMonth || "").trim()
+      );
+    });
+    if (!matchingLetterRun || !Array.isArray(matchingLetterRun.artifacts) || !matchingLetterRun.artifacts.length) {
+      return runClone;
+    }
+
+    const letterArtifacts = matchingLetterRun.artifacts.filter((artifact) =>
+      ["summary-letter", "summary-letter-preview", "summary-letter-json", "print"].includes(
+        String(artifact?.kind || "").trim()
+      )
+    );
+    if (!letterArtifacts.length) {
+      return runClone;
+    }
+
+    runClone.artifacts = [...currentArtifacts, ...letterArtifacts];
+    if (matchingLetterRun.report?.finalSummaryLetter) {
+      runClone.report = runClone.report || {};
+      runClone.report.finalSummaryLetter = matchingLetterRun.report.finalSummaryLetter;
+    }
+    return runClone;
+  };
+
+  const pickRunForOutput = (runs, preferredId = "") => {
+    if (!Array.isArray(runs) || !runs.length) return null;
+    if (preferredId) {
+      const preferredRun = runs.find((entry) => String(entry.id || "") === String(preferredId));
+      if (preferredRun) return preferredRun;
+    }
+
+    const mode = state.monthly.reportRunMode;
+    const selectedMonth = getCurrentMonthSelection();
+
+    if (mode === "all" && state.monthly.runAllIds.length) {
+      const batchRuns = runs.filter((entry) =>
+        state.monthly.runAllIds.includes(String(entry.id || ""))
+      );
+      if (!batchRuns.length) return null;
+
+      const batchSummaryRun = batchRuns.find((entry) =>
+        String(entry.reportType || "") === "transaction-summary" &&
+        String(entry.reportMonth || "") === selectedMonth
+      );
+      if (batchSummaryRun) {
+        return attachBatchLetterArtifacts(batchSummaryRun, runs, state.monthly.runAllIds);
+      }
+
+      const runningRuns = batchRuns.filter((entry) => !["complete", "failed"].includes(String(entry.status || "").toLowerCase()));
+      const activeRunningRuns = runningRuns.filter((entry) => isMonthlyRunStillActive(entry));
+      if (activeRunningRuns.length) {
+        activeRunningRuns.sort(
+          (left, right) =>
+            new Date(right.updatedAt || 0).getTime() - new Date(left.updatedAt || 0).getTime()
+        );
+        return activeRunningRuns[0];
+      }
+      const completeRuns = batchRuns.filter((entry) => String(entry.status || "").toLowerCase() === "complete");
+      if (completeRuns.length) {
+        completeRuns.sort(
+          (left, right) => new Date(right.updatedAt || 0).getTime() - new Date(left.updatedAt || 0).getTime()
+        );
+        return attachBatchLetterArtifacts(completeRuns[0], runs, state.monthly.runAllIds);
+      }
+      return batchRuns[0];
+    }
+
+    const selectedMonthRuns = runs.filter(
+      (entry) =>
+        (
+          String(state.monthly.reportType) === "final-summary-letter"
+            ? String(entry.reportType || "") === "transaction-summary"
+            : String(entry.reportType || "") === String(state.monthly.reportType)
+        ) &&
+        String(entry.reportMonth || "") === selectedMonth
+    );
+    if (selectedMonthRuns.length) {
+      selectedMonthRuns.sort((left, right) => {
+        const priorityDifference = getMonthlyRunDisplayPriority(right) - getMonthlyRunDisplayPriority(left);
+        if (priorityDifference) {
+          return priorityDifference;
+        }
+        return getRunSortTime(right) - getRunSortTime(left);
+      });
+      return normalizeMonthlyRunForDisplay(selectedMonthRuns[0]);
+    }
+    return null;
+  };
+
+  const findActiveBatchRuns = (runs, month) => {
+    const selectedMonth = String(month || "").trim();
+    const batchRuns = ensureArray(runs).filter((entry) =>
+      String(entry?.options?.source || "").trim().toLowerCase() === "batch"
+      && String(entry?.reportMonth || "").trim() === selectedMonth
+    );
+    if (!batchRuns.length) {
+      return [];
+    }
+
+    const activeBatchId = batchRuns.find((entry) =>
+      isMonthlyRunStillActive(entry)
+      && String(entry?.options?.batchId || "").trim()
+    )?.options?.batchId;
+
+    if (activeBatchId) {
+      return batchRuns.filter((entry) => String(entry?.options?.batchId || "").trim() === String(activeBatchId));
+    }
+    return [];
+  };
+
+  const resumeMonthlyProgressFromRuns = (runs = []) => {
+    const selectedMonth = getCurrentMonthSelection();
+    const activeBatchRuns = findActiveBatchRuns(runs, selectedMonth);
+    const activeBatchIds = activeBatchRuns
+      .map((entry) => String(entry?.id || "").trim())
+      .filter(Boolean);
+
+    if (activeBatchIds.length) {
+      state.monthly.reportRunMode = "all";
+      syncReportTypeButtons();
+      setRunButtonLabel();
+      startAllReportProgressTracking(activeBatchIds, formatRunMonth(selectedMonth));
+      return true;
+    }
+
+    const activeSingleRun = ensureArray(runs).find((entry) =>
+      String(entry?.reportMonth || "").trim() === selectedMonth
+      && String(entry?.options?.source || "").trim().toLowerCase() !== "batch"
+      && MONTHLY_SELECTABLE_REPORT_TYPES.includes(String(entry?.reportType || "").trim())
+      && isMonthlyRunStillActive(entry)
+    );
+
+    if (activeSingleRun?.id) {
+      state.monthly.reportRunMode = "single";
+      state.monthly.reportType = normalizeSelectableMonthlyReportType(
+        activeSingleRun.reportType || state.monthly.reportType || "transaction-summary"
+      );
+      state.monthly.singleRunId = String(activeSingleRun.id || "");
+      syncReportTypeButtons();
+      setRunButtonLabel();
+      setRunningControls(true);
+      startSingleReportProgress(
+        state.monthly.singleRunId,
+        state.monthly.reportType,
+        activeSingleRun.reportMonthLabel || formatRunMonth(selectedMonth)
+      );
+      return true;
+    }
+
+    state.monthly.reportType = normalizeSelectableMonthlyReportType(state.monthly.reportType);
+    state.monthly.singleRunId = "";
+    state.monthly.runAllIds = [];
+    setReportRunningState("", false);
+    setRunningControls(false);
+    syncReportTypeButtons();
+    setRunButtonLabel();
+
+    return false;
+  };
+
+  const refreshMonthlyOutput = async () => {
+    try {
+      const payload = await apiRequest("/api/monthly-reports");
+      const runs = Array.isArray(payload?.runs) ? payload.runs : [];
+      resumeMonthlyProgressFromRuns(runs);
+      const run = pickRunForOutput(runs, state.monthly.singleRunId);
+      if (run) {
+        setMonthlyOutput(run, runs);
+        return;
+      }
+      clearMonthlyOutput();
+    } catch (error) {
+      setStatus("report-status-detail", `Unable to load report output: ${error.message}`);
+      clearMonthlyOutput();
+    }
+  };
+
+  const stopSingleReportProgress = () => {
+    if (state.monthly.singleRunMonitorHandle) {
+      clearTimeout(state.monthly.singleRunMonitorHandle);
+    }
+    state.monthly.singleRunMonitorHandle = null;
+  };
+
+  const startSingleReportProgress = (runId, reportType, monthLabel) => {
+    stopSingleReportProgress();
+    if (!runId) {
+      return;
+    }
+    const poll = async () => {
+      try {
+        const payload = await apiRequest(`/api/monthly-reports/${encodeURIComponent(runId)}`);
+        const run = payload.run || {};
+        const allRunsPayload = await apiRequest("/api/monthly-reports");
+        const allRuns = Array.isArray(allRunsPayload?.runs) ? allRunsPayload.runs : [run];
+        setMonthlyOutput(run, allRuns);
+        const status = String(run.status || "").toLowerCase();
+        if (status === "complete") {
+          setReportRunningState("", false);
+          setStatusComplete(
+            `${getRunLabel(reportType)} completed for ${monthLabel}`,
+            run.statusDetail || "Report generation completed."
+          );
+          state.monthly.singleRunId = String(runId || "");
+          setRunningControls(false);
+          setRunButtonLabel();
+          stopSingleReportProgress();
+          return;
+        }
+        if (status === "failed") {
+          setReportRunningState("", false);
+          setStatus("report-status-text", `${getRunLabel(reportType)} Failed`);
+          setStatus("report-status-detail", run.statusDetail || "Report generation failed.");
+          setRunningControls(false);
+          setRunButtonLabel();
+          stopSingleReportProgress();
+          return;
+        }
+
+        state.monthly.singleRunMonitorHandle = setTimeout(
+          poll,
+          1500
+        );
+      } catch (error) {
+        setStatus("report-status-detail", `Unable to read report progress: ${error.message}`);
+        setReportRunningState("", false);
+        setRunningControls(false);
+        setRunButtonLabel();
+        stopSingleReportProgress();
+      }
+    };
+
+    state.monthly.singleRunMonitorHandle = setTimeout(poll, 1200);
+  };
+
+  outputResults?.addEventListener("click", async (event) => {
+    const button = event.target instanceof HTMLElement
+      ? event.target.closest(".monthly-output-download-button")
+      : null;
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    const url = String(button.dataset.downloadUrl || "").trim();
+    const fileName = String(button.dataset.downloadName || "month-end-report").trim();
+    if (!url) {
+      setStatus("report-status-detail", "No file is available for this run yet.");
+      return;
+    }
+
+    try {
+      await apiDownload(url, fileName);
+      setStatus("report-status-detail", `Downloaded ${fileName}.`);
+    } catch (error) {
+      setStatus("report-status-detail", `Download failed: ${error.message}`);
+    }
+  });
+
+  const reportTypeButtons = all(UI.reportTypeButtons);
+  const getSelectedReportButton = () =>
+    reportTypeButtons.find(
+      (button) => button.getAttribute("data-report-picker") === normalizeSelectableMonthlyReportType(state.monthly.reportType)
+    );
+
+  const getRunLabel = (reportType) => MONTHLY_REPORT_LABELS[reportType] || "Month-end Report";
+  const getModeLabel = () => {
+    if (state.monthly.reportRunMode === "all") return MONTHLY_ALL_REPORT_LABEL;
+    return getRunLabel(normalizeSelectableMonthlyReportType(state.monthly.reportType));
+  };
+  const formatRunMonth = (month) => {
+    return formatMonthLabel(month);
+  };
+  const setRunButtonLabel = () => {
+    if (!runReportButton) return;
+    const label = getModeLabel();
+    if (state.monthly.reportRunMode === "all") {
+      runReportButton.textContent = `Run ${label}`;
+    } else {
+      const reportLabel = label === "Month-end Report" ? label : `${label} Report`;
+      runReportButton.textContent = `Run ${reportLabel}`;
+    }
+  };
+  const setStatusRunning = (label, monthLabel) => {
+    const period = formatRunMonth(monthLabel);
+    setStatus("report-status-text", `${label} Starting for ${period}`);
+    setStatus("report-status-detail", `Starting ${label} for ${period}...`);
+  };
+  const setStatusComplete = (text, detail) => {
+    setStatus("report-status-text", text);
+    setStatus("report-status-detail", detail);
+  };
+
+  const stopAllReportProgress = () => {
+    if (state.monthly.runAllMonitorHandle) {
+      clearInterval(state.monthly.runAllMonitorHandle);
+    }
+    state.monthly.runAllMonitorHandle = null;
+  };
+
+  const setRunningControls = (disabled) => {
+    if (runReportButton) runReportButton.disabled = disabled;
+    if (clearMonthlyOutputButton) clearMonthlyOutputButton.disabled = disabled;
+    if (allReportsButton) allReportsButton.disabled = disabled;
+    reportTypeButtons.forEach((button) => {
+      button.disabled = disabled;
+    });
+  };
+
+  const updateRunProgress = (runIndex, totalRuns, periodLabel, status) => {
+    const reportIndex = Math.min(totalRuns, Math.max(1, runIndex + 1));
+    setStatus(
+      "report-status-text",
+      `Running report ${reportIndex}/${totalRuns} for ${periodLabel}`
+    );
+    setStatus(
+      "report-status-detail",
+      status || `Running report ${reportIndex} of ${totalRuns}.`
+    );
+  };
+
+  const startAllReportProgressTracking = (runIds, periodLabel) => {
+    if (!runIds.length) {
+      stopAllReportProgress();
+      setStatus("report-status-text", "No reports queued.");
+      setStatus("report-status-detail", "No batch report IDs were returned.");
+      setRunningControls(false);
+      return;
+    }
+
+    state.monthly.runAllIds = runIds;
+
+    const computeProgress = async () => {
+      try {
+        const reportPayload = await apiRequest("/api/monthly-reports");
+        const allRuns = Array.isArray(reportPayload?.runs) ? reportPayload.runs : [];
+        const runById = new Map(allRuns.map((entry) => [entry.id, entry]));
+        const resolvedRuns = runIds.map((id) => runById.get(id) || null);
+        const summaryRun = resolvedRuns.find(
+          (run) => String(run?.reportType || "").toLowerCase() === "transaction-summary"
+        );
+        const finalLetterRun = resolvedRuns.find(
+          (run) => String(run?.reportType || "").toLowerCase() === "final-summary-letter"
+        );
+        const summaryHasLetter = Array.isArray(summaryRun?.artifacts) && summaryRun.artifacts.some((artifact) =>
+          ["summary-letter", "summary-letter-preview"].includes(String(artifact?.kind || "").trim())
+        );
+        const finalRunHasLetter = Array.isArray(finalLetterRun?.artifacts) && finalLetterRun.artifacts.some((artifact) =>
+          ["summary-letter", "summary-letter-preview"].includes(String(artifact?.kind || "").trim())
+        );
+
+        if (
+          summaryRun &&
+          String(summaryRun.status || "").toLowerCase() === "complete" &&
+          finalLetterRun &&
+          String(finalLetterRun.status || "").toLowerCase() === "running"
+        ) {
+          if (!summaryHasLetter && !finalRunHasLetter && summaryRun.id) {
+            try {
+              await apiRequest(`/api/monthly-reports/${encodeURIComponent(summaryRun.id)}/final-summary-letter`, {
+                method: "POST",
+              });
+            } catch {
+              // Keep polling; the backend batch monitor may still finish the letter run.
+            }
+          }
+        }
+
+        const activeIndex = resolvedRuns.findIndex((run) => {
+          const status = String(run?.status || "").toLowerCase();
+          if (!isMonthlyRunStillActive(run)) {
+            return false;
+          }
+          if (
+            String(run?.reportType || "").toLowerCase() === "final-summary-letter" &&
+            (summaryHasLetter || finalRunHasLetter)
+          ) {
+            return false;
+          }
+          return status !== "complete" && status !== "failed";
+        });
+
+        const summaryWithLetter = summaryRun
+          ? attachBatchLetterArtifacts(summaryRun, allRuns, runIds)
+          : null;
+
+        if (activeIndex < 0) {
+          if (summaryWithLetter) {
+            setMonthlyOutput(summaryWithLetter, allRuns);
+          } else {
+            const completeRuns = resolvedRuns
+              .filter((run) => String(run?.status || "").toLowerCase() === "complete")
+              .sort(
+                (left, right) =>
+                  new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime()
+              );
+            if (completeRuns.length) {
+              setMonthlyOutput(completeRuns[0], allRuns);
+            } else if (resolvedRuns.length) {
+              setMonthlyOutput(resolvedRuns[resolvedRuns.length - 1], allRuns);
+            }
+          }
+          const failedCount = resolvedRuns.filter(
+            (run) => String(run?.status || "").toLowerCase() === "failed"
+          ).length;
+          setReportRunningState("", false);
+          stopAllReportProgress();
+          setRunningControls(false);
+          if (failedCount) {
+            setStatus(
+              "report-status-text",
+              `${MONTHLY_ALL_REPORT_LABEL} Completed with ${failedCount} failure(s) for ${periodLabel}`
+            );
+            setStatus(
+              "report-status-detail",
+              `Batch complete for ${periodLabel}. ${failedCount} report did not complete successfully.`
+            );
+          } else {
+            setStatus(
+              "report-status-text",
+              `${MONTHLY_ALL_REPORT_LABEL} Completed for ${periodLabel}`
+            );
+            setStatus(
+              "report-status-detail",
+              `All ${resolvedRuns.length} reports are complete for ${periodLabel}.`
+            );
+          }
+          return;
+        }
+
+        const activeRun = resolvedRuns[activeIndex] || {};
+        const activeReportType = activeRun.reportType || MONTHLY_ALL_REPORT_TYPES[activeIndex];
+        const activeReportLabel = getRunLabel(activeReportType);
+        const activeStatus = activeRun.statusDetail || "Report is running.";
+        setReportRunningState(activeReportType, true);
+        updateRunProgress(
+          activeIndex,
+          runIds.length,
+          periodLabel,
+          `Running report ${activeIndex + 1} of ${runIds.length}: ${activeReportLabel}` +
+            ` (${activeStatus})`
+        );
+        if (summaryWithLetter) {
+          setMonthlyOutput(summaryWithLetter, allRuns);
+        } else {
+          setMonthlyOutput(
+            activeRun.status === "running" ? activeRun : resolvedRuns[runIds.length - 1] || activeRun,
+            allRuns
+          );
+        }
+      } catch (error) {
+        setStatus("report-status-text", "Unable to fetch batch progress");
+        setStatus("report-status-detail", `Batch progress tracking failed: ${error.message}`);
+      }
+    };
+
+    if (state.monthly.runAllMonitorHandle) {
+      clearInterval(state.monthly.runAllMonitorHandle);
+    }
+    void computeProgress();
+    state.monthly.runAllMonitorHandle = setInterval(computeProgress, 1500);
+  };
+
+  const startSingleReportRun = async (type, month, period, button) => {
+    if (!type) return;
+
+    if (!runReportButton) return;
+    setRunningControls(true);
+    runReportButton.textContent = "Run in Progress";
+    setStatusRunning(getRunLabel(type), period);
+    setReportRunningState(type, true);
+    if (button) {
+      button.classList.add("is-running-report");
+    }
+
+    try {
+      const response = await apiRequest("/api/monthly-reports/run", {
+        method: "POST",
+        body: { reportType: type, reportMonth: month },
+      });
+      state.monthly.singleRunId = String((response.run || {}).id || "");
+      const run = response.run || {};
+      const runPeriod = run.reportMonthLabel || formatRunMonth(run.reportMonth || month);
+      setMonthlyOutput(run, [run]);
+      startSingleReportProgress((response.run || {}).id, type, runPeriod);
+      setStatusComplete(
+        `${getRunLabel(type)} running for ${runPeriod}`,
+        `Running ${getRunLabel(type)} for ${runPeriod}: ${(response.run || {}).id || "accepted"}`
+      );
+    } catch (error) {
+      setStatus("report-status-text", "Run Failed");
+      setStatus("report-status-detail", `Run failed: ${error.message}`);
+      setReportRunningState(type, false);
+      setRunningControls(false);
+      setRunButtonLabel();
+      stopSingleReportProgress();
+    }
+  };
+
+  const startFinalSummaryLetterRun = async (month, period, button) => {
+    if (!runReportButton) return;
+    setRunningControls(true);
+    runReportButton.textContent = "Run in Progress";
+    setStatusRunning(getRunLabel("final-summary-letter"), period);
+    setReportRunningState("final-summary-letter", true);
+    if (button) {
+      button.classList.add("is-running-report");
+    }
+
+    try {
+      const payload = await apiRequest("/api/monthly-reports");
+      const runs = Array.isArray(payload?.runs) ? payload.runs : [];
+      const summaryRun = [...runs]
+        .filter((entry) =>
+          String(entry?.reportType || "").trim() === "transaction-summary"
+          && String(entry?.reportMonth || "").trim() === String(month || "").trim()
+          && String(entry?.status || "").trim().toLowerCase() === "complete"
+        )
+        .sort(
+          (left, right) =>
+            new Date(right?.updatedAt || right?.createdAt || 0).getTime()
+            - new Date(left?.updatedAt || left?.createdAt || 0).getTime()
+        )[0];
+
+      if (!summaryRun?.id) {
+        throw new Error("Run Transaction Summary for this month first, then generate the final summary letter.");
+      }
+
+      const response = await apiRequest(
+        `/api/monthly-reports/${encodeURIComponent(summaryRun.id)}/final-summary-letter`,
+        {
+          method: "POST",
+        }
+      );
+      const updatedRun = response?.run || summaryRun;
+      const refreshedPayload = await apiRequest("/api/monthly-reports");
+      const allRuns = Array.isArray(refreshedPayload?.runs) ? refreshedPayload.runs : [updatedRun];
+      state.monthly.singleRunId = String(updatedRun?.id || "");
+      setMonthlyOutput(updatedRun, allRuns);
+      setStatusComplete(
+        `${getRunLabel("final-summary-letter")} completed for ${period}`,
+        updatedRun?.statusDetail || "Final summary letter generated."
+      );
+      setReportRunningState("", false);
+      setRunningControls(false);
+      setRunButtonLabel();
+    } catch (error) {
+      setStatus("report-status-text", "Run Failed");
+      setStatus("report-status-detail", `Run failed: ${error.message}`);
+      setReportRunningState("", false);
+      setRunningControls(false);
+      setRunButtonLabel();
+    }
+  };
+
+  state.monthly.refreshOutput = refreshMonthlyOutput;
+
+  const startAllReportsRun = async (month, period) => {
+    setRunningControls(true);
+    stopSingleReportProgress();
+    stopAllReportProgress();
+    setStatus("report-status-text", `Starting ${MONTHLY_ALL_REPORT_LABEL} for ${period}`);
+    setStatus("report-status-detail", "Preparing month-end package.");
+
+    try {
+      const response = await apiRequest("/api/monthly-reports/run-all", {
+        method: "POST",
+        body: { reportMonth: month },
+      });
+      const batchPeriod = response?.batch?.reportMonthLabel || formatRunMonth(response?.batch?.reportMonth || month);
+      const runIds = Array.isArray(response?.batch?.runs)
+        ? response.batch.runs
+            .map((entry) => (entry && entry.id ? String(entry.id) : ""))
+            .filter(Boolean)
+        : [];
+      const count = runIds.length;
+      setStatusComplete(
+        `${MONTHLY_ALL_REPORT_LABEL} Started for ${batchPeriod}`,
+        count ? `Batch started for ${batchPeriod}. ${count} report(s) queued.` : "Batch started."
+      );
+      if (!count) {
+        setRunningControls(false);
+        clearMonthlyOutput();
+        return;
+      }
+      const initialRuns = Array.isArray(response?.batch?.runs) ? response.batch.runs : [];
+      const initialSummaryRun = initialRuns.find(
+        (entry) => String(entry?.reportType || "").toLowerCase() === "transaction-summary"
+      ) || initialRuns[0];
+      if (initialSummaryRun) {
+        setMonthlyOutput(initialSummaryRun, initialRuns);
+      }
+      startAllReportProgressTracking(runIds, batchPeriod);
+    } catch (error) {
+      setRunningControls(false);
+      setStatus("report-status-text", "Run Failed");
+      setStatus("report-status-detail", `Run failed: ${error.message}`);
+    }
+  };
+
+  const syncReportTypeButtons = () => {
+    const selectedType = normalizeSelectableMonthlyReportType(state.monthly.reportType);
+    state.monthly.reportType = selectedType;
+    reportTypeButtons.forEach((button) => {
+      const isSelected = button.getAttribute("data-report-picker") === selectedType;
+      button.classList.toggle("is-active-report", isSelected);
+    });
+    if (allReportsButton) {
+      allReportsButton.classList.toggle("is-active-report", state.monthly.reportRunMode === "all");
+    }
+  };
+
+  const setReportRunningState = (reportType, running) => {
+    reportTypeButtons.forEach((button) => {
+      const isMatch = button.getAttribute("data-report-picker") === reportType;
+      button.classList.toggle("is-running-report", running && isMatch);
+    });
+    if (allReportsButton && reportType) {
+      allReportsButton.classList.toggle(
+        "is-running-report",
+        running &&
+          state.monthly.reportRunMode === "all" &&
+          !MONTHLY_RUN_BUTTON_TYPES.includes(reportType)
+      );
+    }
+  };
+
+  allReportsButton?.addEventListener("click", () => {
+    state.monthly.reportRunMode = "all";
+    setRunButtonLabel();
+    syncReportTypeButtons();
+    setStatus("report-status-text", "Ready");
+    setStatus("report-status-detail", "All Reports mode selected. Saved output for the selected month will stay available until you explicitly clear that month.");
+    state.monthly.singleRunId = "";
+    stopSingleReportProgress();
+    setReportRunningState("", false);
+    setRunningControls(false);
+    setRunButtonLabel();
+    void refreshMonthlyOutput();
+  });
+
+  all(UI.reportTypeButtons).forEach((button) => {
+    button.addEventListener("click", () => {
+      state.monthly.reportRunMode = "single";
+      stopSingleReportProgress();
+      const reportType = button.getAttribute("data-report-picker");
+      if (!reportType) return;
+      state.monthly.reportType = reportType;
+      setRunButtonLabel();
+      syncReportTypeButtons();
+      state.monthly.singleRunId = "";
+      setStatus(
+        "report-status-text",
+        "Ready"
+      );
+      setStatus(
+        "report-status-detail",
+        `${getRunLabel(reportType)} settings selected. Saved output for the selected month remains available until you explicitly clear that month.`
+      );
+      void refreshMonthlyOutput();
+    });
+  });
+
+  syncReportTypeButtons();
+  setRunButtonLabel();
+  void refreshMonthlyOutput();
+
+  monthInput?.addEventListener("change", () => {
+    state.monthly.singleRunId = "";
+    stopSingleReportProgress();
+    stopAllReportProgress();
+    setReportRunningState("", false);
+    setRunningControls(false);
+    setRunButtonLabel();
+    void refreshMonthlyOutput();
+  });
+
+  clearMonthlyOutputButton?.addEventListener("click", async () => {
+    const month = getCurrentMonthSelection();
+    try {
+      const result = await apiRequest("/api/monthly-reports/clear-month", {
+        method: "POST",
+        body: { reportMonth: month },
+      });
+      state.monthly.singleRunId = "";
+      state.monthly.runAllIds = [];
+      stopSingleReportProgress();
+      stopAllReportProgress();
+      setReportRunningState("", false);
+      setRunningControls(false);
+      clearMonthlyOutput();
+      setStatus(
+        "report-status-text",
+        `Cleared output for ${result?.reportMonthLabel || formatRunMonth(month)}`
+      );
+      setStatus(
+        "report-status-detail",
+        `${Number(result?.removedCount || 0)} saved run(s) removed for ${result?.reportMonthLabel || formatRunMonth(month)}.`
+      );
+      void refreshMonthlyOutput();
+    } catch (error) {
+      setStatus("report-status-detail", `Unable to clear current month output: ${error.message}`);
+    }
+  });
+
+  runReportButton?.addEventListener("click", async () => {
+    const type = normalizeSelectableMonthlyReportType(state.monthly.reportType);
+    state.monthly.reportType = type;
+    const month = getCurrentMonthSelection();
+    const period = formatRunMonth(month);
+    const button = getSelectedReportButton();
+    if (!button) return;
+    if (state.monthly.reportRunMode === "all") {
+      await startAllReportsRun(month, period);
+      return;
+    }
+    if (type === "final-summary-letter") {
+      await startFinalSummaryLetterRun(month, period, button);
+      return;
+    }
+    await startSingleReportRun(type, month, period, button);
+  });
+  window.addEventListener("beforeunload", stopAllReportProgress);
+  window.addEventListener("beforeunload", stopSingleReportProgress);
+
+}
+
+function bindNavigation() {
+  all(UI.navButtons).forEach((button) => {
+    button.addEventListener("click", () => {
+      const route = button.getAttribute("data-route");
+      if (route) setRoute(route);
+    });
+  });
+}
+
+function bindPrimaryNavigation() {
+  document.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const routeButton = target.closest("[data-route]");
+    if (routeButton instanceof HTMLElement) {
+      const route = routeButton.getAttribute("data-route");
+      if (route) {
+        if (route === "analysis") {
+          openAnalysisLanding().catch((error) => {
+            setStatus("analysis-setup-status", `Unable to open analysis: ${error.message}`);
+          });
+        } else {
+          setRoute(route);
+        }
+      }
+      return;
+    }
+
+    const actionButton = target.closest("[data-action]");
+    if (!(actionButton instanceof HTMLElement)) {
+      if (target.closest("#run-all-month-end-button")) {
+        setRoute("monthly-reports");
+      }
+      return;
+    }
+
+    const action = actionButton.getAttribute("data-action");
+    if (action === "toggle-analysis-submenu") {
+      event.preventDefault();
+      toggleAnalysisLeftSubmenu();
+      return;
+    }
+
+    if (action === "open-analysis") {
+      openAnalysisLanding().catch((error) => {
+        setStatus("analysis-setup-status", `Unable to open analysis: ${error.message}`);
+      });
+      return;
+    }
+
+    if (action === "open-history") {
+      setRoute("report-history");
+      return;
+    }
+
+    if (action === "open-reference-list") {
+      const listType = actionButton.getAttribute("data-list-type");
+      if (!listType) return;
+      await openAnalysisMailingList(listType);
+      return;
+    }
+  });
+
+  el("run-all-month-end-button")?.addEventListener("click", () => {
+    setRoute("monthly-reports");
+  });
+}
+
+function bindDashboardActions() {
+  all('[data-action="open-analysis"]').forEach((button) =>
+    button.addEventListener("click", async () => {
+      await openAnalysisLanding();
+    })
+  );
+  all('[data-action="open-reference-list"]').forEach((button) =>
+    button.addEventListener("click", async () => {
+      const listType = button.getAttribute("data-list-type");
+      await openAnalysisMailingList(listType);
+    })
+  );
+  el("run-all-month-end-button")?.addEventListener("click", () => {
+    setRoute("monthly-reports");
+  });
+}
+
+function bindMailingListEvents() {
+  all("[data-mailing-list-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      loadAndRenderMailingList(button.getAttribute("data-mailing-list-tab"));
+    });
+  });
+  el("mailing-list-export-button")?.addEventListener("click", exportCurrentMailingList);
+  el("mailing-list-mailer-export-button")?.addEventListener("click", exportMailerCurrentMailingList);
+  el("dnm-export-button")?.addEventListener("click", exportCurrentMailingList);
+  el("mailing-list-add-button")?.addEventListener("click", addMailingListEntry);
+  el("dnm-state-add-button")?.addEventListener("click", addDnmState);
+  el("mailing-list-import-button")?.addEventListener("click", () => {
+    if (!["nhcl", "rfc"].includes(state.analysis.mailingListType)) {
+      setStatus("mailing-list-status", "Import is available for NHCL and RFC only.");
+      return;
+    }
+    el("mailing-list-import-input")?.click();
+  });
+  el("mailing-list-import-input")?.addEventListener("change", importReferenceList);
+  el("mailing-list-search")?.addEventListener("input", (event) => {
+    state.analysis.search = String(event.target.value || "");
+    renderMailingListRows(getReferenceListFromCache(state.analysis.mailingListType) || {});
+  });
+  el("mailing-list-body")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.getAttribute("data-action") === "delete-dnm-state") {
+      removeDnmState(target.getAttribute("data-state-key"));
+      return;
+    }
+    if (target.getAttribute("data-action") === "delete-list-item") {
+      removeMailingListItem(target.getAttribute("data-scf"));
+    }
+  });
+}
+
+function bindReportHistoryButton() {
+  all('[data-action="open-history"]').forEach((button) => {
+    button.addEventListener("click", () => {
+      setRoute("report-history");
+    });
+  });
+}
+
+function initSalesforceStatus() {
+  fetch("/api/salesforce/auth-status")
+    .then((r) => r.json())
+    .then((payload) => {
+      const auth = payload.auth || {};
+      if (el("salesforce-auth-heading"))
+        el("salesforce-auth-heading").textContent = auth.connected ? "Connected" : "Not Connected";
+      if (el("salesforce-auth-copy"))
+        el("salesforce-auth-copy").textContent = auth.connected
+          ? "Salesforce is connected."
+          : "Connect Salesforce so live report pulls are available.";
+    })
+    .catch(() => {
+      if (el("salesforce-auth-heading")) el("salesforce-auth-heading").textContent = "Not Connected";
+    });
+}
+
+async function init() {
+  bindPrimaryNavigation();
+  bindAnalysisButtons();
+  bindAnalysisSubtabs();
+  bindMailingListEvents();
+  bindApplicationEvents();
+  bindCcPaymentImportEvents();
+  bindMonthlyActions();
+  if (!state.applications.current) {
+    state.applications.current = createEmptyApplication();
+  }
+
+  const persistedUiState = readPersistedUiState();
+  const launchState = readLaunchStateFromUrl();
+    if (persistedUiState?.analysis) {
+      state.analysis.panel = String(persistedUiState.analysis.panel || state.analysis.panel);
+      state.analysis.subtab =
+        persistedUiState.analysis.subtab === "mailing-lists" ? "mailing-lists" : "runs";
+      state.analysis.mailingListType = ["dnm", "nhcl", "rfc"].includes(
+        String(persistedUiState.analysis.mailingListType || "").toLowerCase()
+      )
+        ? String(persistedUiState.analysis.mailingListType || "").toLowerCase()
+        : "dnm";
+      state.analysis.navExpanded = persistedUiState.analysis.navExpanded !== false;
+    }
+
+  if (launchState?.analysis) {
+    if (launchState.analysis.panel) {
+      state.analysis.panel = launchState.analysis.panel;
+    }
+    if (launchState.analysis.subtab) {
+      state.analysis.subtab = launchState.analysis.subtab;
+    }
+    if (launchState.analysis.mailingListType) {
+      state.analysis.mailingListType = launchState.analysis.mailingListType;
+    }
+    if (launchState.analysis.setupId) {
+      state.analysis.currentSetupId = launchState.analysis.setupId;
+      persistAnalysisSetupId(launchState.analysis.setupId);
+    }
+    if (launchState.analysis.comparisonId) {
+      state.analysis.selectedComparisonId = launchState.analysis.comparisonId;
+      state.analysis.lastEditedComparisonId = launchState.analysis.comparisonId;
+    }
+    if (launchState.analysis.primaryReportId && launchState.analysis.comparisonId) {
+      state.analysis.reviewPrimaryReportIds[launchState.analysis.comparisonId] = launchState.analysis.primaryReportId;
+    }
+    if (launchState.analysis.reviewScf && launchState.analysis.comparisonId) {
+      state.analysis.reviewSelectedScfs[launchState.analysis.comparisonId] = launchState.analysis.reviewScf;
+    }
+    if (launchState.analysis.reviewSummaryMode) {
+      state.analysis.reviewSummaryMode = launchState.analysis.reviewSummaryMode;
+    }
+    if (launchState.analysis.popup) {
+      document.body.classList.add("analysis-review-popup-window");
+    }
+  }
+
+  const initialRoute = String(launchState?.route || persistedUiState?.route || "dashboard").trim() || "dashboard";
+  resetAnalysisWorkspace(false);
+  if (launchState?.analysis?.setupId) {
+    state.analysis.currentSetupId = launchState.analysis.setupId;
+  }
+  if (launchState?.analysis?.comparisonId) {
+    state.analysis.selectedComparisonId = launchState.analysis.comparisonId;
+    state.analysis.lastEditedComparisonId = launchState.analysis.comparisonId;
+  }
+  if (launchState?.analysis?.primaryReportId && launchState?.analysis?.comparisonId) {
+    state.analysis.reviewPrimaryReportIds[launchState.analysis.comparisonId] = launchState.analysis.primaryReportId;
+  }
+  if (launchState?.analysis?.reviewScf && launchState?.analysis?.comparisonId) {
+    state.analysis.reviewSelectedScfs[launchState.analysis.comparisonId] = launchState.analysis.reviewScf;
+  }
+  if (launchState?.analysis?.reviewSummaryMode) {
+    state.analysis.reviewSummaryMode = launchState.analysis.reviewSummaryMode;
+  }
+  setRoute(initialRoute);
+  updateAnalysisLeftSubmenuExpandedUi();
+  if (initialRoute === "analysis") {
+    const requestedAnalysisPanel = state.analysis.panel || "home";
+    if (["home", "compare", "compare-review"].includes(requestedAnalysisPanel) || launchState?.analysis?.setupId) {
+      try {
+        await loadAnalysisSetupView();
+        if (launchState?.analysis?.comparisonId) {
+          state.analysis.selectedComparisonId = launchState.analysis.comparisonId;
+          state.analysis.lastEditedComparisonId = launchState.analysis.comparisonId;
+        }
+        if (launchState?.analysis?.primaryReportId && launchState?.analysis?.comparisonId) {
+          state.analysis.reviewPrimaryReportIds[launchState.analysis.comparisonId] = launchState.analysis.primaryReportId;
+        }
+        if (launchState?.analysis?.reviewScf && launchState?.analysis?.comparisonId) {
+          state.analysis.reviewSelectedScfs[launchState.analysis.comparisonId] = launchState.analysis.reviewScf;
+        }
+        if (launchState?.analysis?.reviewSummaryMode) {
+          state.analysis.reviewSummaryMode = launchState.analysis.reviewSummaryMode;
+        }
+        if (comparisonDebugEnabled && requestedAnalysisPanel === "home") {
+          setStatus("analysis-comparison-status", "Comparison debug mode loaded.");
+        }
+      } catch (error) {
+        const failureMessage = comparisonDebugEnabled && requestedAnalysisPanel === "home"
+          ? `Comparison debug load failed: ${error.message}`
+          : `Unable to load saved analysis setup: ${error.message}`;
+        setStatus("analysis-comparison-status", failureMessage);
+      }
+    }
+    showAnalysisPanel(requestedAnalysisPanel);
+    if (requestedAnalysisPanel === "compare-review" && launchState?.analysis?.popup) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        "Detached review window opened. Move this browser window wherever you want."
+      );
+    }
+  }
+  try {
+    await loadReferenceLists();
+  } catch (error) {
+    setStatus("mailing-list-status", `Unable to load reference lists: ${error.message}`);
+  }
+  initSalesforceStatus();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init, { once: true });
+} else {
+  init();
+}
+
+

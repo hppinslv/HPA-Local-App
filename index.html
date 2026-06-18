@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HPA Automations</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./applications-print.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-kicker">Internal Tools</span>
+          <h1>HPA Automations</h1>
+        </div>
+
+        <nav class="nav" aria-label="Primary">
+          <button class="nav-link is-active" data-route="dashboard">Dashboard</button>
+          <div class="nav-group" data-nav-group="analysis">
+            <div class="nav-group-row">
+              <button class="nav-link" data-route="analysis">Analysis</button>
+              <button
+                class="nav-submenu-toggle"
+                type="button"
+                data-action="toggle-analysis-submenu"
+                aria-expanded="true"
+                aria-controls="analysis-left-submenu"
+                aria-label="Toggle Analysis menu"
+              >
+                <span class="nav-submenu-toggle-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+            <div class="analysis-left-submenu" id="analysis-left-submenu">
+              <button
+                class="analysis-left-submenu-link"
+                data-action="open-reference-list"
+                data-list-type="dnm"
+              >
+                DNM Mailing List
+              </button>
+              <button
+                class="analysis-left-submenu-link"
+                data-action="open-reference-list"
+                data-list-type="nhcl"
+              >
+                NHCL Mailing List
+              </button>
+              <button
+                class="analysis-left-submenu-link"
+                data-action="open-reference-list"
+                data-list-type="rfc"
+              >
+                RFC Mailing List
+              </button>
+            </div>
+          </div>
+          <button class="nav-link" data-route="applications">Request New Application</button>
+          <button class="nav-link" data-route="cc-payment-imports">Credit Card Payment Imports</button>
+          <button class="nav-link" data-route="monthly-reports">Monthly Reports</button>
+          <button class="nav-link" data-route="report-history">Report History</button>
+          <button class="nav-link" data-route="settings">Settings</button>
+        </nav>
+      </aside>
+
+      <main class="main-content">
+        <section class="view is-active" data-view="dashboard">
+          <header class="page-header">
+            <p class="eyebrow">Dashboard</p>
+            <h2>HPA Automations</h2>
+            <p class="page-copy">
+              Launch and manage internal HPA business automations from one place.
+            </p>
+          </header>
+
+          <section class="card-grid">
+            <article class="feature-card">
+              <div>
+                <p class="card-label">Month-End Package</p>
+                <h3>Create Month End Reports</h3>
+                <p>
+                  Queue the full month-end package in one step: transaction
+                  summary, transaction detail, Amalgamated remittance, and the
+                  final summary letter.
+                </p>
+              </div>
+              <button class="primary-button" id="run-all-month-end-button">
+                Create Month End Reports
+              </button>
+            </article>
+
+            <article class="feature-card">
+              <div>
+                <p class="card-label">Salesforce Analysis</p>
+                <h3>Run Mailing SCF Analysis</h3>
+                <p>
+                  Build one or more Salesforce report pulls, compare SCFs, and
+                  manage NHCL, RFC, and Do Not Mail list actions.
+                </p>
+              </div>
+              <button class="primary-button" data-action="open-analysis">
+                Run Mailing SCF Analysis
+              </button>
+            </article>
+
+            <article class="feature-card">
+              <div>
+                <p class="card-label">Payments</p>
+                <h3>Credit Card Payment Imports</h3>
+                <p>
+                  Upload the daily credit card CSV, match certificate numbers to
+                  Salesforce policies, fix any missing Policy IDs, and export a
+                  payments import-ready file.
+                </p>
+              </div>
+              <button class="primary-button" data-route="cc-payment-imports">
+                Credit Card Payment Imports
+              </button>
+            </article>
+
+            <article class="feature-card">
+              <div>
+                <p class="card-label">Customer Applications</p>
+                <h3>Create Application</h3>
+                <p>
+                  Fill in a customer application quickly, review the premium,
+                  preview the print alignment, and print only the application
+                  values onto pre-printed paperwork.
+                </p>
+              </div>
+              <button class="primary-button" data-route="applications">
+                Create Application
+              </button>
+            </article>
+
+          </section>
+        </section>
+
+        <section class="view" data-view="applications">
+          <header class="page-header">
+            <p class="eyebrow">Applications</p>
+            <h2>Customer Applications</h2>
+            <p class="page-copy">
+              Enter the few values that belong on the pre-printed Amalgamated
+              application paper, preview the alignment, and print only the filled-in
+              text.
+            </p>
+          </header>
+
+          <section class="applications-layout">
+            <article class="panel applications-form-panel">
+              <div class="panel-heading">
+                <h3>Application Form</h3>
+                <p>
+                  This screen is intentionally simple and only includes the fields that
+                  print onto the paper application.
+                </p>
+              </div>
+
+              <p id="applications-status" class="inline-status"></p>
+
+              <div id="applications-form" class="applications-form-grid">
+                <section class="applications-section">
+                  <div class="applications-section-head">
+                    <h3>Field 1</h3>
+                  </div>
+                  <div class="field-stack">
+                    <label class="field-label" for="application-mailing-information">Customer Mailing Information</label>
+                    <textarea
+                      id="application-mailing-information"
+                      class="field-input applications-textarea applications-mailing-textarea"
+                      data-application-field="customerMailingInformation"
+                      placeholder="First Last&#10;Street Address&#10;City, State Zip"
+                    ></textarea>
+                  </div>
+                </section>
+
+                <section class="applications-section">
+                  <div class="applications-section-head">
+                    <h3>Field 2</h3>
+                  </div>
+                  <div class="field-stack">
+                    <label class="field-label" for="application-lender">Lender</label>
+                    <input id="application-lender" class="field-input" data-application-field="lender" type="text" />
+                  </div>
+                </section>
+
+                <section class="applications-section">
+                  <div class="applications-section-head">
+                    <h3>Field 3</h3>
+                  </div>
+                  <div class="applications-fields-grid applications-simple-grid">
+                    <div class="field-stack">
+                      <label class="field-label" for="application-coverage-amount">Coverage Amount</label>
+                      <input id="application-coverage-amount" class="field-input" data-application-field="coverageAmount" type="number" min="10000" max="503000" step="1000" />
+                    </div>
+                    <div class="field-stack applications-field-span-2">
+                      <label class="field-label">Calculated Premiums</label>
+                      <div class="applications-premium-readout">
+                        <div class="applications-premium-line">
+                          <span>1 Person Premium</span>
+                          <strong id="applications-summary-one-person-premium">$0.00</strong>
+                        </div>
+                        <div class="applications-premium-line">
+                          <span>2 Person Premium</span>
+                          <strong id="applications-summary-two-person-premium">$0.00</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="applications-section">
+                  <div class="applications-section-head">
+                    <h3>Field 4</h3>
+                  </div>
+                  <div class="field-stack">
+                    <label class="field-label" for="application-case-number">Case Number</label>
+                    <input id="application-case-number" class="field-input" data-application-field="caseNumber" type="text" />
+                  </div>
+                </section>
+              </div>
+
+              <div class="action-row">
+                <button id="applications-new-button" class="secondary-button">New Application</button>
+                <button id="applications-save-button" class="secondary-button">Save Application</button>
+                <button id="applications-clear-button" class="secondary-button">Clear Form</button>
+                <button id="applications-preview-button" class="secondary-button">Preview Print Layout</button>
+                <button id="applications-print-button" class="primary-button">Print Application</button>
+              </div>
+            </article>
+
+            <aside class="applications-sidebar">
+              <article class="panel">
+                <div class="panel-heading">
+                  <h3>Print Summary</h3>
+                  <p>Review the values that will be positioned on the paper form.</p>
+                </div>
+                <div class="applications-summary-grid">
+                  <article class="applications-summary-card">
+                    <span class="field-label">Coverage Amount</span>
+                    <strong id="applications-summary-coverage-amount">$0.00</strong>
+                  </article>
+                  <article class="applications-summary-card">
+                    <span class="field-label">1 Person Premium</span>
+                    <strong id="applications-summary-one-person-premium-sidebar">$0.00</strong>
+                  </article>
+                  <article class="applications-summary-card">
+                    <span class="field-label">2 Person Premium</span>
+                    <strong id="applications-summary-two-person-premium-sidebar">$0.00</strong>
+                  </article>
+                  <article class="applications-summary-card applications-summary-card-total">
+                    <span class="field-label">Case Number</span>
+                    <strong id="applications-summary-case-number">Blank</strong>
+                  </article>
+                </div>
+                <div class="applications-summary-copy">
+                  <p><strong>Template PDF:</strong> Amalgamated Blank Application Template PDF.pdf</p>
+                  <p>
+                    Turn on alignment boxes while previewing if you need help lining the print
+                    fields up with the physical form.
+                  </p>
+                </div>
+                <label class="applications-debug-toggle">
+                  <input id="applications-show-alignment-toggle" type="checkbox" />
+                  <span>Show Print Alignment Boxes</span>
+                </label>
+              </article>
+
+              <article class="panel">
+                <div class="panel-heading">
+                  <h3>Saved Applications</h3>
+                  <p>Open a saved application or delete one you no longer need.</p>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Mailing Block</th>
+                        <th>Lender</th>
+                        <th>Coverage</th>
+                        <th>1 Person</th>
+                        <th>2 Person</th>
+                        <th>Updated</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="applications-list-body">
+                      <tr>
+                        <td colspan="7" class="empty-cell">No saved applications yet.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </aside>
+          </section>
+
+          <section id="applications-preview-panel" class="panel applications-preview-panel is-hidden">
+            <div class="panel-heading">
+              <h3>Print Preview</h3>
+              <p>
+                This preview shows the exact field placement used by the print layout. The
+                real print hides the UI and only prints the filled-in values.
+              </p>
+            </div>
+            <div class="applications-preview-stage">
+              <div class="application-print-root">
+                <iframe
+                  class="application-template-background"
+                  src="./Amalgamated Blank Application Template PDF.pdf#toolbar=0&navpanes=0&scrollbar=0"
+                  aria-label="Blank application template preview"
+                ></iframe>
+                <div class="application-print-page">
+                  <span class="application-print-value print-field-mailing" data-app-print-field="mailing"></span>
+                  <span class="application-print-value print-field-lender" data-app-print-field="lender"></span>
+                  <span class="application-print-value print-field-coverage" data-app-print-field="coverage"></span>
+                  <span class="application-print-value print-field-one-person-premium" data-app-print-field="onePersonPremium"></span>
+                  <span class="application-print-value print-field-two-person-premium" data-app-print-field="twoPersonPremium"></span>
+                  <span class="application-print-value print-field-case-number" data-app-print-field="caseNumber"></span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view="analysis">
+          <header class="page-header">
+            <p class="eyebrow">Analysis</p>
+            <h2>Analysis Dashboard</h2>
+            <p class="page-copy">
+              Create named SCF comparisons by connecting two or more Salesforce
+              report pulls to the NHCL or RFC key-code lists.
+            </p>
+          </header>
+
+          <section class="panel analysis-home-panel" id="analysis-home-panel">
+            <div class="panel-heading">
+              <h3>Build Analysis Comparisons</h3>
+              <p>Choose which reports should be compared together and which key-code list should be used.</p>
+            </div>
+            <section class="analysis-setup-layout">
+              <article class="panel analysis-setup-section">
+                <div class="panel-heading">
+                  <h3>Available Reports</h3>
+                  <p>This list comes from the reports created in the report setup flow.</p>
+                </div>
+                <p id="analysis-ready-report-status" class="inline-status"></p>
+                <div id="analysis-available-reports" class="analysis-available-reports">
+                  <div class="empty-state-block">
+                    No reports have been added to this analysis yet. Go back to the
+                    report setup page to add reports.
+                  </div>
+                </div>
+              </article>
+
+              <article class="panel analysis-setup-section">
+                <div class="panel-heading">
+                  <h3>Comparisons</h3>
+                  <p>Select 2 to 5 reports for each named comparison.</p>
+                </div>
+                <div id="analysis-comparison-links" class="analysis-pulls"></div>
+                <p id="analysis-comparison-validation-summary" class="inline-status"></p>
+                <div class="action-row analysis-toolbar-actions">
+                  <button id="add-comparison-link-button" class="secondary-button">Add Comparison</button>
+                  <button id="save-comparison-setup-button" class="secondary-button">Save Setup</button>
+                </div>
+                <p id="analysis-comparison-status" class="inline-status"></p>
+                <div class="action-row analysis-builder-footer">
+                  <button id="analysis-setup-back-button" class="secondary-button">Back</button>
+                  <button id="analysis-home-next-button" class="primary-button">Next</button>
+                </div>
+              </article>
+            </section>
+          </section>
+
+          <section class="panel analysis-previous-panel is-hidden" id="analysis-previous-panel">
+            <div class="panel-heading">
+              <h3>Analysis List</h3>
+              <p>Review open and completed analyses, then open the one you want to keep working on.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Analysis</th>
+                    <th>Stage</th>
+                    <th>Status</th>
+                    <th>Created Date</th>
+                    <th>Last Updated</th>
+                    <th>Completed Date</th>
+                    <th>Number of Report Pulls</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="analysis-setup-body">
+                  <tr id="analysis-setup-empty-row">
+                    <td colspan="8" class="empty-cell">No analyses yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="action-row">
+              <button id="analysis-previous-back-button" class="secondary-button">Start New Analysis</button>
+            </div>
+            <p id="analysis-setup-status" class="inline-status"></p>
+          </section>
+
+          <section id="analysis-workspace" class="analysis-workspace-panel is-hidden">
+            <section class="panel analysis-subtabs-panel">
+              <div class="action-row analysis-subtabs" id="analysis-subtabs">
+                <button class="secondary-button" data-analysis-subtab="runs">Run Analysis</button>
+                <button class="secondary-button" data-analysis-subtab="mailing-lists">Mailing Lists</button>
+              </div>
+            </section>
+
+            <div class="analysis-subtab-panel is-active" data-analysis-subtab-panel="runs">
+              <section class="analysis-layout">
+                <article class="panel">
+                  <div class="panel-heading">
+                    <h3>New Analysis Run</h3>
+                    <p>Use one or more report pulls. Each pull can have its own key codes, date logic, SCF filter, and notes.</p>
+                  </div>
+
+                  <div class="analysis-builder-toolbar">
+                    <div class="field-stack">
+                      <label class="field-label" for="analysis-run-name">Run Name</label>
+                      <input id="analysis-run-name" class="field-input" type="text" value="June 2026" />
+                    </div>
+                    <div class="analysis-run-meta">
+                      <p id="analysis-run-created-date" class="inline-status">Created: Not set</p>
+                      <p id="analysis-run-updated-date" class="inline-status">Last Saved: Not set</p>
+                    </div>
+                    <div class="field-stack">
+                      <label class="field-label" for="analysis-run-notes">Run Notes</label>
+                      <textarea id="analysis-run-notes" class="field-input multiline-input" placeholder="Optional run-level notes"></textarea>
+                    </div>
+                    <div class="action-row analysis-toolbar-actions">
+                      <button id="save-analysis-setup-button" class="secondary-button">Save Setup</button>
+                      <button id="add-analysis-pull-button" class="secondary-button">Add Report Pull</button>
+                      <button id="run-analysis-button" class="primary-button">Run Analysis</button>
+                      <button id="back-to-analysis-home-button" class="secondary-button">
+                        Back to Analysis Home
+                      </button>
+                    </div>
+                  </div>
+
+                  <div id="analysis-status-banner" class="status-panel analysis-status-banner">
+                    <span class="status-label">Status</span>
+                    <strong id="analysis-status-text">Not Started</strong>
+                    <p id="analysis-status-detail" class="status-detail">
+                      Add one or more report pulls, then run the analysis.
+                    </p>
+                  </div>
+
+                  <article class="panel analysis-run-instructions">
+                    <div class="panel-heading">
+                      <h3>Report Comparison Setup</h3>
+                      <p>
+                        This is where you prepare the reports that will later be tied
+                        together in Compare.
+                      </p>
+                    </div>
+                    <ul class="notes-list">
+                      <li>Add one report pull for every report you want to compare.</li>
+                      <li>Choose a Key Code and date range so the report label is generated automatically.</li>
+                      <li>When reports should be compared directly, keep their date range and filter logic aligned.</li>
+                      <li>After the run finishes, use the saved reports table and click <strong>Continue</strong> to build the report-to-report comparisons.</li>
+                    </ul>
+                  </article>
+
+                  <div id="analysis-report-pulls" class="analysis-pulls"></div>
+                </article>
+
+              </section>
+
+            <section class="analysis-layout analysis-secondary-layout">
+              <article class="panel">
+                <div class="panel-heading analysis-reports-heading">
+                  <div>
+                    <h3>Analysis Reports</h3>
+                    <p>Each run keeps parameters, result counts, SCF actions, and export files.</p>
+                  </div>
+                  <div class="action-row analysis-reports-heading-action">
+                    <button id="analysis-delete-selected-button" class="secondary-button" disabled>Delete Selected</button>
+                    <button id="analysis-continue-button" class="primary-button">Continue</button>
+                  </div>
+                </div>
+
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                    <tr>
+                      <th><input id="analysis-select-all-reports" type="checkbox" aria-label="Select all analysis reports" /></th>
+                      <th>Report</th>
+                      <th>Created</th>
+                      <th>Status</th>
+                      <th>Results</th>
+                      <th>Export</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                    <tbody id="analysis-history-body">
+                      <tr id="analysis-history-empty-row">
+                        <td colspan="7" class="empty-cell">No analysis reports yet.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </section>
+
+            <section class="analysis-results">
+              <article class="panel">
+                <div class="panel-heading">
+                  <h3>Run Results</h3>
+                  <p>Every report table is searchable and sortable. Click an SCF in a result table to add it, mark it as a candidate, or ignore it.</p>
+                </div>
+
+                <div id="analysis-results-container">
+                  <div class="empty-state-block">No analysis results yet.</div>
+                </div>
+              </article>
+            </section>
+          </div>
+
+          <section id="analysis-compare-panel" class="panel analysis-previous-panel is-hidden">
+            <div class="panel-heading">
+              <h3>Build Comparisons</h3>
+              <p>Name each comparison and choose which two reports belong in it. Add as many comparisons as you need.</p>
+            </div>
+            <div class="action-row analysis-toolbar-actions">
+              <button id="legacy-save-comparison-setup-button" class="secondary-button">Save</button>
+              <button id="legacy-add-comparison-link-button" class="secondary-button">Add Another Comparison</button>
+              <button id="legacy-complete-comparison-setup-button" class="primary-button">Next</button>
+              <button id="back-to-analysis-runs-button" class="secondary-button">Back to Analysis Reports</button>
+              <button id="exit-comparison-setup-button" class="secondary-button">Exit</button>
+            </div>
+            <div id="legacy-analysis-comparison-links" class="analysis-pulls"></div>
+            <p id="legacy-analysis-comparison-status" class="inline-status"></p>
+          </section>
+
+          <section id="analysis-comparison-review-panel" class="panel analysis-previous-panel is-hidden">
+            <div class="panel-heading">
+              <h3>Comparison Review</h3>
+              <p>Choose a comparison, pick the primary report, and work through SCFs without changing the live lists.</p>
+            </div>
+            <div class="action-row analysis-toolbar-actions">
+              <button id="back-to-comparison-setup-button" class="secondary-button">Back</button>
+              <button id="back-to-analysis-runs-from-review-button" class="secondary-button">Back to Report Setup</button>
+              <button id="summarize-comparison-review-button" class="secondary-button">Summarize</button>
+              <button id="complete-comparison-review-button" class="primary-button" disabled>Complete</button>
+            </div>
+            <p id="analysis-comparison-selection-status" class="inline-status"></p>
+            <div id="analysis-comparison-results" class="comparison-results-block">
+              <div class="empty-state-block">Choose a comparison to start reviewing SCFs.</div>
+            </div>
+          </section>
+
+          <div class="analysis-subtab-panel" data-analysis-subtab-panel="mailing-lists">
+            <section class="analysis-results">
+              <article class="panel" id="mailing-list-manager-panel">
+                <div class="panel-heading">
+                  <h3>Mailing List Manager</h3>
+                  <p>Review and maintain the current Do Not Mail, NHCL, and RFC mailing lists directly inside Analysis.</p>
+                </div>
+
+                <div class="action-row" id="mailing-list-tabs">
+                  <button class="secondary-button" data-mailing-list-tab="dnm">DNM</button>
+                  <button class="secondary-button" data-mailing-list-tab="nhcl">NHCL</button>
+                  <button class="secondary-button" data-mailing-list-tab="rfc">RFC</button>
+                </div>
+
+                <div class="mailing-list-layout">
+                  <article class="mailing-list-sidecard">
+                    <span class="field-label">Selected List</span>
+                    <strong id="mailing-list-name">Do Not Mail</strong>
+                    <p id="mailing-list-source">Managed in app</p>
+                    <p id="mailing-list-updated" class="inline-status"></p>
+                    <p id="mailing-list-count" class="inline-status"></p>
+                  </article>
+
+                <article class="mailing-list-maincard">
+                  <div id="mailing-list-import-row" class="action-row is-hidden">
+                    <input
+                      id="mailing-list-import-input"
+                      type="file"
+                      accept=".xlsx,.xlsm"
+                      class="is-hidden"
+                    />
+                    <button id="mailing-list-import-button" class="secondary-button">
+                      Import or Replace List
+                    </button>
+                    <button id="mailing-list-export-button" class="secondary-button">
+                      Export NHCL / RFC List
+                    </button>
+                    <button id="mailing-list-mailer-export-button" class="secondary-button">
+                      Export for Mailer
+                    </button>
+                    <p id="mailing-list-import-instructions" class="inline-status">
+                      Import the current list from NHCL or RFC spreadsheet format.
+                    </p>
+                  </div>
+
+                  <div id="dnm-state-manager" class="dnm-state-manager is-hidden">
+                    <p id="dnm-state-header" class="dnm-state-header">
+                      Per Amalgamated, states we can not mail 9/19/2024:
+                    </p>
+                      <div class="dnm-state-toolbar">
+                        <div class="field-stack">
+                          <label class="field-label" for="dnm-state-select">Add State</label>
+                          <select id="dnm-state-select" class="field-input">
+                            <option value="">Select a state</option>
+                          </select>
+                        </div>
+                        <div class="field-stack">
+                          <label class="field-label" for="mailing-list-reason">Reason</label>
+                          <input id="mailing-list-reason" class="field-input" type="text" placeholder="Optional reason for updating this state" />
+                        </div>
+                        <div class="field-stack">
+                          <label class="field-label" for="mailing-list-source-name">Source / Note</label>
+                          <input id="mailing-list-source-name" class="field-input" type="text" placeholder="Optional source name or note" />
+                        </div>
+                      </div>
+
+                      <div class="action-row">
+                        <button id="dnm-state-add-button" class="primary-button">Add State</button>
+                        <button id="dnm-export-button" class="secondary-button">Export DNM Report</button>
+                      </div>
+                    </div>
+
+                    <div id="mailing-list-generic-controls">
+                      <div class="mailing-list-form-grid">
+                        <div class="field-stack">
+                          <label class="field-label" for="mailing-list-add-scf">SCF</label>
+                          <input id="mailing-list-add-scf" class="field-input" type="text" placeholder="Enter one 3-digit SCF (ex: 050)" />
+                        </div>
+                        <div class="field-stack">
+                          <label class="field-label" for="mailing-list-state">State</label>
+                          <input id="mailing-list-state" class="field-input" type="text" placeholder="State abbreviation or name" />
+                        </div>
+                      </div>
+
+                      <div class="action-row">
+                        <button id="mailing-list-add-button" class="primary-button">Add SCF</button>
+                      </div>
+                    </div>
+
+                    <p id="mailing-list-status" class="inline-status"></p>
+
+                    <div id="mailing-list-search-wrap" class="mailing-list-toolbar">
+                      <input id="mailing-list-search" class="field-input" type="text" placeholder="Search SCFs or state in this list" />
+                    </div>
+
+                    <div class="table-wrap">
+                      <table>
+                        <thead id="mailing-list-table-head">
+                          <tr>
+                            <th>SCF</th>
+                            <th>State</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody id="mailing-list-body">
+                          <tr>
+                            <td colspan="3" class="empty-cell">Loading mailing list...</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </article>
+                </div>
+              </article>
+            </section>
+          </div>
+        </section>
+        </section>
+
+        <section class="view" data-view="cc-payment-imports">
+          <header class="page-header">
+            <p class="eyebrow">Payments</p>
+            <h2>Credit Card Payment Imports</h2>
+            <p class="page-copy">
+              Upload the daily credit card export, refresh the Salesforce policy lookup,
+              validate every payment, and export a payments import-ready file only when
+              all blocking issues are resolved.
+            </p>
+          </header>
+
+          <section class="cc-import-layout">
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>Upload Daily CC CSV</h3>
+                <p>Create a new import session from the daily credit card payment export.</p>
+              </div>
+              <div class="field-stack">
+                <label class="field-label" for="cc-payment-template-select">Import Template</label>
+                <select id="cc-payment-template-select" class="field-input"></select>
+              </div>
+              <input id="cc-payment-upload-input" type="file" accept=".csv,.txt,.xlsx,.xlsm" class="is-hidden" />
+              <div class="action-row">
+                <button id="cc-payment-upload-button" class="primary-button">Upload Daily CC File</button>
+                <button id="cc-payment-revalidate-button" class="secondary-button">Revalidate</button>
+                <button id="cc-payment-export-button" class="secondary-button" disabled>Confirm Import</button>
+              </div>
+              <p id="cc-payment-status" class="inline-status"></p>
+              <p id="cc-payment-template-status" class="inline-status"></p>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>Policy Lookup</h3>
+                <p>Refresh the certificate-to-policy lookup from Salesforce report <strong>00OQm0000016PuPMAU</strong> or upload a fallback CSV.</p>
+              </div>
+              <input id="cc-payment-policy-upload-input" type="file" accept=".csv,.txt" class="is-hidden" />
+              <div class="action-row">
+                <button id="cc-payment-policy-refresh-button" class="primary-button">Refresh Policy Lookup</button>
+                <button id="cc-payment-policy-upload-button" class="secondary-button">Upload Policy Lookup CSV</button>
+              </div>
+              <p id="cc-payment-policy-status" class="inline-status">Policy lookup not refreshed yet.</p>
+            </article>
+          </section>
+
+          <section class="cc-import-summary-grid" id="cc-payment-summary-grid">
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Total Rows</span>
+              <strong id="cc-payment-summary-total">0</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Ready</span>
+              <strong id="cc-payment-summary-ready">0</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Missing Policy ID</span>
+              <strong id="cc-payment-summary-missing-policy">0</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Errors</span>
+              <strong id="cc-payment-summary-errors">0</strong>
+            </article>
+            <article class="panel cc-import-summary-card">
+              <span class="field-label">Warnings</span>
+              <strong id="cc-payment-summary-warnings">0</strong>
+            </article>
+          </section>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Validation Summary</h3>
+              <p id="cc-payment-validation-message">Upload a file to begin validation.</p>
+            </div>
+            <div class="action-row" id="cc-payment-filter-row">
+              <button class="secondary-button is-active" data-cc-filter="all">All</button>
+              <button class="secondary-button" data-cc-filter="ready">Ready</button>
+              <button class="secondary-button" data-cc-filter="missing_policy">Missing Policy ID</button>
+              <button class="secondary-button" data-cc-filter="errors">Errors</button>
+              <button class="secondary-button" data-cc-filter="warnings">Warnings</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Review Table</h3>
+              <p>Rows with issues are shown first. Fix missing Policy IDs before exporting.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Pay Type</th>
+                    <th>Certificate Number</th>
+                    <th>Policy ID</th>
+                    <th>Payment Name</th>
+                    <th>Record ID</th>
+                    <th>Date Received</th>
+                    <th># of Months</th>
+                    <th>Payment Amount</th>
+                    <th>Transaction Date</th>
+                    <th>Batch Close Date</th>
+                    <th>Transaction ID</th>
+                    <th>Batch ID</th>
+                    <th>Auth Code</th>
+                    <th>Bill Type</th>
+                    <th>ID2</th>
+                    <th>Payor / Customer</th>
+                    <th>Status</th>
+                    <th>Issue Reason</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="cc-payment-review-body">
+                  <tr>
+                    <td colspan="19" class="empty-cell">No credit card payment import session loaded.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Import History</h3>
+              <p>Reopen prior credit card payment imports and regenerate the export file when needed.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Uploaded</th>
+                    <th>Filename</th>
+                    <th>Rows</th>
+                    <th>Imported</th>
+                    <th>Ready</th>
+                    <th>Errors</th>
+                    <th>Warnings</th>
+                    <th>Exported</th>
+                    <th>User</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="cc-payment-history-body">
+                  <tr>
+                    <td colspan="10" class="empty-cell">No credit card payment import sessions yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" data-view="monthly-reports">
+          <header class="page-header">
+            <p class="eyebrow">Workflow</p>
+            <h2 id="workflow-title">Month End Reports</h2>
+            <p id="workflow-copy" class="page-copy">
+              This workflow is shaped for a hosted automation flow: start a run,
+              track status, and download the finished report artifacts from one
+              place.
+            </p>
+          </header>
+
+        <section class="panel report-type-panel">
+            <div class="panel-heading">
+              <h3>Individual Reports</h3>
+              <p>Run any month-end report by itself when you only need one piece of the package.</p>
+            </div>
+            <div class="action-row" id="report-type-selector">
+              <button class="secondary-button" id="monthly-run-all-button">
+                Run All Reports
+              </button>
+              <button class="secondary-button" data-report-picker="transaction-summary">
+                Run Transaction Summary
+              </button>
+              <button class="secondary-button" data-report-picker="transaction-detail">
+                Run Transaction Detail
+              </button>
+              <button class="secondary-button" data-report-picker="amalgamated-premium-remittance">
+                Run Amalgamated Remittance
+              </button>
+              <button class="secondary-button" data-report-picker="final-summary-letter">
+                Run Final Summary Letter
+              </button>
+            </div>
+          </section>
+
+          <section class="workflow-grid">
+            <article class="panel">
+              <div class="field-stack">
+                <label class="field-label" for="report-month">Report Month</label>
+                <input id="report-month" class="field-input" type="month" />
+              </div>
+
+              <div class="status-panel">
+                <span class="status-label">Status</span>
+                <strong id="report-status-text">Not Started</strong>
+                <p id="report-status-detail" class="status-detail">
+                  Ready to start the previous-month report workflow.
+                </p>
+              </div>
+
+              <div class="action-row">
+                <button id="run-report-button" class="primary-button">
+                  Run AHA HPA Transaction Summary Report
+                </button>
+                <button
+                  id="clear-monthly-output-button"
+                  class="secondary-button"
+                  type="button"
+                >
+                  Clear Current Month Output
+                </button>
+                <button
+                  id="view-history-button"
+                  class="secondary-button"
+                  data-action="open-history"
+                >
+                  View Report History
+                </button>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>Report Output</h3>
+                <p id="output-copy">
+                  This area will hold the finished workbook, PDF, and final
+                  report preview once the backend runner is connected.
+                </p>
+              </div>
+
+              <div id="report-output" class="preview-placeholder preview-output">
+                <div class="preview-empty" id="preview-empty-state">
+                  No generated output yet. Run the report to create hosted job
+                  results and downloadable files.
+                </div>
+
+                <div class="preview-results is-hidden" id="preview-results">
+                  <div id="monthly-output-run-list" class="monthly-output-run-list"></div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <article class="panel workflow-notes">
+            <div class="panel-heading">
+              <h3>Workflow Notes</h3>
+              <p id="workflow-notes-copy">Prepared to match the current workbook logic without changing formulas.</p>
+            </div>
+            <ul class="notes-list" id="workflow-notes-list">
+              <li>Always runs for the previous month.</li>
+              <li>Refunds, bounced checks, and returned items remain negative.</li>
+              <li>Amalgamated Premium is fixed at 41%.</li>
+              <li>HPA Commission is fixed at 59%.</li>
+              <li>FTJ Fee is fixed at $5,500 and Estimated Bank Fee at $3,500.</li>
+            </ul>
+          </article>
+
+          <article class="panel workflow-notes">
+            <div class="panel-heading">
+              <h3>Month-End Comparison</h3>
+              <p>Each completed report should reconcile to the others for the selected month. If totals do not match, the difference details appear here.</p>
+            </div>
+            <p id="monthly-comparison-status" class="inline-status">
+              Run the month-end reports to compare totals and mismatched transactions.
+            </p>
+            <div id="monthly-comparison-results" class="comparison-results-block">
+              <div class="empty-state-block">No completed monthly report comparisons yet.</div>
+            </div>
+          </article>
+
+          <article class="panel hosted-plan">
+            <div class="panel-heading">
+              <h3>Hosted Automation Plan</h3>
+              <p>
+                A hosted page cannot directly click Excel on a network drive, so
+                this screen is now prepared for a backend automation runner.
+              </p>
+            </div>
+            <ul class="notes-list">
+              <li>The page should eventually start a server-side job, not a browser-only action.</li>
+              <li>The backend job can call XL Connector or replace the workbook logic server-side.</li>
+              <li>Completed runs should return downloadable Excel and PDF files here.</li>
+            </ul>
+          </article>
+        </section>
+
+        <section class="view" data-view="report-history">
+          <header class="page-header">
+            <p class="eyebrow">History</p>
+            <h2>Report History</h2>
+            <p class="page-copy">
+              Each hosted run should appear here with download links and final
+              job status.
+            </p>
+          </header>
+
+          <article class="panel">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Report</th>
+                    <th>Report Month</th>
+                    <th>Run Date</th>
+                    <th>Status</th>
+                    <th>Excel Export</th>
+                    <th>Print View</th>
+                  </tr>
+                </thead>
+                <tbody id="report-history-body">
+                  <tr id="report-history-empty-row">
+                    <td colspan="6" class="empty-cell">
+                      No report history yet.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" data-view="settings">
+          <header class="page-header">
+            <p class="eyebrow">Settings</p>
+            <h2>Settings</h2>
+            <p class="page-copy">
+              Backend and integration settings will live here when the hosted
+              automation runner is added.
+            </p>
+          </header>
+
+          <article class="panel settings-grid">
+            <div class="setting-card">
+              <span class="field-label">Salesforce OAuth</span>
+              <strong id="salesforce-auth-heading">Not Connected</strong>
+              <p id="salesforce-auth-copy">
+                Connect the app to Salesforce so monthly runs can move from mock
+                data to live report data.
+              </p>
+              <div class="action-row">
+                <a id="salesforce-connect-link" class="primary-link-button" href="/oauth/salesforce/start">
+                  Connect Salesforce
+                </a>
+              </div>
+            </div>
+
+            <div class="setting-card">
+              <span class="field-label">Configured Reports</span>
+              <strong id="salesforce-report-count">0 reports configured</strong>
+              <p id="salesforce-report-copy">
+                Monthly report source mappings will appear here.
+              </p>
+              <div class="table-wrap report-catalog-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Report</th>
+                      <th>Workbook Source</th>
+                      <th>Salesforce Report ID</th>
+                      <th>Type</th>
+                    </tr>
+                  </thead>
+                  <tbody id="salesforce-report-catalog-body">
+                    <tr id="salesforce-report-catalog-empty-row">
+                      <td colspan="4" class="empty-cell">
+                        No Salesforce report mappings loaded yet.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="setting-card">
+              <span class="field-label">Runner Mode</span>
+              <strong>Hosted Job Runner</strong>
+              <p>Future state: the page sends a request to a backend service that runs the report remotely.</p>
+            </div>
+
+            <div class="setting-card">
+              <span class="field-label">Salesforce Source</span>
+              <strong>XL Connector Today</strong>
+              <p>Current workbook logic depends on XL Connector; longer term we can replace that with direct API pulls.</p>
+            </div>
+
+            <div class="setting-card">
+              <span class="field-label">Output Storage</span>
+              <strong>Download Links</strong>
+              <p>Generated workbook and PDF files should eventually be stored and downloaded directly from this app.</p>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+.env
+data/salesforce-auth.json
+*.log
+*.err.log
+generated-reports/
+output/
+output-pdf/
+amalgamated_tmp/
+detail_tmp/
+tmp-*/
+tmp_*/
+tmp-edge-debug/
+tmp-edge-profile/
+tmp-amalgamated-smoke/
+tmp-letter-check/
+tmp_xlsm/
