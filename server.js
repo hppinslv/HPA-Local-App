@@ -107,6 +107,18 @@ const {
   getAllConfiguredSalesforceReports,
   getMonthlyReportTypes,
 } = require("./services/reportCatalog");
+const {
+  buildTrendRows,
+  captureScoreDashboardSnapshot,
+  exportScoreDashboardSnapshotsCsv,
+  getLatestSuccessfulScoreDashboardSnapshot,
+  getScoreDashboardSnapshotConfig,
+  isSalesforceAuthFailureMessage,
+  initializeScoreDashboardSnapshotPersistence,
+  listScoreDashboardSnapshots,
+  maybeRunStartupScoreDashboardSnapshot,
+  scheduleNextScoreDashboardSnapshot,
+} = require("./services/scoreDashboardSnapshotService");
 
 const port = process.env.PORT || 4173;
 const rootDir = __dirname;
@@ -127,6 +139,14 @@ const contentTypes = {
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function sendText(response, statusCode, payload, contentType = "text/plain; charset=utf-8", headers = {}) {
+  response.writeHead(statusCode, {
+    "Content-Type": contentType,
+    ...headers,
+  });
+  response.end(payload);
 }
 
 function decodeRequestBody(request, rawBody) {
@@ -660,6 +680,71 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/score-dashboard-snapshots/config" && request.method === "GET") {
+    sendJson(response, 200, { config: getScoreDashboardSnapshotConfig() });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/score-dashboard-snapshots/capture" && request.method === "POST") {
+    captureScoreDashboardSnapshot()
+      .then((result) => {
+        sendJson(response, 200, result);
+      })
+      .catch((error) => {
+        const message = error.message || "Unable to capture SCORE dashboard snapshot.";
+        const statusCode = isSalesforceAuthFailureMessage(message) ? 401 : 400;
+        sendJson(response, statusCode, { error: message });
+      });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/score-dashboard-snapshots/latest" && request.method === "GET") {
+    sendJson(response, 200, getLatestSuccessfulScoreDashboardSnapshot());
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/score-dashboard-snapshots/trend" && request.method === "GET") {
+    sendJson(response, 200, {
+      rows: buildTrendRows({
+        from: requestUrl.searchParams.get("from") || "",
+        to: requestUrl.searchParams.get("to") || "",
+        reportKey: requestUrl.searchParams.get("reportKey") || "",
+        scorePeriod: requestUrl.searchParams.get("scorePeriod") || "",
+        paymentType: requestUrl.searchParams.get("paymentType") || "",
+        metricKey: requestUrl.searchParams.get("metricKey") || "",
+      }),
+    });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/score-dashboard-snapshots/export" && request.method === "GET") {
+    const artifact = exportScoreDashboardSnapshotsCsv({
+      from: requestUrl.searchParams.get("from") || "",
+      to: requestUrl.searchParams.get("to") || "",
+      reportKey: requestUrl.searchParams.get("reportKey") || "",
+      scorePeriod: requestUrl.searchParams.get("scorePeriod") || "",
+      paymentType: requestUrl.searchParams.get("paymentType") || "",
+      metricKey: requestUrl.searchParams.get("metricKey") || "",
+    });
+    sendText(response, 200, artifact.body, artifact.contentType, {
+      "Content-Disposition": `attachment; filename="${artifact.fileName}"`,
+    });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/score-dashboard-snapshots" && request.method === "GET") {
+    sendJson(response, 200, listScoreDashboardSnapshots({
+      from: requestUrl.searchParams.get("from") || "",
+      to: requestUrl.searchParams.get("to") || "",
+      reportKey: requestUrl.searchParams.get("reportKey") || "",
+      scorePeriod: requestUrl.searchParams.get("scorePeriod") || "",
+      paymentType: requestUrl.searchParams.get("paymentType") || "",
+      metricKey: requestUrl.searchParams.get("metricKey") || "",
+      captureStatus: requestUrl.searchParams.get("captureStatus") || "",
+    }));
+    return;
+  }
+
   if (requestUrl.pathname === "/api/monthly-reports/run-all" && request.method === "POST") {
     collectRequestBody(request)
       .then((body) => {
@@ -1151,8 +1236,8 @@ const server = http.createServer((request, response) => {
   );
   if (ccPaymentImportRowMatch && request.method === "PATCH") {
     collectRequestBody(request)
-      .then((body) => {
-        const session = updateCcPaymentImportRow(
+      .then(async (body) => {
+        const session = await updateCcPaymentImportRow(
           ccPaymentImportRowMatch[1],
           ccPaymentImportRowMatch[2],
           body
@@ -1341,10 +1426,17 @@ Promise.all([
   initializeApplicationPersistence(),
   initializeAnalysisStatePersistence(),
   initializeReportRunPersistence(),
+  initializeScoreDashboardSnapshotPersistence(),
   initializeCcPaymentImportPersistence(),
   initializeCheckImportPersistence(),
   initializeAchReturnPersistence(),
   initializeMailingDataPersistence(),
-]).catch((error) => {
-  console.warn("Could not initialize persistence from Supabase:", error.message);
-});
+])
+  .then(async () => {
+    await maybeRunStartupScoreDashboardSnapshot(console);
+    scheduleNextScoreDashboardSnapshot(console);
+  })
+  .catch((error) => {
+    console.warn("Could not initialize persistence from Supabase:", error.message);
+    scheduleNextScoreDashboardSnapshot(console);
+  });

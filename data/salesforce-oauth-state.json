@@ -1,5 +1,6 @@
 {
-  "state": "2b037ce0de3dbec1928ec086286d7005",
-  "codeVerifier": "h3_shJdHb7fqe0LREoXju2hLFlqRTwNsosa_sQIUjPU",
-  "createdAt": "2026-06-12T14:43:11.985Z"
+  "state": "f0d0c47c0d8041911bb2c112349de759",
+  "codeVerifier": "EfSsCVWZD0SDFL38hHjAiqwJ6VRQfRe2jAYW9WmsI80",
+  "redirectUri": "http://localhost:4173/oauth/salesforce/callback",
+  "createdAt": "2026-06-19T16:34:00.270Z"
 }

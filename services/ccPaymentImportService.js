@@ -1665,7 +1665,7 @@ function createCcPaymentImportSession({ fileName, base64Content, uploadedBy = DE
   return revalidateSession(sessionId);
 }
 
-function updateCcPaymentImportRow(sessionId, rowId, updates = {}) {
+async function updateCcPaymentImportRow(sessionId, rowId, updates = {}) {
   const rows = readRows();
   const row = rows.find((entry) => entry.session_id === sessionId && entry.id === rowId);
   if (!row) {
@@ -1687,6 +1687,46 @@ function updateCcPaymentImportRow(sessionId, rowId, updates = {}) {
   row.corrected_by = normalizeText(updates.corrected_by || DEFAULT_ACTOR);
   row.corrected_at = new Date().toISOString();
   writeRows(rows);
+
+  const correctedCertificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
+  if (correctedCertificateNumber) {
+    const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates([correctedCertificateNumber]);
+    const targetedPolicyDetailEntries = await fetchPolicyDetailEntriesForCertificates([correctedCertificateNumber]);
+    const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates([correctedCertificateNumber]);
+    const knownCertificatePolicyKeys = new Set(
+      (readPolicyCache().items || []).map((entry) =>
+        `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+      )
+    );
+    const certificateIdEntries = [{
+      certificate_number: correctedCertificateNumber,
+      certificate_record_id: normalizeText(certificateRecordIdMap.get(correctedCertificateNumber.toLowerCase()) || ""),
+      refreshed_at: new Date().toISOString(),
+      source_report_id: POLICY_REPORT_ID,
+    }];
+    const nextCache = {
+      ...readPolicyCache(),
+      refreshedAt: new Date().toISOString(),
+      source: "manual-certificate-refresh",
+      items: mergeLookupEntries(
+        readPolicyCache().items,
+        targetedLookupEntries.filter((entry) =>
+          knownCertificatePolicyKeys.has(
+            `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+          )
+        ),
+        targetedPolicyDetailEntries.filter((entry) =>
+          knownCertificatePolicyKeys.has(
+            `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+          )
+        ),
+        certificateIdEntries
+      ),
+    };
+    writePolicyCache(nextCache);
+    await enrichSessionRowsForPremiumReview(sessionId, nextCache, certificateRecordIdMap);
+  }
+
   return revalidateSession(sessionId);
 }
 
