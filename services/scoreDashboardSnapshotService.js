@@ -47,7 +47,7 @@ const scoreDashboardSnapshotConfig = Object.freeze({
     {
       reportKey: "moneyReceived",
       reportLabel: "Money Received",
-      salesforceReportId: "00OQm000001xzDNMAY",
+      salesforceReportId: "00OQm000001xzA9MAI",
       expectedGroupings: ["Score Period"],
       expectedMetrics: [
         {
@@ -61,7 +61,7 @@ const scoreDashboardSnapshotConfig = Object.freeze({
     {
       reportKey: "moneyReceivedByPayType",
       reportLabel: "Money Received by Payment Type",
-      salesforceReportId: "00OQm000001xzA9MAI",
+      salesforceReportId: "00OQm000001xzDNMAY",
       expectedGroupings: ["Payment Type", "Score Period"],
       expectedMetrics: [
         {
