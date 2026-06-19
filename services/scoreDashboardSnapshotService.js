@@ -488,6 +488,17 @@ async function loadScoreDashboardSourceContext(tokenRecord) {
 }
 
 async function resolveScoreSnapshotReportExecution(tokenRecord, reportConfig, dashboardContext) {
+  if (reportConfig.reportKey === "applicationsReceived") {
+    const executed = await executeSavedReport(tokenRecord, reportConfig.salesforceReportId);
+    return {
+      ...executed,
+      source: "report",
+      dashboardComponentId: "",
+      dashboardComponentLabel: "",
+      dashboardReportId: "",
+    };
+  }
+
   const dashboardComponent = findDashboardComponentForReport(
     ensureArray(dashboardContext?.dashboardComponents),
     reportConfig
