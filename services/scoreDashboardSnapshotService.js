@@ -1026,6 +1026,16 @@ async function debugScoreDashboardSnapshotReports() {
     dashboardErrorPath: dashboardContext?.errorPath || "",
     dashboardErrorPayload: dashboardContext?.errorPayload || null,
     dashboardComponentCount: ensureArray(dashboardContext?.dashboardComponents).length,
+    dashboardComponents: ensureArray(dashboardContext?.dashboardComponents).map((entry) => ({
+      componentId: entry.componentId,
+      label: entry.label,
+      reportId: entry.reportId,
+      metadataTitle: normalizeText(entry.metadata?.title),
+      metadataName: normalizeText(entry.metadata?.name),
+      metadataLabel: normalizeText(entry.metadata?.label),
+      reportFactMapKeys: Object.keys(entry.reportPayload?.factMap || {}),
+      reportGroupingColumns: getGroupingColumns(entry.reportPayload || {}).map((column) => column.label),
+    })),
     reports,
   };
 }
