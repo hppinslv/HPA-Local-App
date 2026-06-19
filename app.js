@@ -10644,14 +10644,15 @@ function renderScoreHistorySingleGroupingTable(bodyId, rows, metricColumns, empt
         const match = metricMap.get(["", scorePeriod, metric.key].join("::"));
         return `<td>${esc(formatScoreHistoryMetric(metric.key, match?.metric_value))}</td>`;
       });
-      const hasAnyValue = metricColumns.some((metric) => metricMap.has(["", scorePeriod, metric.key].join("::")));
-      return hasAnyValue
-        ? `<tr><td>${esc(formatScoreHistoryPeriodDisplay(scorePeriod))}</td>${values.join("")}</tr>`
-        : "";
+      return `<tr><td>${esc(formatScoreHistoryPeriodDisplay(scorePeriod))}</td>${values.join("")}</tr>`;
     })
     .filter(Boolean);
 
-  tbody.innerHTML = renderedRows.length
+  const hasAnyValues = scorePeriods.some((scorePeriod) =>
+    metricColumns.some((metric) => metricMap.has(["", scorePeriod, metric.key].join("::")))
+  );
+
+  tbody.innerHTML = hasAnyValues
     ? renderedRows.join("")
     : `<tr><td colspan="${metricColumns.length + 1}" class="empty-cell">${esc(emptyMessage)}</td></tr>`;
 }
@@ -10661,28 +10662,23 @@ function renderScoreHistoryPayTypeTable(bodyId, rows, emptyMessage) {
   if (!tbody) {
     return;
   }
-  const paymentTypes = ensureArray(state.scoreHistory.config?.paymentTypeOrder);
+  const paymentTypes = ["ACH", "Credit Card", "Check"];
   const scorePeriods = ensureArray(state.scoreHistory.config?.scorePeriodOrder);
   const metricMap = buildScoreHistoryLatestMetricMap(rows);
   const renderedRows = [];
+  let hiddenPaymentTypeCount = 0;
 
   paymentTypes.forEach((paymentType) => {
     const paymentRows = [];
     scorePeriods.forEach((scorePeriod) => {
       const match = metricMap.get([paymentType, scorePeriod, "amount"].join("::"));
-      if (!match) {
-        return;
-      }
       paymentRows.push(`
         <tr>
           <td>${esc(formatScoreHistoryPeriodDisplay(scorePeriod))}</td>
-          <td>${esc(formatScoreHistoryMetric("amount", match.metric_value))}</td>
+          <td>${esc(formatScoreHistoryMetric("amount", match?.metric_value))}</td>
         </tr>
       `);
     });
-    if (!paymentRows.length) {
-      return;
-    }
     paymentRows[0] = paymentRows[0].replace(
       "<tr>\n          <td>",
       `<tr>\n          <td rowspan="${paymentRows.length}">${esc(paymentType)}</td>\n          <td>`
@@ -10690,33 +10686,27 @@ function renderScoreHistoryPayTypeTable(bodyId, rows, emptyMessage) {
     renderedRows.push(...paymentRows);
   });
 
-  const additionalRows = ensureArray(rows)
-    .filter((row) => !paymentTypes.includes(row.payment_type || ""))
-    .sort((left, right) => {
-      const paymentCompare = String(left.payment_type || "").localeCompare(String(right.payment_type || ""));
-      if (paymentCompare !== 0) {
-        return paymentCompare;
-      }
-      return String(left.score_period || "").localeCompare(String(right.score_period || ""));
-    });
-  additionalRows.forEach((row) => {
-    renderedRows.push(`
-      <tr>
-        <td>${esc(row.payment_type || "")}</td>
-        <td>${esc(formatScoreHistoryPeriodDisplay(row.score_period || ""))}</td>
-        <td>${esc(formatScoreHistoryMetric(row.metric_key, row.metric_value))}</td>
-      </tr>
-    `);
-  });
+  const additionalPaymentTypes = Array.from(
+    new Set(
+      ensureArray(rows)
+        .map((row) => String(row.payment_type || "").trim())
+        .filter((paymentType) => paymentType && !paymentTypes.includes(paymentType))
+    )
+  );
+  hiddenPaymentTypeCount = additionalPaymentTypes.length;
 
-  tbody.innerHTML = renderedRows.length
+  const hasAnyValues = paymentTypes.some((paymentType) =>
+    scorePeriods.some((scorePeriod) => metricMap.has([paymentType, scorePeriod, "amount"].join("::")))
+  ) || additionalPaymentTypes.length > 0;
+
+  tbody.innerHTML = hasAnyValues
     ? renderedRows.join("")
     : `<tr><td colspan="3" class="empty-cell">${esc(emptyMessage)}</td></tr>`;
 
   const note = el("score-history-paytype-note");
   if (note) {
-    note.textContent = renderedRows.length
-      ? ""
+    note.textContent = hiddenPaymentTypeCount
+      ? `Additional payment type${hiddenPaymentTypeCount === 1 ? "" : "s"} captured but hidden here: ${additionalPaymentTypes.join(", ")}.`
       : "";
   }
 }
