@@ -44,6 +44,43 @@ function firstHeaderValue(value) {
     .trim();
 }
 
+function isLoopbackHost(host) {
+  const normalized = String(host || "").trim().toLowerCase();
+  return (
+    normalized === "localhost:4173" ||
+    normalized === "127.0.0.1:4173" ||
+    normalized === "localhost" ||
+    normalized === "127.0.0.1"
+  );
+}
+
+function resolveBrowserFacingOrigin(headers = {}) {
+  const candidates = [
+    firstHeaderValue(headers.origin),
+    firstHeaderValue(headers.referer),
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.host && !isLoopbackHost(parsed.host)) {
+        return {
+          host: parsed.host,
+          proto: normalizeProto(parsed.protocol.replace(":", "")),
+        };
+      }
+    } catch {
+      // Ignore malformed browser-facing URLs and continue falling back.
+    }
+  }
+
+  return null;
+}
+
 function resolveRedirectUri(requestContext = null) {
   const config = getSalesforceConfig();
   const configuredRedirect = String(config.redirectUri || "").trim();
@@ -55,8 +92,14 @@ function resolveRedirectUri(requestContext = null) {
   const headers = requestContext.headers || {};
   const forwardedHost = firstHeaderValue(headers["x-forwarded-host"]);
   const forwardedProto = firstHeaderValue(headers["x-forwarded-proto"]);
-  const host = forwardedHost || firstHeaderValue(headers.host);
-  const proto = normalizeProto(forwardedProto || requestContext.protocol || "http");
+  let host = forwardedHost || firstHeaderValue(headers.host);
+  let proto = normalizeProto(forwardedProto || requestContext.protocol || "http");
+  const browserFacingOrigin = resolveBrowserFacingOrigin(headers);
+
+  if ((!forwardedHost || isLoopbackHost(host)) && browserFacingOrigin) {
+    host = browserFacingOrigin.host;
+    proto = browserFacingOrigin.proto;
+  }
 
   if (!host) {
     return configuredRedirect;
@@ -69,7 +112,7 @@ function resolveRedirectUri(requestContext = null) {
   try {
     const configuredUrl = new URL(configuredRedirect);
     const configuredHost = String(configuredUrl.host || "").trim().toLowerCase();
-    if (!configuredHost || configuredHost === "localhost:4173" || configuredHost === "127.0.0.1:4173") {
+    if (!configuredHost || isLoopbackHost(configuredHost)) {
       return `${proto}://${host}${SALESFORCE_CALLBACK_PATH}`;
     }
     return configuredRedirect;
