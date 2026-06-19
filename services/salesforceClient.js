@@ -356,6 +356,28 @@ async function executeReportWithoutDateOverride(tokenRecord, reportId) {
   return executeReportWithDescribeMetadata(tokenRecord, reportId, describePayload.reportMetadata || {}, describePayload);
 }
 
+async function executeSavedReport(tokenRecord, reportId) {
+  const describePayload = await fetchReportDescribe(tokenRecord, reportId);
+  const response = await salesforceRequest(
+    tokenRecord,
+    `/services/data/${SALESFORCE_API_VERSION}/analytics/reports/${reportId}?includeDetails=true`
+  );
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      payload[0]?.message ||
+        payload.message ||
+        `Unable to run Salesforce report ${reportId}.`
+    );
+  }
+
+  return {
+    describePayload,
+    reportPayload: payload,
+  };
+}
+
 async function executeReportWithDescribeMetadata(tokenRecord, reportId, reportMetadata, describePayload = null) {
   const resolvedDescribePayload = describePayload || await fetchReportDescribe(tokenRecord, reportId);
   const response = await salesforceRequest(
@@ -2557,6 +2579,7 @@ module.exports = {
   executeReport,
   executeReportForDateRange,
   executeReportWithDescribeMetadata,
+  executeSavedReport,
   executeReportWithoutDateOverride,
   fetchAnalysisReportScfMetrics,
   fetchFlexibleSalesforceReportData,

@@ -1,9 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 const {
-  executeReportWithDescribeMetadata,
-  fetchReportDescribe,
   getConnectedSalesforceToken,
+  executeSavedReport,
 } = require("./salesforceClient");
 const { loadStateObject, queueStateSync } = require("./supabasePersistence");
 
@@ -729,13 +728,7 @@ async function captureScoreDashboardSnapshot(options = {}) {
     }
 
     try {
-      const describePayload = await fetchReportDescribe(tokenRecord, reportConfig.salesforceReportId);
-      const executed = await executeReportWithDescribeMetadata(
-        tokenRecord,
-        reportConfig.salesforceReportId,
-        describePayload.reportMetadata || {},
-        describePayload
-      );
+      const executed = await executeSavedReport(tokenRecord, reportConfig.salesforceReportId);
       const parsed = parseReportMetricRows(
         reportConfig,
         executed.describePayload,
@@ -803,13 +796,7 @@ async function debugScoreDashboardSnapshotReports() {
 
   for (const reportConfig of scoreDashboardSnapshotConfig.reports) {
     try {
-      const describePayload = await fetchReportDescribe(tokenRecord, reportConfig.salesforceReportId);
-      const executed = await executeReportWithDescribeMetadata(
-        tokenRecord,
-        reportConfig.salesforceReportId,
-        describePayload.reportMetadata || {},
-        describePayload
-      );
+      const executed = await executeSavedReport(tokenRecord, reportConfig.salesforceReportId);
       const groupingColumns = getGroupingColumns(executed.reportPayload);
       const aggregateColumns = getAggregateColumns(executed.reportPayload);
       const groupedRows = collectLeafGroupedRows(executed.reportPayload, 0);
