@@ -30,6 +30,8 @@ const MONTHLY_ALL_REPORT_TYPES = [
 ];
 const MONTHLY_STALE_RUN_MS = 10 * 60 * 1000;
 const SCORE_HISTORY_DEFAULT_DAY_RANGE = 30;
+const SCORE_HISTORY_VISIBLE_PERIODS = ["Current Month", "Last Month", "Last Year"];
+const SCORE_HISTORY_VISIBLE_PAYMENT_TYPES = ["ACH", "Credit Card", "Check"];
 
 const DEFAULT_ANALYSIS_REPORT_ID = "00OQm000003PIxhMAG";
 const ANALYSIS_SETUP_STORAGE_KEY = "hpa.analysis.currentSetupId";
@@ -10530,7 +10532,7 @@ function formatScoreHistoryMetric(metricKey, value) {
 }
 
 function formatScoreHistoryPeriodDisplay(scorePeriod) {
-  const order = ensureArray(state.scoreHistory.config?.scorePeriodOrder);
+  const order = SCORE_HISTORY_VISIBLE_PERIODS;
   const index = order.indexOf(String(scorePeriod || "").trim());
   if (index === -1) {
     return String(scorePeriod || "").trim();
@@ -10637,7 +10639,7 @@ function renderScoreHistorySingleGroupingTable(bodyId, rows, metricColumns, empt
     return;
   }
   const metricMap = buildScoreHistoryLatestMetricMap(rows);
-  const scorePeriods = ensureArray(state.scoreHistory.config?.scorePeriodOrder);
+  const scorePeriods = SCORE_HISTORY_VISIBLE_PERIODS;
   const renderedRows = scorePeriods
     .map((scorePeriod) => {
       const values = metricColumns.map((metric) => {
@@ -10662,8 +10664,8 @@ function renderScoreHistoryPayTypeTable(bodyId, rows, emptyMessage) {
   if (!tbody) {
     return;
   }
-  const paymentTypes = ["ACH", "Credit Card", "Check"];
-  const scorePeriods = ensureArray(state.scoreHistory.config?.scorePeriodOrder);
+  const paymentTypes = SCORE_HISTORY_VISIBLE_PAYMENT_TYPES;
+  const scorePeriods = SCORE_HISTORY_VISIBLE_PERIODS;
   const metricMap = buildScoreHistoryLatestMetricMap(rows);
   const renderedRows = [];
   let hiddenPaymentTypeCount = 0;
