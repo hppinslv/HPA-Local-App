@@ -382,17 +382,31 @@ async function loadScoreDashboardSourceContext(tokenRecord) {
     return null;
   }
   try {
-    const [dashboardMetadata, dashboardResults] = await Promise.all([
-      fetchDashboard(tokenRecord, dashboardId),
-      fetchDashboardResults(tokenRecord, dashboardId),
-    ]);
+    const dashboardMetadata = await fetchDashboard(tokenRecord, dashboardId);
+    let dashboardResults = dashboardMetadata;
+    let error = "";
+    let errorStatusCode = 0;
+    let errorPath = "";
+    let errorPayload = null;
+
+    try {
+      dashboardResults = await fetchDashboardResults(tokenRecord, dashboardId);
+    } catch (resultsError) {
+      error = resultsError instanceof Error ? resultsError.message : String(resultsError || "");
+      errorStatusCode = resultsError?.statusCode || 0;
+      errorPath = resultsError?.salesforcePath || "";
+      errorPayload = resultsError?.salesforcePayload || null;
+    }
 
     return {
       dashboardId,
       dashboardMetadata,
       dashboardResults,
       dashboardComponents: buildDashboardComponentCandidates(dashboardMetadata, dashboardResults),
-      error: "",
+      error,
+      errorStatusCode,
+      errorPath,
+      errorPayload,
     };
   } catch (error) {
     return {
