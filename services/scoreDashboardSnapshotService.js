@@ -408,14 +408,26 @@ function findDashboardComponentForReport(dashboardComponents, reportConfig) {
   if (reportConfig.reportKey === "score") {
     return candidates.find((entry) => {
       const aggregateColumns = getAggregateColumns(entry.reportPayload || {}).map((column) => normalizeMetricAlias(column.label));
-      return aggregateColumns.includes("sum of active clients") || aggregateColumns.includes("sum of active_clients");
+      return (
+        (aggregateColumns.includes("sum of active clients") || aggregateColumns.includes("sum of active_clients"))
+        && (
+          aggregateColumns.includes("sum of total premium with dues")
+          || aggregateColumns.includes("sum of total_premium_with_dues")
+        )
+      );
     }) || candidates[0];
   }
 
   if (reportConfig.reportKey === "applicationsReceived") {
     return candidates.find((entry) => {
       const aggregateColumns = getAggregateColumns(entry.reportPayload || {}).map((column) => normalizeMetricAlias(column.label));
-      return aggregateColumns.includes("record count");
+      return (
+        aggregateColumns.includes("record count")
+        && !aggregateColumns.includes("sum of active clients")
+        && !aggregateColumns.includes("sum of active_clients")
+        && !aggregateColumns.includes("sum of total premium with dues")
+        && !aggregateColumns.includes("sum of total_premium_with_dues")
+      );
     }) || candidates[0];
   }
 
