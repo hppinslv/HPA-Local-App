@@ -378,6 +378,42 @@ async function executeSavedReport(tokenRecord, reportId) {
   };
 }
 
+async function fetchDashboard(tokenRecord, dashboardId) {
+  const response = await salesforceRequest(
+    tokenRecord,
+    `/services/data/${SALESFORCE_API_VERSION}/analytics/dashboards/${dashboardId}`
+  );
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      payload[0]?.message ||
+        payload.message ||
+        `Unable to load Salesforce dashboard ${dashboardId}.`
+    );
+  }
+
+  return payload;
+}
+
+async function fetchDashboardResults(tokenRecord, dashboardId) {
+  const response = await salesforceRequest(
+    tokenRecord,
+    `/services/data/${SALESFORCE_API_VERSION}/analytics/dashboards/${dashboardId}/results`
+  );
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      payload[0]?.message ||
+        payload.message ||
+        `Unable to load Salesforce dashboard results ${dashboardId}.`
+    );
+  }
+
+  return payload;
+}
+
 async function executeReportWithDescribeMetadata(tokenRecord, reportId, reportMetadata, describePayload = null) {
   const resolvedDescribePayload = describePayload || await fetchReportDescribe(tokenRecord, reportId);
   const response = await salesforceRequest(
@@ -2581,6 +2617,8 @@ module.exports = {
   executeReportWithDescribeMetadata,
   executeSavedReport,
   executeReportWithoutDateOverride,
+  fetchDashboard,
+  fetchDashboardResults,
   fetchAnalysisReportScfMetrics,
   fetchFlexibleSalesforceReportData,
   fetchFullFlatReportRows,

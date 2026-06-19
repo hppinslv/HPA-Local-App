@@ -3,6 +3,8 @@ const path = require("path");
 const {
   getConnectedSalesforceToken,
   executeSavedReport,
+  fetchDashboard,
+  fetchDashboardResults,
 } = require("./salesforceClient");
 const { loadStateObject, queueStateSync } = require("./supabasePersistence");
 
@@ -18,11 +20,13 @@ const DEFAULT_SCHEDULE_MINUTE = 0;
 const scoreDashboardSnapshotConfig = Object.freeze({
   dashboardKey: "scoreReport",
   dashboardName: "SCORE Report",
+  salesforceDashboardId: normalizeText(process.env.SALESFORCE_SCORE_DASHBOARD_ID || ""),
   reports: [
     {
       reportKey: "score",
       reportLabel: "SCORE",
       salesforceReportId: "00OQm000001y7MDMAY",
+      dashboardComponentLabels: ["Score", "SCORE"],
       expectedGroupings: ["Score Period"],
       expectedMetrics: [
         {
@@ -47,6 +51,7 @@ const scoreDashboardSnapshotConfig = Object.freeze({
       reportKey: "moneyReceived",
       reportLabel: "Money Received",
       salesforceReportId: "00OQm000001xzA9MAI",
+      dashboardComponentLabels: ["Money Received"],
       expectedGroupings: ["Score Period"],
       expectedMetrics: [
         {
@@ -61,6 +66,7 @@ const scoreDashboardSnapshotConfig = Object.freeze({
       reportKey: "moneyReceivedByPayType",
       reportLabel: "Money Received by Payment Type",
       salesforceReportId: "00OQm000001xzDNMAY",
+      dashboardComponentLabels: ["Money Received with PayType", "Money Received by Payment Type"],
       expectedGroupings: ["Payment Type", "Score Period"],
       expectedMetrics: [
         {
@@ -75,6 +81,7 @@ const scoreDashboardSnapshotConfig = Object.freeze({
       reportKey: "applicationsReceived",
       reportLabel: "Applications Received",
       salesforceReportId: "00OQm000001y6efMAA",
+      dashboardComponentLabels: ["Applications Received"],
       expectedGroupings: ["Score Period"],
       expectedMetrics: [
         {
@@ -94,6 +101,10 @@ let scoreSnapshotScheduleTimeout = null;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function ensureArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function ensureStorage() {
@@ -260,6 +271,7 @@ function getConfigPayload() {
   return {
     dashboardKey: scoreDashboardSnapshotConfig.dashboardKey,
     dashboardName: scoreDashboardSnapshotConfig.dashboardName,
+    salesforceDashboardId: scoreDashboardSnapshotConfig.salesforceDashboardId,
     scorePeriodOrder: [...SCORE_PERIOD_ORDER],
     paymentTypeOrder: [...PAYMENT_TYPE_ORDER],
     reports: scoreDashboardSnapshotConfig.reports.map((report) => ({
@@ -273,6 +285,150 @@ function getConfigPayload() {
         format: metric.format || "number",
       })),
     })),
+  };
+}
+
+function normalizeDashboardLabel(value) {
+  return normalizeKey(value).replace(/[^a-z0-9 ]+/g, "");
+}
+
+function extractDashboardReportPayload(source, depth = 0, visited = new Set()) {
+  if (!source || typeof source !== "object" || depth > 6 || visited.has(source)) {
+    return null;
+  }
+  if (source.factMap && source.reportMetadata) {
+    return source;
+  }
+
+  visited.add(source);
+  for (const value of Object.values(source)) {
+    if (!value || typeof value !== "object") {
+      continue;
+    }
+    const candidate = extractDashboardReportPayload(value, depth + 1, visited);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function buildDashboardComponentCandidates(dashboardMetadata, dashboardResults) {
+  const metadataComponents = [
+    ...ensureArray(dashboardMetadata?.dashboardMetadata?.components),
+    ...ensureArray(dashboardMetadata?.components),
+    ...ensureArray(dashboardResults?.dashboardMetadata?.components),
+    ...ensureArray(dashboardResults?.components),
+  ];
+  const metadataById = new Map(
+    metadataComponents
+      .filter((component) => component && typeof component === "object")
+      .map((component) => [String(component.id || component.name || component.label || ""), component])
+      .filter(([key]) => key)
+  );
+
+  const componentEntries = Object.entries(dashboardResults?.componentData || {});
+  return componentEntries
+    .map(([componentId, componentData]) => {
+      const metadata = metadataById.get(String(componentId)) || {};
+      const reportPayload = extractDashboardReportPayload(componentData);
+      const reportId = normalizeText(
+        componentData?.reportMetadata?.id ||
+        componentData?.reportId ||
+        metadata?.reportId ||
+        metadata?.reportMetadata?.id ||
+        reportPayload?.id
+      );
+      const label = normalizeText(
+        metadata?.title ||
+        metadata?.name ||
+        metadata?.label ||
+        componentData?.name ||
+        componentData?.label ||
+        componentId
+      );
+
+      return {
+        componentId: String(componentId),
+        label,
+        reportId,
+        metadata,
+        componentData,
+        reportPayload,
+      };
+    })
+    .filter((entry) => entry.reportPayload);
+}
+
+function findDashboardComponentForReport(dashboardComponents, reportConfig) {
+  const reportId = normalizeText(reportConfig.salesforceReportId);
+  const labelAliases = new Set(
+    [reportConfig.reportLabel, reportConfig.reportKey, ...(reportConfig.dashboardComponentLabels || [])]
+      .map((value) => normalizeDashboardLabel(value))
+      .filter(Boolean)
+  );
+
+  const byReportId = dashboardComponents.find((entry) => normalizeText(entry.reportId) === reportId);
+  if (byReportId) {
+    return byReportId;
+  }
+
+  return dashboardComponents.find((entry) => labelAliases.has(normalizeDashboardLabel(entry.label)));
+}
+
+async function loadScoreDashboardSourceContext(tokenRecord) {
+  const dashboardId = normalizeText(scoreDashboardSnapshotConfig.salesforceDashboardId);
+  if (!dashboardId) {
+    return null;
+  }
+  try {
+    const [dashboardMetadata, dashboardResults] = await Promise.all([
+      fetchDashboard(tokenRecord, dashboardId),
+      fetchDashboardResults(tokenRecord, dashboardId),
+    ]);
+
+    return {
+      dashboardId,
+      dashboardMetadata,
+      dashboardResults,
+      dashboardComponents: buildDashboardComponentCandidates(dashboardMetadata, dashboardResults),
+      error: "",
+    };
+  } catch (error) {
+    return {
+      dashboardId,
+      dashboardMetadata: null,
+      dashboardResults: null,
+      dashboardComponents: [],
+      error: error instanceof Error ? error.message : String(error || ""),
+    };
+  }
+}
+
+async function resolveScoreSnapshotReportExecution(tokenRecord, reportConfig, dashboardContext) {
+  const dashboardComponent = findDashboardComponentForReport(
+    ensureArray(dashboardContext?.dashboardComponents),
+    reportConfig
+  );
+
+  if (dashboardComponent?.reportPayload) {
+    return {
+      describePayload: dashboardComponent.reportPayload,
+      reportPayload: dashboardComponent.reportPayload,
+      source: "dashboard",
+      dashboardComponentId: dashboardComponent.componentId,
+      dashboardComponentLabel: dashboardComponent.label,
+      dashboardReportId: dashboardComponent.reportId,
+    };
+  }
+
+  const executed = await executeSavedReport(tokenRecord, reportConfig.salesforceReportId);
+  return {
+    ...executed,
+    source: "report",
+    dashboardComponentId: "",
+    dashboardComponentLabel: "",
+    dashboardReportId: "",
   };
 }
 
@@ -710,6 +866,7 @@ async function captureScoreDashboardSnapshot(options = {}) {
   const snapshotDate = getSnapshotDateKey(options.snapshotDate);
   const capturedAt = new Date().toISOString();
   const tokenRecord = await getConnectedSalesforceToken();
+  const dashboardContext = await loadScoreDashboardSourceContext(tokenRecord);
   const captureRows = [];
   const results = [];
 
@@ -728,7 +885,7 @@ async function captureScoreDashboardSnapshot(options = {}) {
     }
 
     try {
-      const executed = await executeSavedReport(tokenRecord, reportConfig.salesforceReportId);
+      const executed = await resolveScoreSnapshotReportExecution(tokenRecord, reportConfig, dashboardContext);
       const parsed = parseReportMetricRows(
         reportConfig,
         executed.describePayload,
@@ -744,6 +901,9 @@ async function captureScoreDashboardSnapshot(options = {}) {
         metricsSaved: parsed.rows.length,
         groupedRows: parsed.groupedRows,
         salesforceAsOfText: parsed.salesforceAsOfText,
+        source: executed.source,
+        dashboardComponentId: executed.dashboardComponentId,
+        dashboardComponentLabel: executed.dashboardComponentLabel,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || "");
@@ -792,11 +952,12 @@ async function captureScoreDashboardSnapshot(options = {}) {
 
 async function debugScoreDashboardSnapshotReports() {
   const tokenRecord = await getConnectedSalesforceToken();
+  const dashboardContext = await loadScoreDashboardSourceContext(tokenRecord);
   const reports = [];
 
   for (const reportConfig of scoreDashboardSnapshotConfig.reports) {
     try {
-      const executed = await executeSavedReport(tokenRecord, reportConfig.salesforceReportId);
+      const executed = await resolveScoreSnapshotReportExecution(tokenRecord, reportConfig, dashboardContext);
       const groupingColumns = getGroupingColumns(executed.reportPayload);
       const aggregateColumns = getAggregateColumns(executed.reportPayload);
       const groupedRows = collectLeafGroupedRows(executed.reportPayload, 0);
@@ -812,6 +973,9 @@ async function debugScoreDashboardSnapshotReports() {
         reportKey: reportConfig.reportKey,
         reportLabel: reportConfig.reportLabel,
         salesforceReportId: reportConfig.salesforceReportId,
+        source: executed.source,
+        dashboardComponentId: executed.dashboardComponentId,
+        dashboardComponentLabel: executed.dashboardComponentLabel,
         groupingColumns: groupingColumns.map((entry) => entry.label),
         aggregateColumns: aggregateColumns.map((entry) => entry.label),
         downGroupingPaths: listGroupingPaths(executed.reportPayload.groupingsDown?.groupings || []),
@@ -839,6 +1003,9 @@ async function debugScoreDashboardSnapshotReports() {
 
   return {
     generatedAt: new Date().toISOString(),
+    dashboardId: dashboardContext?.dashboardId || "",
+    dashboardError: dashboardContext?.error || "",
+    dashboardComponentCount: ensureArray(dashboardContext?.dashboardComponents).length,
     reports,
   };
 }
