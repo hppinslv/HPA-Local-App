@@ -558,6 +558,22 @@ function collectLeafGroupedRows(reportPayload, minimumPathLength = 0) {
   return rows;
 }
 
+function listGroupingPaths(groups = [], path = [], results = []) {
+  const list = Array.isArray(groups) ? groups : [];
+  list.forEach((group) => {
+    const nextPath = [...path, normalizeText(group?.label)];
+    results.push({
+      key: String(group?.key || ""),
+      path: nextPath,
+    });
+    const children = Array.isArray(group?.groupings) ? group.groupings : [];
+    if (children.length) {
+      listGroupingPaths(children, nextPath, results);
+    }
+  });
+  return results;
+}
+
 function buildMetricLookup(reportConfig, aggregateColumns) {
   return reportConfig.expectedMetrics.map((metric) => {
     const aliases = new Set([metric.label, metric.key, ...(metric.aliases || [])].map((entry) => normalizeMetricAlias(entry)));
@@ -778,6 +794,65 @@ async function captureScoreDashboardSnapshot(options = {}) {
         reportLabel: entry.reportLabel,
         error: entry.error,
       })),
+  };
+}
+
+async function debugScoreDashboardSnapshotReports() {
+  const tokenRecord = await getConnectedSalesforceToken();
+  const reports = [];
+
+  for (const reportConfig of scoreDashboardSnapshotConfig.reports) {
+    try {
+      const describePayload = await fetchReportDescribe(tokenRecord, reportConfig.salesforceReportId);
+      const executed = await executeReportWithDescribeMetadata(
+        tokenRecord,
+        reportConfig.salesforceReportId,
+        describePayload.reportMetadata || {},
+        describePayload
+      );
+      const groupingColumns = getGroupingColumns(executed.reportPayload);
+      const aggregateColumns = getAggregateColumns(executed.reportPayload);
+      const groupedRows = collectLeafGroupedRows(executed.reportPayload, 0);
+      const parsedRows = parseReportMetricRows(
+        reportConfig,
+        executed.describePayload,
+        executed.reportPayload,
+        "debug",
+        new Date().toISOString()
+      ).rows;
+
+      reports.push({
+        reportKey: reportConfig.reportKey,
+        reportLabel: reportConfig.reportLabel,
+        salesforceReportId: reportConfig.salesforceReportId,
+        groupingColumns: groupingColumns.map((entry) => entry.label),
+        aggregateColumns: aggregateColumns.map((entry) => entry.label),
+        downGroupingPaths: listGroupingPaths(executed.reportPayload.groupingsDown?.groupings || []),
+        acrossGroupingPaths: listGroupingPaths(executed.reportPayload.groupingsAcross?.groupings || []),
+        factMapKeys: Object.keys(executed.reportPayload.factMap || {}),
+        groupedRowPreview: groupedRows.slice(0, 20),
+        parsedRowCount: parsedRows.length,
+        parsedRowPreview: parsedRows.slice(0, 20).map((row) => ({
+          score_period: row.score_period,
+          payment_type: row.payment_type,
+          metric_key: row.metric_key,
+          metric_value: row.metric_value,
+          raw_json: row.raw_json,
+        })),
+      });
+    } catch (error) {
+      reports.push({
+        reportKey: reportConfig.reportKey,
+        reportLabel: reportConfig.reportLabel,
+        salesforceReportId: reportConfig.salesforceReportId,
+        error: error instanceof Error ? error.message : String(error || ""),
+      });
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    reports,
   };
 }
 
@@ -1156,6 +1231,7 @@ module.exports = {
   isSalesforceAuthFailureMessage,
   listScoreDashboardSnapshots,
   maybeRunStartupScoreDashboardSnapshot,
+  debugScoreDashboardSnapshotReports,
   buildTrendRows,
   normalizeScorePeriodLabel,
   normalizePaymentTypeLabel,

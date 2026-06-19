@@ -110,6 +110,7 @@ const {
 const {
   buildTrendRows,
   captureScoreDashboardSnapshot,
+  debugScoreDashboardSnapshotReports,
   exportScoreDashboardSnapshotsCsv,
   getLatestSuccessfulScoreDashboardSnapshot,
   getScoreDashboardSnapshotConfig,
@@ -692,6 +693,19 @@ const server = http.createServer((request, response) => {
       })
       .catch((error) => {
         const message = error.message || "Unable to capture SCORE dashboard snapshot.";
+        const statusCode = isSalesforceAuthFailureMessage(message) ? 401 : 400;
+        sendJson(response, statusCode, { error: message });
+      });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/score-dashboard-snapshots/debug" && request.method === "GET") {
+    debugScoreDashboardSnapshotReports()
+      .then((result) => {
+        sendJson(response, 200, result);
+      })
+      .catch((error) => {
+        const message = error.message || "Unable to inspect SCORE dashboard snapshot reports.";
         const statusCode = isSalesforceAuthFailureMessage(message) ? 401 : 400;
         sendJson(response, statusCode, { error: message });
       });
