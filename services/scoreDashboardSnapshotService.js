@@ -499,52 +499,56 @@ function getAggregateColumns(reportPayload) {
   });
 }
 
-function collectLeafGroupingEntries(groups = [], path = []) {
-  const entries = [];
+function buildGroupingLabelLookup(groups = [], path = [], lookup = new Map()) {
   const list = Array.isArray(groups) ? groups : [];
-
   if (!list.length) {
-    return [{ key: "T", pathLabels: [] }];
+    lookup.set("T", []);
+    return lookup;
   }
 
-  const walk = (group, currentPath = []) => {
-    const nextPath = [...currentPath, group];
+  list.forEach((group) => {
+    const nextPath = [...path, group];
     const children = Array.isArray(group.groupings) ? group.groupings : [];
     if (children.length) {
-      children.forEach((child) => walk(child, nextPath));
+      buildGroupingLabelLookup(children, nextPath, lookup);
       return;
     }
 
-    entries.push({
-      key: String(group?.key || "T"),
-      pathLabels: nextPath.map((entry) => normalizeText(entry?.label)),
-    });
-  };
+    lookup.set(
+      String(group?.key || "T"),
+      nextPath.map((entry) => normalizeText(entry?.label))
+    );
+  });
 
-  list.forEach((group) => walk(group, path));
-  return entries;
+  return lookup;
 }
 
 function collectLeafGroupedRows(reportPayload) {
   const rows = [];
   const factMap = reportPayload.factMap || {};
-  const downEntries = collectLeafGroupingEntries(reportPayload.groupingsDown?.groupings || []);
-  const acrossEntries = collectLeafGroupingEntries(reportPayload.groupingsAcross?.groupings || []);
+  const downLookup = buildGroupingLabelLookup(reportPayload.groupingsDown?.groupings || []);
+  const acrossLookup = buildGroupingLabelLookup(reportPayload.groupingsAcross?.groupings || []);
 
-  downEntries.forEach((downEntry) => {
-    acrossEntries.forEach((acrossEntry) => {
-      const factKey = `${downEntry.key || "T"}!${acrossEntry.key || "T"}`;
-      const factEntry = factMap[factKey];
-      const aggregates = Array.isArray(factEntry?.aggregates) ? factEntry.aggregates : [];
-      if (!aggregates.length) {
-        return;
-      }
+  Object.entries(factMap).forEach(([factKey, factEntry]) => {
+    const aggregates = Array.isArray(factEntry?.aggregates) ? factEntry.aggregates : [];
+    if (!aggregates.length) {
+      return;
+    }
 
-      rows.push({
-        factKey,
-        pathLabels: [...downEntry.pathLabels, ...acrossEntry.pathLabels],
-        rawAggregates: aggregates.map((entry) => entry?.label ?? ""),
-      });
+    const [downKeyRaw = "T", acrossKeyRaw = "T"] = String(factKey).split("!");
+    const downKey = String(downKeyRaw || "T");
+    const acrossKey = String(acrossKeyRaw || "T");
+    const downPath = downLookup.get(downKey) || (downKey === "T" ? [] : null);
+    const acrossPath = acrossLookup.get(acrossKey) || (acrossKey === "T" ? [] : null);
+
+    if (downPath === null || acrossPath === null) {
+      return;
+    }
+
+    rows.push({
+      factKey,
+      pathLabels: [...downPath, ...acrossPath],
+      rawAggregates: aggregates.map((entry) => entry?.label ?? ""),
     });
   });
 
