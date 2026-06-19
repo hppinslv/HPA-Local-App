@@ -499,31 +499,55 @@ function getAggregateColumns(reportPayload) {
   });
 }
 
-function collectLeafGroupedRows(reportPayload) {
-  const rows = [];
-  const factMap = reportPayload.factMap || {};
-  const walk = (group, path = []) => {
-    const nextPath = [...path, group];
+function collectLeafGroupingEntries(groups = [], path = []) {
+  const entries = [];
+  const list = Array.isArray(groups) ? groups : [];
+
+  if (!list.length) {
+    return [{ key: "T", pathLabels: [] }];
+  }
+
+  const walk = (group, currentPath = []) => {
+    const nextPath = [...currentPath, group];
     const children = Array.isArray(group.groupings) ? group.groupings : [];
     if (children.length) {
       children.forEach((child) => walk(child, nextPath));
       return;
     }
 
-    const factKey = `${group.key}!T`;
-    const factEntry = factMap[factKey];
-    const aggregates = Array.isArray(factEntry?.aggregates) ? factEntry.aggregates : [];
-    rows.push({
-      factKey,
+    entries.push({
+      key: String(group?.key || "T"),
       pathLabels: nextPath.map((entry) => normalizeText(entry?.label)),
-      rawAggregates: aggregates.map((entry) => entry?.label ?? ""),
     });
   };
 
-  const groupings = Array.isArray(reportPayload.groupingsDown?.groupings)
-    ? reportPayload.groupingsDown.groupings
-    : [];
-  groupings.forEach((group) => walk(group, []));
+  list.forEach((group) => walk(group, path));
+  return entries;
+}
+
+function collectLeafGroupedRows(reportPayload) {
+  const rows = [];
+  const factMap = reportPayload.factMap || {};
+  const downEntries = collectLeafGroupingEntries(reportPayload.groupingsDown?.groupings || []);
+  const acrossEntries = collectLeafGroupingEntries(reportPayload.groupingsAcross?.groupings || []);
+
+  downEntries.forEach((downEntry) => {
+    acrossEntries.forEach((acrossEntry) => {
+      const factKey = `${downEntry.key || "T"}!${acrossEntry.key || "T"}`;
+      const factEntry = factMap[factKey];
+      const aggregates = Array.isArray(factEntry?.aggregates) ? factEntry.aggregates : [];
+      if (!aggregates.length) {
+        return;
+      }
+
+      rows.push({
+        factKey,
+        pathLabels: [...downEntry.pathLabels, ...acrossEntry.pathLabels],
+        rawAggregates: aggregates.map((entry) => entry?.label ?? ""),
+      });
+    });
+  });
+
   return rows;
 }
 

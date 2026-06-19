@@ -10540,6 +10540,14 @@ function formatScoreHistoryPeriodDisplay(scorePeriod) {
   return `${index + 1}. ${scorePeriod}`;
 }
 
+function formatScoreHistoryPaymentTypeDisplay(paymentType) {
+  const normalized = String(paymentType || "").trim();
+  if (normalized === "Check") {
+    return "Checks";
+  }
+  return normalized;
+}
+
 function groupScoreHistoryRowsBySnapshot(rows) {
   const snapshotMap = new Map();
   ensureArray(rows).forEach((row) => {
@@ -10683,7 +10691,7 @@ function renderScoreHistoryPayTypeTable(bodyId, rows, emptyMessage) {
     });
     paymentRows[0] = paymentRows[0].replace(
       "<tr>\n          <td>",
-      `<tr>\n          <td rowspan="${paymentRows.length}">${esc(paymentType)}</td>\n          <td>`
+      `<tr>\n          <td rowspan="${paymentRows.length}">${esc(formatScoreHistoryPaymentTypeDisplay(paymentType))}</td>\n          <td>`
     );
     renderedRows.push(...paymentRows);
   });
