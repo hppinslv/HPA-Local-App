@@ -2601,6 +2601,11 @@ function renderCcPaymentHistory() {
         <td>${esc(session.uploaded_by || "")}</td>
         <td class="table-action-cell">
           <button class="secondary-button table-action-button" data-cc-open-session="${esc(session.id)}">Open</button>
+          ${
+            Number(session.imported_row_count || session.successful_import_count || 0) > 0
+              ? ""
+              : `<button class="secondary-button table-action-button danger-button" data-cc-delete-session="${esc(session.id)}">Delete</button>`
+          }
         </td>
       </tr>
     `)
@@ -2750,6 +2755,24 @@ async function loadCcPaymentImportSessions(preferredSessionId = "") {
   state.ccPayments.currentSession = null;
   state.ccPayments.launchSessionId = "";
   renderCcPaymentPage();
+}
+
+async function deleteCcPaymentImportSessionById(sessionId) {
+  const normalizedId = String(sessionId || "").trim();
+  if (!normalizedId) {
+    return;
+  }
+
+  const response = await apiRequest(`/api/cc-payment-imports/${encodeURIComponent(normalizedId)}`, {
+    method: "DELETE",
+  });
+  state.ccPayments.sessions = Array.isArray(response.sessions) ? response.sessions : [];
+  if (state.ccPayments.currentSessionId === normalizedId) {
+    state.ccPayments.currentSessionId = "";
+    state.ccPayments.currentSession = null;
+  }
+  await loadCcPaymentImportSessions("");
+  setStatus("cc-payment-status", "Import session deleted.");
 }
 
 function bindCcPaymentImportEvents() {
@@ -2907,17 +2930,31 @@ function bindCcPaymentImportEvents() {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const sessionId = target.getAttribute("data-cc-open-session");
-    if (!sessionId) return;
-    setStatus("cc-payment-status", "Opening import session...");
-    try {
-      if (openImportSessionPopup("cc-payment-imports", sessionId)) {
-        setStatus("cc-payment-status", "Import session opened in a new window.");
-        return;
+    if (sessionId) {
+      setStatus("cc-payment-status", "Opening import session...");
+      try {
+        if (openImportSessionPopup("cc-payment-imports", sessionId)) {
+          setStatus("cc-payment-status", "Import session opened in a new window.");
+          return;
+        }
+        await loadCcPaymentImportSession(sessionId);
+        setStatus("cc-payment-status", "Popup was blocked, so the import session opened here.");
+      } catch (error) {
+        setStatus("cc-payment-status", `Unable to load session: ${error.message}`);
       }
-      await loadCcPaymentImportSession(sessionId);
-      setStatus("cc-payment-status", "Popup was blocked, so the import session opened here.");
+      return;
+    }
+
+    const deleteSessionId = target.getAttribute("data-cc-delete-session");
+    if (!deleteSessionId) return;
+    if (!confirm("Delete this import session and remove its rows from import history?")) {
+      return;
+    }
+    setStatus("cc-payment-status", "Deleting import session...");
+    try {
+      await deleteCcPaymentImportSessionById(deleteSessionId);
     } catch (error) {
-      setStatus("cc-payment-status", `Unable to load session: ${error.message}`);
+      setStatus("cc-payment-status", `Unable to delete session: ${error.message}`);
     }
   });
 

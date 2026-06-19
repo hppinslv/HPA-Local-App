@@ -58,6 +58,7 @@ const {
 } = require("./services/applicationService");
 const {
   createCcPaymentImportSession,
+  deleteCcPaymentImportSession,
   exportCcPaymentImportSession,
   confirmCcPaymentImport,
   getCcPaymentImportSession,
@@ -221,6 +222,14 @@ function resolveFilePath(urlPathname) {
   }
 
   return resolvedPath;
+}
+
+function getRequestProtocol(request) {
+  const forwardedProto = String(request.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  return forwardedProto === "https" ? "https" : "http";
 }
 
 const server = http.createServer((request, response) => {
@@ -478,6 +487,17 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  const ccPaymentImportSessionMatch = requestUrl.pathname.match(/^\/api\/cc-payment-imports\/([^/]+)$/);
+  if (ccPaymentImportSessionMatch && request.method === "DELETE") {
+    try {
+      const result = deleteCcPaymentImportSession(ccPaymentImportSessionMatch[1]);
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to delete credit card payment import session." });
+    }
+    return;
+  }
+
   if (requestUrl.pathname === "/api/check-imports/upload" && request.method === "POST") {
     collectRequestBody(request)
       .then(async (body) => {
@@ -711,8 +731,12 @@ const server = http.createServer((request, response) => {
 
   if (requestUrl.pathname === "/oauth/salesforce/start" && request.method === "GET") {
     try {
+      const protocol = getRequestProtocol(request);
       response.writeHead(302, {
-        Location: createAuthorizationUrl(),
+        Location: createAuthorizationUrl({
+          headers: request.headers,
+          protocol,
+        }),
       });
       response.end();
     } catch (error) {
@@ -733,7 +757,13 @@ const server = http.createServer((request, response) => {
       return;
     }
 
-    exchangeCodeForToken({ code, state })
+    exchangeCodeForToken(
+      { code, state },
+      {
+        headers: request.headers,
+        protocol: getRequestProtocol(request),
+      }
+    )
       .then(() => {
         response.writeHead(302, {
           Location: "/?salesforce=connected",

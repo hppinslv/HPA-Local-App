@@ -950,6 +950,16 @@ textarea {
   color: var(--muted);
 }
 
+.secondary-button.danger-button {
+  background: #f3ddd7;
+  color: #8b3a2b;
+}
+
+.secondary-button.danger-button:hover,
+.secondary-button.danger-button:focus-visible {
+  background: #ebc9c0;
+}
+
 .secondary-button:disabled {
   cursor: not-allowed;
   opacity: 0.7;

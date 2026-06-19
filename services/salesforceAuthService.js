@@ -7,6 +7,7 @@ const { getAllConfiguredSalesforceReports } = require("./reportCatalog");
 const DATA_DIR = path.join(__dirname, "..", "data");
 const AUTH_STATE_PATH = path.join(DATA_DIR, "salesforce-oauth-state.json");
 const AUTH_TOKEN_PATH = path.join(DATA_DIR, "salesforce-auth.json");
+const SALESFORCE_CALLBACK_PATH = "/oauth/salesforce/callback";
 
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
@@ -29,6 +30,52 @@ function writeJson(filePath, payload) {
 
 function storeTokenRecord(tokenRecord) {
   writeJson(AUTH_TOKEN_PATH, tokenRecord);
+}
+
+function normalizeProto(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "https") return "https";
+  return "http";
+}
+
+function firstHeaderValue(value) {
+  return String(value || "")
+    .split(",")[0]
+    .trim();
+}
+
+function resolveRedirectUri(requestContext = null) {
+  const config = getSalesforceConfig();
+  const configuredRedirect = String(config.redirectUri || "").trim();
+
+  if (!requestContext || !requestContext.headers) {
+    return configuredRedirect;
+  }
+
+  const headers = requestContext.headers || {};
+  const forwardedHost = firstHeaderValue(headers["x-forwarded-host"]);
+  const forwardedProto = firstHeaderValue(headers["x-forwarded-proto"]);
+  const host = forwardedHost || firstHeaderValue(headers.host);
+  const proto = normalizeProto(forwardedProto || requestContext.protocol || "http");
+
+  if (!host) {
+    return configuredRedirect;
+  }
+
+  if (!configuredRedirect) {
+    return `${proto}://${host}${SALESFORCE_CALLBACK_PATH}`;
+  }
+
+  try {
+    const configuredUrl = new URL(configuredRedirect);
+    const configuredHost = String(configuredUrl.host || "").trim().toLowerCase();
+    if (!configuredHost || configuredHost === "localhost:4173" || configuredHost === "127.0.0.1:4173") {
+      return `${proto}://${host}${SALESFORCE_CALLBACK_PATH}`;
+    }
+    return configuredRedirect;
+  } catch {
+    return `${proto}://${host}${SALESFORCE_CALLBACK_PATH}`;
+  }
 }
 
 function toBase64Url(value) {
@@ -56,7 +103,7 @@ function getAuthStatus() {
   };
 }
 
-function createAuthorizationUrl() {
+function createAuthorizationUrl(requestContext = null) {
   const config = getSalesforceConfig();
 
   if (!config.clientId || !config.clientSecret) {
@@ -68,16 +115,18 @@ function createAuthorizationUrl() {
   const codeChallenge = toBase64Url(
     crypto.createHash("sha256").update(codeVerifier).digest()
   );
+  const redirectUri = resolveRedirectUri(requestContext);
   writeJson(AUTH_STATE_PATH, {
     state,
     codeVerifier,
+    redirectUri,
     createdAt: new Date().toISOString(),
   });
 
   const url = new URL("/services/oauth2/authorize", config.loginUrl);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.clientId);
-  url.searchParams.set("redirect_uri", config.redirectUri);
+  url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
@@ -85,7 +134,7 @@ function createAuthorizationUrl() {
   return url.toString();
 }
 
-async function exchangeCodeForToken({ code, state }) {
+async function exchangeCodeForToken({ code, state }, requestContext = null) {
   const config = getSalesforceConfig();
   const savedState = readJson(AUTH_STATE_PATH, null);
 
@@ -93,13 +142,18 @@ async function exchangeCodeForToken({ code, state }) {
     throw new Error("Salesforce OAuth state mismatch.");
   }
 
+  const redirectUri =
+    String(savedState.redirectUri || "").trim() ||
+    resolveRedirectUri(requestContext) ||
+    config.redirectUri;
+
   const tokenUrl = new URL("/services/oauth2/token", config.loginUrl);
   const tokenBody = new URLSearchParams({
     grant_type: "authorization_code",
     code,
     client_id: config.clientId,
     client_secret: config.clientSecret,
-    redirect_uri: config.redirectUri,
+    redirect_uri: redirectUri,
     code_verifier: savedState.codeVerifier,
   });
 
@@ -139,5 +193,6 @@ module.exports = {
   exchangeCodeForToken,
   getAuthStatus,
   getStoredToken,
+  resolveRedirectUri,
   storeTokenRecord,
 };
