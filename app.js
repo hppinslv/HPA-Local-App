@@ -10365,10 +10365,13 @@ function initSalesforceStatus() {
     .then((r) => r.json())
     .then((payload) => {
       const auth = payload.auth || {};
+      const isConnected = Boolean(
+        auth.isAuthenticated ?? auth.connected
+      );
       if (el("salesforce-auth-heading"))
-        el("salesforce-auth-heading").textContent = auth.connected ? "Connected" : "Not Connected";
+        el("salesforce-auth-heading").textContent = isConnected ? "Connected" : "Not Connected";
       if (el("salesforce-auth-copy"))
-        el("salesforce-auth-copy").textContent = auth.connected
+        el("salesforce-auth-copy").textContent = isConnected
           ? "Salesforce is connected."
           : "Connect Salesforce so live report pulls are available.";
     })

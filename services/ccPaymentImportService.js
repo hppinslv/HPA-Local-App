@@ -26,6 +26,8 @@ const PREMIUM_REPORT_ID = "00OQm000003Q6cjMAC";
 const DEFAULT_ACTOR = "Local User";
 const IMPORT_TEMPLATE_KEY = "credit-card-payments";
 const IMPORT_BATCH_SIZE = 200;
+const ACTIVE_POLICY_STATUSES = new Set(["in force", "payment issues", "follow up"]);
+const ACTIVE_POLICY_STATUS_LABEL = "In Force, Payment Issues, or Follow Up";
 
 const IMPORT_TEMPLATES = [
   {
@@ -149,6 +151,114 @@ function normalizeCertificateNumber(value) {
 
 function normalizePolicyId(value) {
   return normalizeText(value);
+}
+
+function normalizePolicyStatus(value) {
+  return normalizeText(value).replace(/\s+/g, " ");
+}
+
+function isActivePolicyStatus(value) {
+  return ACTIVE_POLICY_STATUSES.has(normalizePolicyStatus(value).toLowerCase());
+}
+
+function buildPolicyStatusLookupValue(row, labels) {
+  for (const label of labels) {
+    if (row[label] !== undefined && String(row[label]).trim() !== "") {
+      return row[label];
+    }
+    const normalizedCandidate = normalizeLabel(label);
+    const key = Object.keys(row).find((entry) => normalizeLabel(entry) === normalizedCandidate);
+    if (key && String(row[key]).trim() !== "") {
+      return row[key];
+    }
+  }
+  return "";
+}
+
+function describePolicyStatus(value) {
+  const status = normalizePolicyStatus(value);
+  return status || "unknown";
+}
+
+function buildPolicyEntriesByCertificateMap(cache) {
+  const map = new Map();
+  (cache?.items || []).forEach((entry) => {
+    const certificateNumber = normalizeCertificateNumber(entry.certificate_number).toLowerCase();
+    const policyId = normalizePolicyId(entry.policy_id);
+    if (!certificateNumber || !policyId) return;
+    const entries = map.get(certificateNumber) || [];
+    entries.push(entry);
+    map.set(certificateNumber, entries);
+  });
+  return map;
+}
+
+function selectPolicyEntryForCertificate({ certificateNumber, entries = [], preferredPolicyId = "" } = {}) {
+  const normalizedCertificate = normalizeCertificateNumber(certificateNumber);
+  const normalizedPreferredPolicyId = normalizePolicyId(preferredPolicyId).toLowerCase();
+  const uniqueEntries = Array.from(
+    new Map(
+      (entries || [])
+        .filter((entry) => normalizePolicyId(entry?.policy_id))
+        .map((entry) => [normalizePolicyId(entry.policy_id).toLowerCase(), entry])
+    ).values()
+  );
+  const activeEntries = uniqueEntries.filter((entry) => isActivePolicyStatus(entry.policy_status));
+
+  if (normalizedPreferredPolicyId) {
+    const preferredEntry = uniqueEntries.find(
+      (entry) => normalizePolicyId(entry.policy_id).toLowerCase() === normalizedPreferredPolicyId
+    );
+    if (!preferredEntry) {
+      return {
+        entry: null,
+        issue: {
+          severity: "error",
+          code: "manual_policy_not_found",
+          message: `Policy ${preferredPolicyId} does not belong to certificate ${normalizedCertificate}.`,
+        },
+      };
+    }
+    if (!isActivePolicyStatus(preferredEntry.policy_status)) {
+      return {
+        entry: null,
+        issue: {
+          severity: "error",
+          code: "policy_not_active_for_import",
+          message: `Policy ${preferredEntry.policy_id} for certificate ${normalizedCertificate} is ${describePolicyStatus(preferredEntry.policy_status)}. Only ${ACTIVE_POLICY_STATUS_LABEL} policies can be imported.`,
+        },
+      };
+    }
+    return { entry: preferredEntry, issue: null };
+  }
+
+  if (activeEntries.length === 1) {
+    return { entry: activeEntries[0], issue: null };
+  }
+
+  if (activeEntries.length > 1) {
+    return {
+      entry: null,
+      issue: {
+        severity: "error",
+        code: "multiple_active_policies",
+        message: `Certificate ${normalizedCertificate} has multiple ${ACTIVE_POLICY_STATUS_LABEL} policies. Resolve the active policy in Salesforce before importing.`,
+      },
+    };
+  }
+
+  if (uniqueEntries.length) {
+    return {
+      entry: null,
+      issue: {
+        severity: "error",
+        code: "no_active_policy_status",
+        message: `Certificate ${normalizedCertificate} is not on report ${POLICY_REPORT_ID} with an active policy status. Only ${ACTIVE_POLICY_STATUS_LABEL} policies can be imported.`,
+      },
+    };
+  }
+
+  return { entry: null, issue: null };
 }
 
 function normalizePersonName(value) {
@@ -682,7 +792,7 @@ function buildPolicyLookupEntriesFromRows(rows) {
     if (!certificateNumber || !policyId) {
       return;
     }
-    const key = certificateNumber.toLowerCase();
+    const key = `${certificateNumber.toLowerCase()}::${policyId.toLowerCase()}`;
     if (seen.has(key)) {
       return;
     }
@@ -704,6 +814,14 @@ function buildPolicyLookupEntriesFromRows(rows) {
       p12: null,
       member_1_name: "",
       member_2_name: "",
+      policy_status: normalizePolicyStatus(
+        buildPolicyStatusLookupValue(row, [
+          "Policy Status",
+          "Policy: Policy Status",
+          "Policy: Status",
+          "Status",
+        ])
+      ),
       refreshed_at: new Date().toISOString(),
       source_report_id: POLICY_REPORT_ID,
     });
@@ -761,6 +879,14 @@ function buildPremiumLookupEntriesFromRows(rows) {
       p12: normalizeAmount(findValueByLabels(row, ["P12"])),
       member_1_name: normalizeText(findValueByLabels(row, ["Member 1", "Member 1 Name"])),
       member_2_name: normalizeText(findValueByLabels(row, ["Member 2", "Member 2 Name"])),
+      policy_status: normalizePolicyStatus(
+        buildPolicyStatusLookupValue(row, [
+          "Policy Status",
+          "Policy: Policy Status",
+          "Policy: Status",
+          "Status",
+        ])
+      ),
       refreshed_at: new Date().toISOString(),
       source_report_id: PREMIUM_REPORT_ID,
     });
@@ -791,6 +917,7 @@ function mergeLookupEntries(...entryGroups) {
       p12: entry?.p12 ?? previous.p12 ?? null,
       member_1_name: normalizeText(entry?.member_1_name || previous.member_1_name || ""),
       member_2_name: normalizeText(entry?.member_2_name || previous.member_2_name || ""),
+      policy_status: normalizePolicyStatus(entry?.policy_status || previous.policy_status || ""),
       refreshed_at: entry?.refreshed_at || previous.refreshed_at || new Date().toISOString(),
       source_report_id: entry?.source_report_id || previous.source_report_id || "",
     });
@@ -849,7 +976,7 @@ async function fetchPolicyLookupEntriesForCertificates(certificateNumbers = []) 
     }));
 
     buildPolicyLookupEntriesFromRows(normalizedRows).forEach((entry) => {
-      const key = normalizeCertificateNumber(entry.certificate_number).toLowerCase();
+      const key = `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`;
       if (!key || seen.has(key)) {
         return;
       }
@@ -915,6 +1042,7 @@ WHERE Account__r.Name IN (${uniqueCertificates.map((entry) => `'${escapeSoqlStri
     p12: normalizeAmount(record.P12__c),
     member_1_name: normalizeText(record.Member_1_Name__c || record.Member_1_Contact_Id__r?.Name),
     member_2_name: normalizeText(record.Member_2_Name__c || record.Member_2_Contact_Id__r?.Name),
+    policy_status: "",
     refreshed_at: new Date().toISOString(),
     source_report_id: PREMIUM_REPORT_ID,
   }));
@@ -1011,6 +1139,7 @@ AND ${premiumField.toUpperCase()}__c = ${paymentAmount.toFixed(2)}
         member_2_name: member2Name,
         matched_name_field: matchedField,
         expected_amount: expectedAmount,
+        policy_status: "",
       };
     })
     .filter((entry) => entry.matched_name_field && isSameAmount(entry.expected_amount, paymentAmount));
@@ -1041,11 +1170,7 @@ AND ${premiumField.toUpperCase()}__c = ${paymentAmount.toFixed(2)}
 async function enrichSessionRowsForPremiumReview(sessionId, policyCacheState, certificateRecordIdMap = new Map()) {
   const rows = readRows();
   const sessionRows = rows.filter((entry) => entry.session_id === sessionId);
-  const premiumEntryByCertificate = new Map(
-    (policyCacheState?.items || [])
-      .map((entry) => [normalizeCertificateNumber(entry.certificate_number).toLowerCase(), entry])
-      .filter(([key]) => Boolean(key))
-  );
+  const premiumEntriesByCertificate = buildPolicyEntriesByCertificateMap(policyCacheState);
 
   for (const row of sessionRows) {
     const certificateNumber = normalizeCertificateNumber(row.certificate_number);
@@ -1057,7 +1182,11 @@ async function enrichSessionRowsForPremiumReview(sessionId, policyCacheState, ce
     row.suggested_policy_id = "";
     row.suggested_certificate_number = "";
 
-    const premiumEntry = premiumEntryByCertificate.get(certificateKey) || null;
+    const premiumEntry = selectPolicyEntryForCertificate({
+      certificateNumber,
+      entries: premiumEntriesByCertificate.get(certificateKey) || [],
+      preferredPolicyId: normalizePolicyId(row.manual_policy_id),
+    }).entry;
     const expectedAmount = getExpectedPremiumAmount(premiumEntry, row.months);
     const paymentAmount = normalizeAmount(row.amount);
     const shouldLookByName =
@@ -1102,17 +1231,6 @@ function refreshPolicyLookupFromCsv(fileName, base64Content) {
   };
   writePolicyCache(nextCache);
   return nextCache;
-}
-
-function buildPolicyLookupMap(cache) {
-  const map = new Map();
-  (cache?.items || []).forEach((entry) => {
-    const certificateNumber = normalizeCertificateNumber(entry.certificate_number);
-    const policyId = normalizePolicyId(entry.policy_id);
-    if (!certificateNumber || !policyId) return;
-    map.set(certificateNumber.toLowerCase(), policyId);
-  });
-  return map;
 }
 
 function buildPolicyLookupByPolicyIdMap(cache) {
@@ -1196,9 +1314,8 @@ function revalidateSession(sessionId) {
   });
   const priorTransactions = duplicateHistoryMap(sessionId);
   const policyCacheState = readPolicyCache();
-  const lookupMap = buildPolicyLookupMap(policyCacheState);
+  const policyEntriesByCertificate = buildPolicyEntriesByCertificateMap(policyCacheState);
   const policyLookupByIdMap = buildPolicyLookupByPolicyIdMap(policyCacheState);
-  const policyLookupByCertificateRecordIdMap = buildPolicyLookupByCertificateRecordIdMap(policyCacheState);
 
   let readyCount = 0;
   let errorCount = 0;
@@ -1207,21 +1324,22 @@ function revalidateSession(sessionId) {
 
   sessionRows.forEach((row) => {
     const certificateNumber = normalizeCertificateNumber(row.certificate_number);
-    const matchedPolicyId = normalizePolicyId(row.manual_policy_id || lookupMap.get(certificateNumber.toLowerCase()) || "");
     const amountValue = normalizeAmount(row.amount);
-    const certificateLookupEntry =
-      policyCacheState.items.find(
-        (entry) => normalizeCertificateNumber(entry.certificate_number).toLowerCase() === certificateNumber.toLowerCase()
-      ) || null;
-    const policyEntry =
-      (matchedPolicyId && policyLookupByIdMap.get(matchedPolicyId.toLowerCase())) ||
-      certificateLookupEntry;
-    const matchedCertificateRecordId = normalizeText(
-      row.matched_certificate_record_id ||
-      policyEntry?.certificate_record_id ||
-      certificateLookupEntry?.certificate_record_id ||
-      ""
-    );
+    const manualPolicyId = normalizePolicyId(row.manual_policy_id);
+    const certificateEntries = certificateNumber
+      ? (policyEntriesByCertificate.get(certificateNumber.toLowerCase()) || [])
+      : [];
+    const manualPolicyEntry = manualPolicyId
+      ? (policyLookupByIdMap.get(manualPolicyId.toLowerCase()) || null)
+      : null;
+    const policySelection = selectPolicyEntryForCertificate({
+      certificateNumber,
+      entries: certificateEntries,
+      preferredPolicyId: manualPolicyId,
+    });
+    const policyEntry = policySelection.entry;
+    const matchedPolicyId = normalizePolicyId(policyEntry?.policy_id || "");
+    const matchedCertificateRecordId = normalizeText(policyEntry?.certificate_record_id || "");
     const expectedAmount = getExpectedPremiumAmount(policyEntry, row.months);
     const premiumLabel = getPremiumLabelForMonths(row.months);
     const issues = [];
@@ -1230,8 +1348,31 @@ function revalidateSession(sessionId) {
       issues.push({ severity: "error", code: "missing_certificate_number", message: "Missing certificate number / ID1." });
     }
 
+    if (manualPolicyId && manualPolicyEntry && certificateNumber) {
+      const manualCertificateNumber = normalizeCertificateNumber(manualPolicyEntry.certificate_number);
+      if (manualCertificateNumber && manualCertificateNumber.toLowerCase() !== certificateNumber.toLowerCase()) {
+        issues.push({
+          severity: "error",
+          code: "manual_policy_certificate_mismatch",
+          message: `Policy ${manualPolicyId} belongs to certificate ${manualCertificateNumber}, not ${certificateNumber}.`,
+        });
+      }
+    }
+
+    if (policySelection.issue) {
+      issues.push(policySelection.issue);
+    }
+
     if (!matchedPolicyId) {
-      issues.push({ severity: "error", code: "missing_policy_id", message: "Missing Policy ID." });
+      if (!policySelection.issue) {
+        issues.push({
+          severity: "error",
+          code: "missing_policy_id",
+          message: certificateNumber
+            ? `Certificate ${certificateNumber} was not found on report ${POLICY_REPORT_ID}.`
+            : "Missing Policy ID.",
+        });
+      }
       missingPolicyCount += 1;
     }
 
@@ -1282,6 +1423,7 @@ function revalidateSession(sessionId) {
 
     row.certificate_number = certificateNumber;
     row.matched_policy_id = matchedPolicyId;
+    row.matched_policy_status = normalizePolicyStatus(policyEntry?.policy_status || "");
     row.matched_certificate_record_id = matchedCertificateRecordId;
     row.payment_name = buildPaymentName({
       certificate_number: certificateNumber,
@@ -1581,6 +1723,11 @@ async function refreshCcPaymentImportPolicyLookupFromSalesforce(sessionId) {
   const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates(sessionCertificateNumbers);
   const targetedPolicyDetailEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
+  const knownCertificatePolicyKeys = new Set(
+    (baseLookupCache.items || []).map((entry) =>
+      `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+    )
+  );
 
   const nextCache = {
     reportId: POLICY_REPORT_ID,
@@ -1589,8 +1736,16 @@ async function refreshCcPaymentImportPolicyLookupFromSalesforce(sessionId) {
     items: mergeLookupEntries(
       baseLookupCache.items,
       premiumEntries,
-      targetedLookupEntries,
-      targetedPolicyDetailEntries
+      targetedLookupEntries.filter((entry) =>
+        knownCertificatePolicyKeys.has(
+          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+        )
+      ),
+      targetedPolicyDetailEntries.filter((entry) =>
+        knownCertificatePolicyKeys.has(
+          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+        )
+      )
     ),
   };
 

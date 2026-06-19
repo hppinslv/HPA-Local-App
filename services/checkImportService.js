@@ -23,6 +23,8 @@ const PREMIUM_REPORT_ID = "00OQm000003Q6cjMAC";
 const DEFAULT_ACTOR = "Local User";
 const IMPORT_TEMPLATE_KEY = "check-payments";
 const IMPORT_BATCH_SIZE = 200;
+const ACTIVE_POLICY_STATUSES = new Set(["in force", "payment issues", "follow up"]);
+const ACTIVE_POLICY_STATUS_LABEL = "In Force, Payment Issues, or Follow Up";
 const CHECK_HEADER_ROW = [
   "Transaction Type",
   "Deposit Date",
@@ -120,6 +122,19 @@ function normalizeCertificateNumber(value) {
 
 function normalizePolicyId(value) {
   return normalizeText(value);
+}
+
+function normalizePolicyStatus(value) {
+  return normalizeText(value).replace(/\s+/g, " ");
+}
+
+function isActivePolicyStatus(value) {
+  return ACTIVE_POLICY_STATUSES.has(normalizePolicyStatus(value).toLowerCase());
+}
+
+function describePolicyStatus(value) {
+  const status = normalizePolicyStatus(value);
+  return status || "unknown";
 }
 
 function logCheckImportEvent(message, details = null) {
@@ -450,8 +465,15 @@ function buildPolicyLookupEntriesFromRows(rows) {
       row["Certificate Record Id"] ||
       ""
     );
-    if (!certificateNumber) return;
-    const key = certificateNumber.toLowerCase();
+    const policyStatus = normalizePolicyStatus(
+      row["Policy Status"] ||
+      row["Policy: Policy Status"] ||
+      row["Policy: Status"] ||
+      row.Status ||
+      ""
+    );
+    if (!certificateNumber || !policyId) return;
+    const key = `${certificateNumber.toLowerCase()}::${policyId.toLowerCase()}`;
     if (seen.has(key)) return;
     seen.add(key);
     entries.push({
@@ -465,6 +487,7 @@ function buildPolicyLookupEntriesFromRows(rows) {
       p12: normalizeAmount(row.P12),
       member_1_name: normalizeText(row["Member 1"] || row["Member 1 Name"] || ""),
       member_2_name: normalizeText(row["Member 2"] || row["Member 2 Name"] || ""),
+      policy_status: policyStatus,
       refreshed_at: new Date().toISOString(),
       source_report_id: POLICY_REPORT_ID,
     });
@@ -492,6 +515,7 @@ function mergeLookupEntries(...entryGroups) {
       p12: entry?.p12 ?? previous.p12 ?? null,
       member_1_name: normalizeText(entry?.member_1_name || previous.member_1_name || ""),
       member_2_name: normalizeText(entry?.member_2_name || previous.member_2_name || ""),
+      policy_status: normalizePolicyStatus(entry?.policy_status || previous.policy_status || ""),
       refreshed_at: entry?.refreshed_at || previous.refreshed_at || new Date().toISOString(),
       source_report_id: entry?.source_report_id || previous.source_report_id || "",
     });
@@ -549,6 +573,7 @@ WHERE Account__r.Name IN (${uniqueCertificates.map((entry) => `'${escapeSoqlStri
     p12: normalizeAmount(record.P12__c),
     member_1_name: normalizeText(record.Member_1_Name__c || record.Member_1_Contact_Id__r?.Name),
     member_2_name: normalizeText(record.Member_2_Name__c || record.Member_2_Contact_Id__r?.Name),
+    policy_status: "",
     refreshed_at: new Date().toISOString(),
     source_report_id: PREMIUM_REPORT_ID,
   }));
@@ -621,6 +646,7 @@ WHERE (${[
       p12: normalizeAmount(record.P12__c),
       member_1_name: member1Name,
       member_2_name: member2Name,
+      policy_status: "",
     };
     const options = getPremiumComparisonOptions(policyEntry);
     return options.map((entry) => ({
@@ -780,6 +806,7 @@ function buildImportRow(sessionId, sourceRow, sessionMeta = {}) {
     corrected_months: "",
     inferred_certificate_number: "",
     inferred_policy_id: "",
+    inferred_policy_status: "",
     inferred_certificate_record_id: "",
     inferred_member_1_name: "",
     inferred_member_2_name: "",
@@ -849,11 +876,55 @@ function buildLookupMaps(cache) {
     const certificateNumber = normalizeCertificateNumber(entry.certificate_number).toLowerCase();
     const policyId = normalizePolicyId(entry.policy_id).toLowerCase();
     const certificateRecordId = normalizeText(entry.certificate_record_id).toLowerCase();
-    if (certificateNumber) byCertificate.set(certificateNumber, entry);
+    if (certificateNumber && policyId) {
+      const entries = byCertificate.get(certificateNumber) || [];
+      entries.push(entry);
+      byCertificate.set(certificateNumber, entries);
+    }
     if (policyId) byPolicyId.set(policyId, entry);
     if (certificateRecordId) byCertificateRecordId.set(certificateRecordId, entry);
   });
   return { byCertificate, byPolicyId, byCertificateRecordId };
+}
+
+function selectPolicyEntryForCertificate({ certificateNumber, entries = [] } = {}) {
+  const normalizedCertificate = normalizeCertificateNumber(certificateNumber);
+  const uniqueEntries = Array.from(
+    new Map(
+      (entries || [])
+        .filter((entry) => normalizePolicyId(entry?.policy_id))
+        .map((entry) => [normalizePolicyId(entry.policy_id).toLowerCase(), entry])
+    ).values()
+  );
+  const activeEntries = uniqueEntries.filter((entry) => isActivePolicyStatus(entry.policy_status));
+
+  if (activeEntries.length === 1) {
+    return { entry: activeEntries[0], issue: null };
+  }
+
+  if (activeEntries.length > 1) {
+    return {
+      entry: null,
+      issue: {
+        severity: "error",
+        code: "multiple_active_policies",
+        message: `Certificate ${normalizedCertificate} has multiple ${ACTIVE_POLICY_STATUS_LABEL} policies. Resolve the active policy in Salesforce before importing.`,
+      },
+    };
+  }
+
+  if (uniqueEntries.length) {
+    return {
+      entry: null,
+      issue: {
+        severity: "error",
+        code: "no_active_policy_status",
+        message: `Certificate ${normalizedCertificate} is not on report ${POLICY_REPORT_ID} with an active policy status. Only ${ACTIVE_POLICY_STATUS_LABEL} policies can be imported.`,
+      },
+    };
+  }
+
+  return { entry: null, issue: null };
 }
 
 function deriveMonthsAndExpectedAmount(policyEntry, paymentAmount) {
@@ -926,7 +997,12 @@ function revalidateSession(sessionId) {
   sessionRows.forEach((row) => {
     const certificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
     const paymentAmount = normalizeAmount(row.check_amount);
-    const directPolicyEntry = byCertificate.get(certificateNumber.toLowerCase()) || null;
+    const directCertificateEntries = byCertificate.get(certificateNumber.toLowerCase()) || [];
+    const directSelection = selectPolicyEntryForCertificate({
+      certificateNumber,
+      entries: directCertificateEntries,
+    });
+    const directPolicyEntry = directSelection.entry;
     const inferredPolicyEntry = row.inferred_certificate_number
       ? {
         certificate_number: normalizeCertificateNumber(row.inferred_certificate_number),
@@ -939,9 +1015,14 @@ function revalidateSession(sessionId) {
         p12: normalizeAmount(row.inferred_p12),
         member_1_name: normalizeText(row.inferred_member_1_name),
         member_2_name: normalizeText(row.inferred_member_2_name),
+        policy_status: normalizePolicyStatus(row.inferred_policy_status),
       }
       : null;
-    const policyEntry = directPolicyEntry || inferredPolicyEntry || null;
+    const policyEntry =
+      directPolicyEntry ||
+      (!directCertificateEntries.length && inferredPolicyEntry && isActivePolicyStatus(inferredPolicyEntry.policy_status)
+        ? inferredPolicyEntry
+        : null);
     const matchedPolicyId = normalizePolicyId(policyEntry?.policy_id || "");
     const matchedCertificateRecordId = normalizeText(policyEntry?.certificate_record_id || "");
     const issues = [];
@@ -967,11 +1048,14 @@ function revalidateSession(sessionId) {
     if (!certificateNumber) {
       issues.push({ severity: "error", code: "missing_certificate", message: buildMissingCertificateMessage("") });
       missingCertificateCount += 1;
+    } else if (directSelection.issue) {
+      issues.push(directSelection.issue);
+      missingCertificateCount += 1;
     } else if (!matchedCertificateRecordId) {
       issues.push({
         severity: "error",
         code: "missing_certificate_record_id",
-        message: buildMissingCertificateMessage(certificateNumber),
+        message: `Certificate ${certificateNumber} was not found on report ${POLICY_REPORT_ID}. Correct the certificate number or exclude this row.`,
       });
       missingCertificateCount += 1;
       logCheckImportEvent("Certificate not found", {
@@ -1054,6 +1138,7 @@ function revalidateSession(sessionId) {
 
     row.certificate_number = certificateNumber;
     row.matched_policy_id = matchedPolicyId;
+    row.matched_policy_status = normalizePolicyStatus(policyEntry?.policy_status || "");
     row.matched_certificate_record_id = matchedCertificateRecordId;
     row.payment_name = buildPaymentName(row);
 
@@ -1234,10 +1319,34 @@ async function hydrateCheckImportSession(sessionId) {
   for (const row of rows) {
     if (row.session_id !== sessionId || row.excluded) continue;
     const certificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
-    const directPolicyEntry = certificateNumber ? byCertificate.get(certificateNumber.toLowerCase()) : null;
+    const directSelection = selectPolicyEntryForCertificate({
+      certificateNumber,
+      entries: certificateNumber ? (byCertificate.get(certificateNumber.toLowerCase()) || []) : [],
+    });
+    const directPolicyEntry = directSelection.entry;
     if (directPolicyEntry?.certificate_record_id) {
       row.inferred_certificate_number = "";
       row.inferred_policy_id = "";
+      row.inferred_policy_status = "";
+      row.inferred_certificate_record_id = "";
+      row.inferred_member_1_name = "";
+      row.inferred_member_2_name = "";
+      row.inferred_months = "";
+      row.inferred_expected_amount = null;
+      row.inferred_premium_comparison_label = "";
+      row.inferred_match_source = "";
+      row.inferred_p1 = null;
+      row.inferred_p2 = null;
+      row.inferred_p3 = null;
+      row.inferred_p6 = null;
+      row.inferred_p12 = null;
+      continue;
+    }
+
+    if (directSelection.issue) {
+      row.inferred_certificate_number = "";
+      row.inferred_policy_id = "";
+      row.inferred_policy_status = "";
       row.inferred_certificate_record_id = "";
       row.inferred_member_1_name = "";
       row.inferred_member_2_name = "";
@@ -1257,6 +1366,7 @@ async function hydrateCheckImportSession(sessionId) {
     if (!fallbackMatch?.certificate_record_id) {
       row.inferred_certificate_number = "";
       row.inferred_policy_id = "";
+      row.inferred_policy_status = "";
       row.inferred_certificate_record_id = "";
       row.inferred_member_1_name = "";
       row.inferred_member_2_name = "";
@@ -1275,6 +1385,7 @@ async function hydrateCheckImportSession(sessionId) {
     didChange = true;
     row.inferred_certificate_number = normalizeCertificateNumber(fallbackMatch.certificate_number);
     row.inferred_policy_id = normalizePolicyId(fallbackMatch.policy_id);
+    row.inferred_policy_status = normalizePolicyStatus(fallbackMatch.policy_status);
     row.inferred_certificate_record_id = normalizeText(fallbackMatch.certificate_record_id);
     row.inferred_member_1_name = normalizeText(fallbackMatch.member_1_name);
     row.inferred_member_2_name = normalizeText(fallbackMatch.member_2_name);
@@ -1318,6 +1429,11 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     .filter(Boolean);
   const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
+  const knownCertificatePolicyKeys = new Set(
+    (baseLookupCache.items || []).map((entry) =>
+      `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+    )
+  );
   const certificateIdEntries = sessionCertificateNumbers.map((certificateNumber) => ({
     certificate_number: certificateNumber,
     certificate_record_id: normalizeText(certificateRecordIdMap.get(certificateNumber.toLowerCase()) || ""),
@@ -1329,7 +1445,16 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     reportId: POLICY_REPORT_ID,
     refreshedAt: new Date().toISOString(),
     source: "salesforce-report+premium-report+policy-soql+certificate-soql",
-    items: mergeLookupEntries(baseLookupCache.items, premiumEntries, targetedPolicyEntries, certificateIdEntries),
+    items: mergeLookupEntries(
+      baseLookupCache.items,
+      premiumEntries,
+      targetedPolicyEntries.filter((entry) =>
+        knownCertificatePolicyKeys.has(
+          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+        )
+      ),
+      certificateIdEntries
+    ),
   };
 
   writePolicyCache(nextCache);
@@ -1385,11 +1510,24 @@ async function updateCheckImportRow(sessionId, rowId, updates = {}) {
       refreshed_at: new Date().toISOString(),
       source_report_id: POLICY_REPORT_ID,
     }];
+    const knownCertificatePolicyKeys = new Set(
+      (readPolicyCache().items || []).map((entry) =>
+        `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+      )
+    );
     const nextCache = {
       ...readPolicyCache(),
       refreshedAt: new Date().toISOString(),
       source: "manual-certificate-refresh",
-      items: mergeLookupEntries(readPolicyCache().items, targetedPolicyEntries, certificateIdEntries),
+      items: mergeLookupEntries(
+        readPolicyCache().items,
+        targetedPolicyEntries.filter((entry) =>
+          knownCertificatePolicyKeys.has(
+            `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+          )
+        ),
+        certificateIdEntries
+      ),
     };
     writePolicyCache(nextCache);
   }

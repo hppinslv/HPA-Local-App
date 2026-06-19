@@ -148,6 +148,7 @@ test("deleting a duplicate-only cc payment session revalidates the remaining ses
         certificate_number: "226560",
         policy_id: "a00f400000QB7x2AAD",
         certificate_record_id: "cert-1",
+        policy_status: "In Force",
         p1: 75.62,
       },
       ],
@@ -207,4 +208,160 @@ test("imported cc payment sessions cannot be deleted", () => {
     () => deleteCcPaymentImportSession("session_imported"),
     /cannot be deleted/i
   );
+});
+
+test("cc payment revalidation prefers the active policy status for a certificate", () => {
+  __setCcPaymentImportStateForTests({
+    sessions: [{
+      id: "session_active_policy",
+      original_filename: "active.csv",
+      import_template_key: "credit-card-payments",
+      import_template_name: "Credit Card Payment Import",
+      salesforce_object_api_name: "Payments__c",
+      operation_type: "insert",
+      uploaded_at: "2026-06-19T06:00:00.000Z",
+      updated_at: "2026-06-19T06:00:00.000Z",
+      uploaded_by: "Local User",
+      policy_lookup_refreshed_at: null,
+      status: "pending",
+      row_count: 1,
+      ready_count: 0,
+      error_count: 0,
+      warning_count: 0,
+      missing_policy_count: 0,
+      attempted_import_count: 0,
+      successful_import_count: 0,
+      salesforce_failed_row_count: 0,
+      imported_row_count: 0,
+      failed_validation_row_count: 0,
+      final_status: "pending_review",
+      destination_object: "Payments__c",
+      exported_at: null,
+      export_filename: "",
+    }],
+    rows: [{
+      id: "row_active_policy",
+      session_id: "session_active_policy",
+      row_number: 1,
+      transaction_id: "txn-active",
+      certificate_number: "226560",
+      matched_policy_id: "",
+      matched_certificate_record_id: "stale-cert",
+      manual_policy_id: "",
+      amount: "75.62",
+      transaction_date: "2026-06-18",
+      payment_account: "5475",
+      months: 1,
+      status: "pending",
+      issue_reason: "",
+      issue_details: [],
+      payment_name: "",
+      name_amount_match_note: "",
+      raw_json: {
+        TransactionDate: "2026-06-18",
+      },
+      date_received: "",
+      type: "2",
+      pay_type: "3",
+      manual_payment: "Yes",
+    }],
+    policyCache: {
+      reportId: "00OQm0000016PuPMAU",
+      refreshedAt: null,
+      source: "test",
+      items: [
+        {
+          certificate_number: "226560",
+          policy_id: "policy-closed",
+          certificate_record_id: "cert-closed",
+          policy_status: "Cancelled",
+          p1: 75.62,
+        },
+        {
+          certificate_number: "226560",
+          policy_id: "policy-active",
+          certificate_record_id: "cert-active",
+          policy_status: "In Force",
+          p1: 75.62,
+        },
+      ],
+    },
+  });
+
+  const session = revalidateSession("session_active_policy");
+  assert.equal(session.error_count, 0);
+  assert.equal(session.ready_count, 1);
+  assert.equal(session.rows[0].matched_policy_id, "policy-active");
+  assert.equal(session.rows[0].matched_certificate_record_id, "cert-active");
+  assert.equal(session.rows[0].matched_policy_status, "In Force");
+});
+
+test("cc payment revalidation errors when the certificate is not on the policy report", () => {
+  __setCcPaymentImportStateForTests({
+    sessions: [{
+      id: "session_missing_report_cert",
+      original_filename: "missing.csv",
+      import_template_key: "credit-card-payments",
+      import_template_name: "Credit Card Payment Import",
+      salesforce_object_api_name: "Payments__c",
+      operation_type: "insert",
+      uploaded_at: "2026-06-19T06:00:00.000Z",
+      updated_at: "2026-06-19T06:00:00.000Z",
+      uploaded_by: "Local User",
+      policy_lookup_refreshed_at: null,
+      status: "pending",
+      row_count: 1,
+      ready_count: 0,
+      error_count: 0,
+      warning_count: 0,
+      missing_policy_count: 0,
+      attempted_import_count: 0,
+      successful_import_count: 0,
+      salesforce_failed_row_count: 0,
+      imported_row_count: 0,
+      failed_validation_row_count: 0,
+      final_status: "pending_review",
+      destination_object: "Payments__c",
+      exported_at: null,
+      export_filename: "",
+    }],
+    rows: [{
+      id: "row_missing_report_cert",
+      session_id: "session_missing_report_cert",
+      row_number: 1,
+      transaction_id: "txn-missing",
+      certificate_number: "999999",
+      matched_policy_id: "stale-policy",
+      matched_certificate_record_id: "stale-cert",
+      manual_policy_id: "",
+      amount: "75.62",
+      transaction_date: "2026-06-18",
+      payment_account: "5475",
+      months: 1,
+      status: "pending",
+      issue_reason: "",
+      issue_details: [],
+      payment_name: "",
+      name_amount_match_note: "",
+      raw_json: {
+        TransactionDate: "2026-06-18",
+      },
+      date_received: "",
+      type: "2",
+      pay_type: "3",
+      manual_payment: "Yes",
+    }],
+    policyCache: {
+      reportId: "00OQm0000016PuPMAU",
+      refreshedAt: null,
+      source: "test",
+      items: [],
+    },
+  });
+
+  const session = revalidateSession("session_missing_report_cert");
+  assert.equal(session.error_count, 1);
+  assert.equal(session.rows[0].matched_policy_id, "");
+  assert.equal(session.rows[0].matched_certificate_record_id, "");
+  assert.match(session.rows[0].issue_reason, /not found on report 00OQm0000016PuPMAU/i);
 });
