@@ -47,7 +47,7 @@ const scoreDashboardSnapshotConfig = Object.freeze({
     {
       reportKey: "moneyReceived",
       reportLabel: "Money Received",
-      salesforceReportId: "00OQm000001xzDNMAY",
+      salesforceReportId: "00OQm000001xzA9MAI",
       expectedGroupings: ["Score Period"],
       expectedMetrics: [
         {
@@ -61,7 +61,7 @@ const scoreDashboardSnapshotConfig = Object.freeze({
     {
       reportKey: "moneyReceivedByPayType",
       reportLabel: "Money Received by Payment Type",
-      salesforceReportId: "00OQm000001xzA9MAI",
+      salesforceReportId: "00OQm000001xzDNMAY",
       expectedGroupings: ["Payment Type", "Score Period"],
       expectedMetrics: [
         {
@@ -508,22 +508,20 @@ function buildGroupingLabelLookup(groups = [], path = [], lookup = new Map()) {
 
   list.forEach((group) => {
     const nextPath = [...path, group];
-    const children = Array.isArray(group.groupings) ? group.groupings : [];
-    if (children.length) {
-      buildGroupingLabelLookup(children, nextPath, lookup);
-      return;
-    }
-
     lookup.set(
       String(group?.key || "T"),
       nextPath.map((entry) => normalizeText(entry?.label))
     );
+    const children = Array.isArray(group.groupings) ? group.groupings : [];
+    if (children.length) {
+      buildGroupingLabelLookup(children, nextPath, lookup);
+    }
   });
 
   return lookup;
 }
 
-function collectLeafGroupedRows(reportPayload) {
+function collectLeafGroupedRows(reportPayload, minimumPathLength = 0) {
   const rows = [];
   const factMap = reportPayload.factMap || {};
   const downLookup = buildGroupingLabelLookup(reportPayload.groupingsDown?.groupings || []);
@@ -545,9 +543,14 @@ function collectLeafGroupedRows(reportPayload) {
       return;
     }
 
+    const pathLabels = [...downPath, ...acrossPath];
+    if (pathLabels.length < minimumPathLength) {
+      return;
+    }
+
     rows.push({
       factKey,
-      pathLabels: [...downPath, ...acrossPath],
+      pathLabels,
       rawAggregates: aggregates.map((entry) => entry?.label ?? ""),
     });
   });
@@ -597,7 +600,7 @@ function parseReportMetricRows(reportConfig, describePayload, reportPayload, sna
 
   const aggregateColumns = getAggregateColumns(reportPayload);
   const metricLookup = buildMetricLookup(reportConfig, aggregateColumns);
-  const groupedRows = collectLeafGroupedRows(reportPayload);
+  const groupedRows = collectLeafGroupedRows(reportPayload, groupingColumns.length);
   if (!groupedRows.length) {
     throw new Error(`${reportConfig.reportLabel} did not return any grouped rows to capture.`);
   }

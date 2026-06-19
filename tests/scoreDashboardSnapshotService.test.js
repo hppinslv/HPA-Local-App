@@ -247,6 +247,167 @@ function buildMatrixPayload() {
   };
 }
 
+function buildAcrossParentKeyPayload() {
+  return {
+    reportMetadata: {
+      aggregates: ["s!AMOUNT"],
+    },
+    reportExtendedMetadata: {
+      groupingColumnInfo: {
+        SCORE_PERIOD: {
+          label: "Score Period",
+          groupingLevel: 0,
+        },
+      },
+      aggregateColumnInfo: {
+        "s!AMOUNT": {
+          label: "Sum of Amount",
+        },
+      },
+    },
+    groupingsAcross: {
+      groupings: [
+        {
+          key: "0",
+          label: "1. Current Month",
+          groupings: [
+            {
+              key: "0_0",
+              label: "Current Month Detail",
+              groupings: [],
+            },
+          ],
+        },
+        {
+          key: "1",
+          label: "2. Last Month",
+          groupings: [
+            {
+              key: "1_0",
+              label: "Last Month Detail",
+              groupings: [],
+            },
+          ],
+        },
+        {
+          key: "2",
+          label: "3. Last Year",
+          groupings: [
+            {
+              key: "2_0",
+              label: "Last Year Detail",
+              groupings: [],
+            },
+          ],
+        },
+      ],
+    },
+    factMap: {
+      "T!0": {
+        aggregates: [{ label: "$200,709.55" }],
+      },
+      "T!1": {
+        aggregates: [{ label: "$203,284.80" }],
+      },
+      "T!2": {
+        aggregates: [{ label: "$215,228.65" }],
+      },
+    },
+  };
+}
+
+function buildMatrixParentKeyPayload() {
+  return {
+    reportMetadata: {
+      aggregates: ["s!AMOUNT"],
+    },
+    reportExtendedMetadata: {
+      groupingColumnInfo: {
+        PAYMENT_TYPE: {
+          label: "Payment Type",
+          groupingLevel: 0,
+        },
+        SCORE_PERIOD: {
+          label: "Score Period",
+          groupingLevel: 1,
+        },
+      },
+      aggregateColumnInfo: {
+        "s!AMOUNT": {
+          label: "Sum of Amount",
+        },
+      },
+    },
+    groupingsDown: {
+      groupings: [
+        {
+          key: "0",
+          label: "ACH",
+          groupings: [
+            {
+              key: "0_0",
+              label: "ACH Detail",
+              groupings: [],
+            },
+          ],
+        },
+        {
+          key: "1",
+          label: "Credit Card",
+          groupings: [
+            {
+              key: "1_0",
+              label: "Credit Card Detail",
+              groupings: [],
+            },
+          ],
+        },
+        {
+          key: "2",
+          label: "Check",
+          groupings: [
+            {
+              key: "2_0",
+              label: "Check Detail",
+              groupings: [],
+            },
+          ],
+        },
+      ],
+    },
+    groupingsAcross: {
+      groupings: [
+        {
+          key: "0",
+          label: "1. Current Month",
+          groupings: [],
+        },
+        {
+          key: "1",
+          label: "2. Last Month",
+          groupings: [],
+        },
+        {
+          key: "2",
+          label: "3. Last Year",
+          groupings: [],
+        },
+      ],
+    },
+    factMap: {
+      "0!0": { aggregates: [{ label: "$108,452.36" }] },
+      "0!1": { aggregates: [{ label: "$108,729.51" }] },
+      "0!2": { aggregates: [{ label: "$110,175.03" }] },
+      "1!0": { aggregates: [{ label: "$54,357.48" }] },
+      "1!1": { aggregates: [{ label: "$59,925.77" }] },
+      "1!2": { aggregates: [{ label: "$55,805.90" }] },
+      "2!0": { aggregates: [{ label: "$36,792.81" }] },
+      "2!1": { aggregates: [{ label: "$34,629.52" }] },
+      "2!2": { aggregates: [{ label: "$49,247.72" }] },
+    },
+  };
+}
+
 test("normalizeScorePeriodLabel strips Salesforce numeric prefixes", () => {
   assert.equal(normalizeScorePeriodLabel("1. Current Month"), "Current Month");
   assert.equal(normalizeScorePeriodLabel("4. 2 Years Ago"), "2 Years Ago");
@@ -358,6 +519,58 @@ test("parseReportMetricRows parses matrix payment-type rows from down and across
       { paymentType: "ACH", scorePeriod: "Current Month", metricValue: 108452.36 },
       { paymentType: "ACH", scorePeriod: "Last Month", metricValue: 108729.51 },
       { paymentType: "ACH", scorePeriod: "Last Year", metricValue: 110175.03 },
+    ]
+  );
+});
+
+test("parseReportMetricRows parses score-period rows when factMap uses parent across keys", () => {
+  const reportConfig = scoreDashboardSnapshotConfig.reports.find(
+    (entry) => entry.reportKey === "moneyReceived"
+  );
+  const parsed = parseReportMetricRows(
+    reportConfig,
+    {},
+    buildAcrossParentKeyPayload(),
+    "2026-06-19",
+    "2026-06-19T10:00:00.000Z"
+  );
+
+  assert.deepEqual(
+    parsed.rows.map((row) => ({
+      scorePeriod: row.score_period,
+      metricValue: row.metric_value,
+    })),
+    [
+      { scorePeriod: "Current Month", metricValue: 200709.55 },
+      { scorePeriod: "Last Month", metricValue: 203284.8 },
+      { scorePeriod: "Last Year", metricValue: 215228.65 },
+    ]
+  );
+});
+
+test("parseReportMetricRows parses matrix rows when factMap uses parent payment-type keys", () => {
+  const reportConfig = scoreDashboardSnapshotConfig.reports.find(
+    (entry) => entry.reportKey === "moneyReceivedByPayType"
+  );
+  const parsed = parseReportMetricRows(
+    reportConfig,
+    {},
+    buildMatrixParentKeyPayload(),
+    "2026-06-19",
+    "2026-06-19T10:00:00.000Z"
+  );
+
+  assert.equal(parsed.rows.length, 9);
+  assert.deepEqual(
+    parsed.rows.slice(3, 6).map((row) => ({
+      paymentType: row.payment_type,
+      scorePeriod: row.score_period,
+      metricValue: row.metric_value,
+    })),
+    [
+      { paymentType: "Credit Card", scorePeriod: "Current Month", metricValue: 54357.48 },
+      { paymentType: "Credit Card", scorePeriod: "Last Month", metricValue: 59925.77 },
+      { paymentType: "Credit Card", scorePeriod: "Last Year", metricValue: 55805.9 },
     ]
   );
 });
