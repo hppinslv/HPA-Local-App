@@ -123,6 +123,7 @@ const state = {
     trendRows: [],
     config: null,
     options: null,
+    auth: null,
     filters: {
       from: "",
       to: "",
@@ -10471,6 +10472,45 @@ function getScoreHistoryMetricFormat(metricKey) {
       : "number";
 }
 
+function getScoreHistoryReportLink(reportKey) {
+  const instanceUrl = String(state.scoreHistory.auth?.instanceUrl || "").trim().replace(/\/+$/, "");
+  if (!instanceUrl) {
+    return "";
+  }
+  const report = ensureArray(state.scoreHistory.config?.reports).find((entry) => entry.reportKey === reportKey);
+  const reportId = String(report?.salesforceReportId || "").trim();
+  if (!reportId) {
+    return "";
+  }
+  return `${instanceUrl}/lightning/r/Report/${encodeURIComponent(reportId)}/view`;
+}
+
+function syncScoreHistoryReportLinks() {
+  [
+    "score",
+    "moneyReceived",
+    "moneyReceivedByPayType",
+    "applicationsReceived",
+  ].forEach((reportKey) => {
+    const link = el(`score-history-report-link-${reportKey}`);
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    const href = getScoreHistoryReportLink(reportKey);
+    if (href) {
+      link.href = href;
+      link.classList.remove("is-disabled");
+      link.removeAttribute("aria-disabled");
+      link.tabIndex = 0;
+      return;
+    }
+    link.href = "#";
+    link.classList.add("is-disabled");
+    link.setAttribute("aria-disabled", "true");
+    link.tabIndex = -1;
+  });
+}
+
 function formatScoreHistoryMetric(metricKey, value) {
   const format = getScoreHistoryMetricFormat(metricKey);
   if (value === null || value === undefined || value === "") {
@@ -10675,12 +10715,20 @@ function renderScoreHistoryLatest() {
   }
   if (el("score-history-last-captured-at")) {
     el("score-history-last-captured-at").textContent = latest.capturedAt
-      ? formatDate(latest.capturedAt)
+      ? `Captured ${formatDate(latest.capturedAt)}`
       : "Not captured yet";
   }
   if (el("score-history-last-as-of")) {
-    el("score-history-last-as-of").textContent = latest.salesforceAsOfText || "Not available";
+    el("score-history-last-as-of").textContent = latest.salesforceAsOfText
+      ? latest.salesforceAsOfText
+      : "Salesforce As Of not available";
   }
+  if (el("score-history-hero-kicker")) {
+    el("score-history-hero-kicker").textContent = latest.snapshotDate
+      ? `Latest saved snapshot for ${formatDateOnly(latest.snapshotDate)}`
+      : "Daily dashboard snapshot";
+  }
+  syncScoreHistoryReportLinks();
 }
 
 function renderScoreHistoryTable() {
@@ -10734,10 +10782,11 @@ function renderScoreHistoryTrend() {
 async function loadScoreHistoryPage() {
   const filters = ensureScoreHistoryFilters();
   const query = buildScoreHistoryQuery(filters);
-  const [latestPayload, listPayload, trendPayload] = await Promise.all([
+  const [latestPayload, listPayload, trendPayload, authPayload] = await Promise.all([
     apiRequest("/api/score-dashboard-snapshots/latest"),
     apiRequest(`/api/score-dashboard-snapshots${query}`),
     apiRequest(`/api/score-dashboard-snapshots/trend${query}`),
+    apiRequest("/api/salesforce/auth-status"),
   ]);
 
   state.scoreHistory.latest = latestPayload || null;
@@ -10745,6 +10794,7 @@ async function loadScoreHistoryPage() {
   state.scoreHistory.options = listPayload?.options || null;
   state.scoreHistory.config = listPayload?.config || latestPayload?.config || null;
   state.scoreHistory.trendRows = ensureArray(trendPayload?.rows);
+  state.scoreHistory.auth = authPayload?.auth || null;
   state.scoreHistory.filters = {
     ...filters,
     ...(listPayload?.filters || {}),

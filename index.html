@@ -1475,101 +1475,50 @@
         </section>
 
         <section class="view" data-view="score-history">
-          <header class="page-header">
-            <p class="eyebrow">History</p>
-            <h2>SCORE Report History</h2>
-            <p class="page-copy">
-              Daily saved record of Salesforce SCORE dashboard values.
-            </p>
-          </header>
-
-          <section class="card-grid">
-            <article class="panel">
-              <div class="panel-heading">
-                <h3>Capture</h3>
-                <p>
-                  Capture today&apos;s SCORE snapshot manually now, or call the same endpoint
-                  from Task Scheduler, n8n, or cron after Salesforce refreshes.
+          <div class="score-history-page">
+            <section class="score-history-hero">
+              <div class="score-history-hero-badge">Salesforce</div>
+              <p class="score-history-hero-kicker" id="score-history-hero-kicker">
+                Daily dashboard snapshot
+              </p>
+              <div class="score-history-hero-card">
+                <h2>SCORE Report</h2>
+                <p class="score-history-hero-meta">
+                  <span id="score-history-last-as-of">Not available</span>
+                  <span class="score-history-meta-divider">·</span>
+                  <span id="score-history-last-captured-at">Not captured yet</span>
+                </p>
+                <div class="score-history-hero-actions">
+                  <button class="primary-button" id="score-history-capture-button">
+                    Capture Today&apos;s Snapshot
+                  </button>
+                  <button class="secondary-button" id="score-history-export-button">
+                    Export CSV
+                  </button>
+                  <a class="secondary-button" id="score-history-view-history-link" href="#score-history-history-panel">
+                    View History
+                  </a>
+                </div>
+                <p id="score-history-status" class="inline-status score-history-status"></p>
+                <p class="score-history-hero-date">
+                  Latest Snapshot Date:
+                  <strong id="score-history-last-date">Not captured yet</strong>
                 </p>
               </div>
-              <div class="action-row">
-                <button class="primary-button" id="score-history-capture-button">
-                  Capture Today&apos;s Snapshot
-                </button>
-                <button class="secondary-button" id="score-history-export-button">
-                  Export CSV
-                </button>
-              </div>
-              <p id="score-history-status" class="inline-status"></p>
-              <div class="field-grid score-history-meta-grid">
-                <div class="field-stack">
-                  <span class="field-label">Last Snapshot Date</span>
-                  <strong id="score-history-last-date">Not captured yet</strong>
-                </div>
-                <div class="field-stack">
-                  <span class="field-label">Captured At</span>
-                  <strong id="score-history-last-captured-at">Not captured yet</strong>
-                </div>
-                <div class="field-stack">
-                  <span class="field-label">Salesforce As Of</span>
-                  <strong id="score-history-last-as-of">Not available</strong>
-                </div>
-              </div>
-            </article>
+            </section>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <h3>Filters</h3>
-                <p>Limit the saved history table and export to the rows you want.</p>
-              </div>
-              <div class="field-grid score-history-filter-grid">
-                <div class="field-stack">
-                  <label class="field-label" for="score-history-filter-from">Date From</label>
-                  <input id="score-history-filter-from" class="field-input" type="date" />
-                </div>
-                <div class="field-stack">
-                  <label class="field-label" for="score-history-filter-to">Date To</label>
-                  <input id="score-history-filter-to" class="field-input" type="date" />
-                </div>
-                <div class="field-stack">
-                  <label class="field-label" for="score-history-filter-report">Report</label>
-                  <select id="score-history-filter-report" class="field-input"></select>
-                </div>
-                <div class="field-stack">
-                  <label class="field-label" for="score-history-filter-score-period">Score Period</label>
-                  <select id="score-history-filter-score-period" class="field-input"></select>
-                </div>
-                <div class="field-stack">
-                  <label class="field-label" for="score-history-filter-payment-type">Payment Type</label>
-                  <select id="score-history-filter-payment-type" class="field-input"></select>
-                </div>
-                <div class="field-stack">
-                  <label class="field-label" for="score-history-filter-metric">Metric</label>
-                  <select id="score-history-filter-metric" class="field-input"></select>
-                </div>
-              </div>
-              <div class="action-row">
-                <button class="secondary-button" id="score-history-apply-filters-button">Apply Filters</button>
-                <button class="secondary-button" id="score-history-reset-filters-button">Reset</button>
-              </div>
-            </article>
-          </section>
-
-          <article class="panel">
-            <div class="panel-heading">
-              <h3>Latest Snapshot</h3>
-              <p>The newest successful capture arranged like the dashboard sections.</p>
-            </div>
-            <div class="score-history-latest-grid">
-              <section class="score-history-section">
-                <h4>SCORE</h4>
-                <div class="table-wrap">
-                  <table>
+            <section class="score-history-dashboard-sections">
+              <article class="score-history-card">
+                <header class="score-history-card-header">
+                  <h3>SCORE</h3>
+                </header>
+                <div class="score-history-dashboard-table-wrap">
+                  <table class="score-history-dashboard-table">
                     <thead>
                       <tr>
                         <th>Score Period</th>
-                        <th>Active Clients</th>
-                        <th>Total Premium With Dues</th>
+                        <th>Sum of Active_Clients</th>
+                        <th>Sum of Total_Premium_With_Dues</th>
                       </tr>
                     </thead>
                     <tbody id="score-history-latest-score-body">
@@ -1577,16 +1526,21 @@
                     </tbody>
                   </table>
                 </div>
-              </section>
+                <div class="score-history-card-footer">
+                  <a class="score-history-report-link" id="score-history-report-link-score" href="#" target="_blank" rel="noreferrer">View Report</a>
+                </div>
+              </article>
 
-              <section class="score-history-section">
-                <h4>Money Received</h4>
-                <div class="table-wrap">
-                  <table>
+              <article class="score-history-card">
+                <header class="score-history-card-header">
+                  <h3>MONEY RECEIVED (TAKES INTO ACCOUNT CREDITS):</h3>
+                </header>
+                <div class="score-history-dashboard-table-wrap">
+                  <table class="score-history-dashboard-table">
                     <thead>
                       <tr>
                         <th>Score Period</th>
-                        <th>Amount</th>
+                        <th>Sum of Amount</th>
                       </tr>
                     </thead>
                     <tbody id="score-history-latest-money-body">
@@ -1594,17 +1548,22 @@
                     </tbody>
                   </table>
                 </div>
-              </section>
+                <div class="score-history-card-footer">
+                  <a class="score-history-report-link" id="score-history-report-link-moneyReceived" href="#" target="_blank" rel="noreferrer">View Report</a>
+                </div>
+              </article>
 
-              <section class="score-history-section">
-                <h4>Money Received by Payment Type</h4>
-                <div class="table-wrap">
-                  <table>
+              <article class="score-history-card">
+                <header class="score-history-card-header">
+                  <h3>TYPE OF MONEY RECEIVED (TAKES INTO ACCOUNT CREDITS):</h3>
+                </header>
+                <div class="score-history-dashboard-table-wrap">
+                  <table class="score-history-dashboard-table">
                     <thead>
                       <tr>
                         <th>Payment Type</th>
                         <th>Score Period</th>
-                        <th>Amount</th>
+                        <th>Sum of Amount</th>
                       </tr>
                     </thead>
                     <tbody id="score-history-latest-paytype-body">
@@ -1612,12 +1571,17 @@
                     </tbody>
                   </table>
                 </div>
-              </section>
+                <div class="score-history-card-footer">
+                  <a class="score-history-report-link" id="score-history-report-link-moneyReceivedByPayType" href="#" target="_blank" rel="noreferrer">View Report</a>
+                </div>
+              </article>
 
-              <section class="score-history-section">
-                <h4>Applications Received</h4>
-                <div class="table-wrap">
-                  <table>
+              <article class="score-history-card">
+                <header class="score-history-card-header">
+                  <h3>APPLICATIONS RECEIVED</h3>
+                </header>
+                <div class="score-history-dashboard-table-wrap">
+                  <table class="score-history-dashboard-table">
                     <thead>
                       <tr>
                         <th>Score Period</th>
@@ -1629,62 +1593,94 @@
                     </tbody>
                   </table>
                 </div>
-              </section>
-            </div>
-          </article>
+                <div class="score-history-card-footer">
+                  <a class="score-history-report-link" id="score-history-report-link-applicationsReceived" href="#" target="_blank" rel="noreferrer">View Report</a>
+                </div>
+              </article>
+            </section>
 
-          <article class="panel">
-            <div class="panel-heading">
-              <h3>Trend View</h3>
-              <p>
-                Table-first view of daily values over time. If charts are added later, this can
-                become the chart data source.
-              </p>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Snapshot Date</th>
-                    <th>Report</th>
-                    <th>Payment Type</th>
-                    <th>Score Period</th>
-                    <th>Metric</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody id="score-history-trend-body">
-                  <tr><td colspan="6" class="empty-cell">Choose filters or capture snapshots to see trends.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </article>
+            <section class="score-history-tools-grid">
+              <article class="panel" id="score-history-history-panel">
+                <div class="panel-heading">
+                  <h3>Saved History</h3>
+                  <p>Filter and review past SCORE snapshots captured by day.</p>
+                </div>
+                <div class="field-grid score-history-filter-grid">
+                  <div class="field-stack">
+                    <label class="field-label" for="score-history-filter-from">Date From</label>
+                    <input id="score-history-filter-from" class="field-input" type="date" />
+                  </div>
+                  <div class="field-stack">
+                    <label class="field-label" for="score-history-filter-to">Date To</label>
+                    <input id="score-history-filter-to" class="field-input" type="date" />
+                  </div>
+                  <div class="field-stack">
+                    <label class="field-label" for="score-history-filter-report">Report</label>
+                    <select id="score-history-filter-report" class="field-input"></select>
+                  </div>
+                  <div class="field-stack">
+                    <label class="field-label" for="score-history-filter-score-period">Score Period</label>
+                    <select id="score-history-filter-score-period" class="field-input"></select>
+                  </div>
+                  <div class="field-stack">
+                    <label class="field-label" for="score-history-filter-payment-type">Payment Type</label>
+                    <select id="score-history-filter-payment-type" class="field-input"></select>
+                  </div>
+                  <div class="field-stack">
+                    <label class="field-label" for="score-history-filter-metric">Metric</label>
+                    <select id="score-history-filter-metric" class="field-input"></select>
+                  </div>
+                </div>
+                <div class="action-row">
+                  <button class="secondary-button" id="score-history-apply-filters-button">Apply Filters</button>
+                  <button class="secondary-button" id="score-history-reset-filters-button">Reset</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Snapshot Date</th>
+                        <th>Report</th>
+                        <th>Payment Type</th>
+                        <th>Score Period</th>
+                        <th>Metric</th>
+                        <th>Value</th>
+                        <th>Salesforce As Of</th>
+                        <th>Captured At</th>
+                      </tr>
+                    </thead>
+                    <tbody id="score-history-table-body">
+                      <tr><td colspan="8" class="empty-cell">No SCORE history yet.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
 
-          <article class="panel">
-            <div class="panel-heading">
-              <h3>History</h3>
-              <p>Saved snapshot rows from the SCORE Report dashboard.</p>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Snapshot Date</th>
-                    <th>Report</th>
-                    <th>Payment Type</th>
-                    <th>Score Period</th>
-                    <th>Metric</th>
-                    <th>Value</th>
-                    <th>Salesforce As Of</th>
-                    <th>Captured At</th>
-                  </tr>
-                </thead>
-                <tbody id="score-history-table-body">
-                  <tr><td colspan="8" class="empty-cell">No SCORE history yet.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </article>
+              <article class="panel">
+                <div class="panel-heading">
+                  <h3>Trend View</h3>
+                  <p>Daily values over time for the currently filtered snapshot rows.</p>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Snapshot Date</th>
+                        <th>Report</th>
+                        <th>Payment Type</th>
+                        <th>Score Period</th>
+                        <th>Metric</th>
+                        <th>Value</th>
+                      </tr>
+                    </thead>
+                    <tbody id="score-history-trend-body">
+                      <tr><td colspan="6" class="empty-cell">Choose filters or capture snapshots to see trends.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </section>
+          </div>
         </section>
 
         <section class="view" data-view="settings">
