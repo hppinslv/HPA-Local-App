@@ -373,7 +373,60 @@ function findDashboardComponentForReport(dashboardComponents, reportConfig) {
     return byReportId;
   }
 
-  return dashboardComponents.find((entry) => labelAliases.has(normalizeDashboardLabel(entry.label)));
+  const byLabel = dashboardComponents.find((entry) => labelAliases.has(normalizeDashboardLabel(entry.label)));
+  if (byLabel) {
+    return byLabel;
+  }
+
+  const candidates = dashboardComponents.filter((entry) => {
+    const groupingColumns = getGroupingColumns(entry.reportPayload || {}).map((column) => normalizeKey(column.label));
+    const aggregateColumns = getAggregateColumns(entry.reportPayload || {}).map((column) => normalizeMetricAlias(column.label));
+
+    const expectedGroupings = reportConfig.expectedGroupings.map((value) => normalizeKey(value));
+    const groupingMatches =
+      groupingColumns.length === expectedGroupings.length
+      && groupingColumns.every((value, index) => value === expectedGroupings[index]);
+    if (!groupingMatches) {
+      return false;
+    }
+
+    const expectedMetricAliases = reportConfig.expectedMetrics
+      .flatMap((metric) => [metric.label, metric.key, ...(metric.aliases || [])])
+      .map((value) => normalizeMetricAlias(value));
+
+    return expectedMetricAliases.some((alias) => aggregateColumns.includes(alias));
+  });
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  if (reportConfig.reportKey === "moneyReceivedByPayType") {
+    return candidates.find((entry) => Object.keys(entry.reportPayload?.factMap || {}).length > 6) || candidates[0];
+  }
+
+  if (reportConfig.reportKey === "score") {
+    return candidates.find((entry) => {
+      const aggregateColumns = getAggregateColumns(entry.reportPayload || {}).map((column) => normalizeMetricAlias(column.label));
+      return aggregateColumns.includes("sum of active clients") || aggregateColumns.includes("sum of active_clients");
+    }) || candidates[0];
+  }
+
+  if (reportConfig.reportKey === "applicationsReceived") {
+    return candidates.find((entry) => {
+      const aggregateColumns = getAggregateColumns(entry.reportPayload || {}).map((column) => normalizeMetricAlias(column.label));
+      return aggregateColumns.includes("record count");
+    }) || candidates[0];
+  }
+
+  if (reportConfig.reportKey === "moneyReceived") {
+    return candidates.find((entry) => {
+      const aggregateColumns = getAggregateColumns(entry.reportPayload || {}).map((column) => normalizeMetricAlias(column.label));
+      return aggregateColumns.includes("sum of amount") && !aggregateColumns.includes("sum of active clients");
+    }) || candidates[0];
+  }
+
+  return candidates[0];
 }
 
 async function loadScoreDashboardSourceContext(tokenRecord) {
