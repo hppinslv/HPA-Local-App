@@ -401,6 +401,9 @@ async function loadScoreDashboardSourceContext(tokenRecord) {
       dashboardResults: null,
       dashboardComponents: [],
       error: error instanceof Error ? error.message : String(error || ""),
+      errorStatusCode: error?.statusCode || 0,
+      errorPath: error?.salesforcePath || "",
+      errorPayload: error?.salesforcePayload || null,
     };
   }
 }
@@ -1005,6 +1008,9 @@ async function debugScoreDashboardSnapshotReports() {
     generatedAt: new Date().toISOString(),
     dashboardId: dashboardContext?.dashboardId || "",
     dashboardError: dashboardContext?.error || "",
+    dashboardErrorStatusCode: dashboardContext?.errorStatusCode || 0,
+    dashboardErrorPath: dashboardContext?.errorPath || "",
+    dashboardErrorPayload: dashboardContext?.errorPayload || null,
     dashboardComponentCount: ensureArray(dashboardContext?.dashboardComponents).length,
     reports,
   };

@@ -386,11 +386,15 @@ async function fetchDashboard(tokenRecord, dashboardId) {
   const payload = await response.json();
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       payload[0]?.message ||
         payload.message ||
         `Unable to load Salesforce dashboard ${dashboardId}.`
     );
+    error.statusCode = response.status;
+    error.salesforcePayload = payload;
+    error.salesforcePath = `/services/data/${SALESFORCE_API_VERSION}/analytics/dashboards/${dashboardId}`;
+    throw error;
   }
 
   return payload;
@@ -404,11 +408,15 @@ async function fetchDashboardResults(tokenRecord, dashboardId) {
   const payload = await response.json();
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       payload[0]?.message ||
         payload.message ||
         `Unable to load Salesforce dashboard results ${dashboardId}.`
     );
+    error.statusCode = response.status;
+    error.salesforcePayload = payload;
+    error.salesforcePath = `/services/data/${SALESFORCE_API_VERSION}/analytics/dashboards/${dashboardId}/results`;
+    throw error;
   }
 
   return payload;
