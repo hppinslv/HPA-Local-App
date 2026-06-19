@@ -1571,6 +1571,7 @@
                     </tbody>
                   </table>
                 </div>
+                <p class="score-history-card-note" id="score-history-paytype-note"></p>
                 <div class="score-history-card-footer">
                   <a class="score-history-report-link" id="score-history-report-link-moneyReceivedByPayType" href="#" target="_blank" rel="noreferrer">View Report</a>
                 </div>
@@ -1603,7 +1604,7 @@
               <article class="panel" id="score-history-history-panel">
                 <div class="panel-heading">
                   <h3>Saved History</h3>
-                  <p>Filter and review past SCORE snapshots captured by day.</p>
+                  <p>Open a saved daily SCORE snapshot without scrolling through every metric line.</p>
                 </div>
                 <div class="field-grid score-history-filter-grid">
                   <div class="field-stack">
@@ -1613,22 +1614,6 @@
                   <div class="field-stack">
                     <label class="field-label" for="score-history-filter-to">Date To</label>
                     <input id="score-history-filter-to" class="field-input" type="date" />
-                  </div>
-                  <div class="field-stack">
-                    <label class="field-label" for="score-history-filter-report">Report</label>
-                    <select id="score-history-filter-report" class="field-input"></select>
-                  </div>
-                  <div class="field-stack">
-                    <label class="field-label" for="score-history-filter-score-period">Score Period</label>
-                    <select id="score-history-filter-score-period" class="field-input"></select>
-                  </div>
-                  <div class="field-stack">
-                    <label class="field-label" for="score-history-filter-payment-type">Payment Type</label>
-                    <select id="score-history-filter-payment-type" class="field-input"></select>
-                  </div>
-                  <div class="field-stack">
-                    <label class="field-label" for="score-history-filter-metric">Metric</label>
-                    <select id="score-history-filter-metric" class="field-input"></select>
                   </div>
                 </div>
                 <div class="action-row">
@@ -1640,41 +1625,14 @@
                     <thead>
                       <tr>
                         <th>Snapshot Date</th>
-                        <th>Report</th>
-                        <th>Payment Type</th>
-                        <th>Score Period</th>
-                        <th>Metric</th>
-                        <th>Value</th>
+                        <th>Saved Reports</th>
                         <th>Salesforce As Of</th>
                         <th>Captured At</th>
+                        <th>Open</th>
                       </tr>
                     </thead>
                     <tbody id="score-history-table-body">
-                      <tr><td colspan="8" class="empty-cell">No SCORE history yet.</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-
-              <article class="panel">
-                <div class="panel-heading">
-                  <h3>Trend View</h3>
-                  <p>Daily values over time for the currently filtered snapshot rows.</p>
-                </div>
-                <div class="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Snapshot Date</th>
-                        <th>Report</th>
-                        <th>Payment Type</th>
-                        <th>Score Period</th>
-                        <th>Metric</th>
-                        <th>Value</th>
-                      </tr>
-                    </thead>
-                    <tbody id="score-history-trend-body">
-                      <tr><td colspan="6" class="empty-cell">Choose filters or capture snapshots to see trends.</td></tr>
+                      <tr><td colspan="5" class="empty-cell">No SCORE history yet.</td></tr>
                     </tbody>
                   </table>
                 </div>

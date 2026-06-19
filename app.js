@@ -124,6 +124,7 @@ const state = {
     config: null,
     options: null,
     auth: null,
+    selectedSnapshotDate: "",
     filters: {
       from: "",
       to: "",
@@ -10528,6 +10529,58 @@ function formatScoreHistoryMetric(metricKey, value) {
     : String(value);
 }
 
+function formatScoreHistoryPeriodDisplay(scorePeriod) {
+  const order = ensureArray(state.scoreHistory.config?.scorePeriodOrder);
+  const index = order.indexOf(String(scorePeriod || "").trim());
+  if (index === -1) {
+    return String(scorePeriod || "").trim();
+  }
+  return `${index + 1}. ${scorePeriod}`;
+}
+
+function groupScoreHistoryRowsBySnapshot(rows) {
+  const snapshotMap = new Map();
+  ensureArray(rows).forEach((row) => {
+    const key = String(row.snapshot_date || "").trim();
+    if (!key) {
+      return;
+    }
+    if (!snapshotMap.has(key)) {
+      snapshotMap.set(key, {
+        snapshotDate: key,
+        capturedAt: row.captured_at || "",
+        salesforceAsOfText: row.salesforce_as_of_text || "",
+        reportLabels: new Set(),
+        rows: [],
+      });
+    }
+    const entry = snapshotMap.get(key);
+    entry.rows.push(row);
+    if (row.report_label) {
+      entry.reportLabels.add(row.report_label);
+    }
+    if (String(row.captured_at || "") > String(entry.capturedAt || "")) {
+      entry.capturedAt = row.captured_at || entry.capturedAt;
+    }
+    if (!entry.salesforceAsOfText && row.salesforce_as_of_text) {
+      entry.salesforceAsOfText = row.salesforce_as_of_text;
+    }
+  });
+
+  return Array.from(snapshotMap.values())
+    .map((entry) => ({
+      ...entry,
+      reportLabels: Array.from(entry.reportLabels).sort((left, right) => left.localeCompare(right)),
+    }))
+    .sort((left, right) => String(right.snapshotDate).localeCompare(String(left.snapshotDate)));
+}
+
+function getSelectedScoreHistorySnapshotGroup() {
+  const groups = groupScoreHistoryRowsBySnapshot(state.scoreHistory.rows);
+  const selectedDate = String(state.scoreHistory.selectedSnapshotDate || "").trim();
+  return groups.find((entry) => entry.snapshotDate === selectedDate) || groups[0] || null;
+}
+
 function fillSelectOptions(selectId, options, selectedValue, placeholderLabel) {
   const select = el(selectId);
   if (!(select instanceof HTMLSelectElement)) {
@@ -10551,41 +10604,16 @@ function syncScoreHistoryFilterInputs() {
   const toInput = el("score-history-filter-to");
   if (fromInput) fromInput.value = filters.from || "";
   if (toInput) toInput.value = filters.to || "";
-
-  fillSelectOptions(
-    "score-history-filter-report",
-    ensureArray(state.scoreHistory.options?.reports),
-    filters.reportKey,
-    "All Reports"
-  );
-  fillSelectOptions(
-    "score-history-filter-score-period",
-    ensureArray(state.scoreHistory.options?.scorePeriods),
-    filters.scorePeriod,
-    "All Score Periods"
-  );
-  fillSelectOptions(
-    "score-history-filter-payment-type",
-    ensureArray(state.scoreHistory.options?.paymentTypes),
-    filters.paymentType,
-    "All Payment Types"
-  );
-  fillSelectOptions(
-    "score-history-filter-metric",
-    ensureArray(state.scoreHistory.options?.metrics),
-    filters.metricKey,
-    "All Metrics"
-  );
 }
 
 function readScoreHistoryFilterInputs() {
   state.scoreHistory.filters = {
     from: normalizeIsoDateInput(el("score-history-filter-from")?.value || ""),
     to: normalizeIsoDateInput(el("score-history-filter-to")?.value || ""),
-    reportKey: String(el("score-history-filter-report")?.value || "").trim(),
-    scorePeriod: String(el("score-history-filter-score-period")?.value || "").trim(),
-    paymentType: String(el("score-history-filter-payment-type")?.value || "").trim(),
-    metricKey: String(el("score-history-filter-metric")?.value || "").trim(),
+    reportKey: "",
+    scorePeriod: "",
+    paymentType: "",
+    metricKey: "",
   };
   return state.scoreHistory.filters;
 }
@@ -10618,7 +10646,7 @@ function renderScoreHistorySingleGroupingTable(bodyId, rows, metricColumns, empt
       });
       const hasAnyValue = metricColumns.some((metric) => metricMap.has(["", scorePeriod, metric.key].join("::")));
       return hasAnyValue
-        ? `<tr><td>${esc(scorePeriod)}</td>${values.join("")}</tr>`
+        ? `<tr><td>${esc(formatScoreHistoryPeriodDisplay(scorePeriod))}</td>${values.join("")}</tr>`
         : "";
     })
     .filter(Boolean);
@@ -10639,19 +10667,27 @@ function renderScoreHistoryPayTypeTable(bodyId, rows, emptyMessage) {
   const renderedRows = [];
 
   paymentTypes.forEach((paymentType) => {
+    const paymentRows = [];
     scorePeriods.forEach((scorePeriod) => {
       const match = metricMap.get([paymentType, scorePeriod, "amount"].join("::"));
       if (!match) {
         return;
       }
-      renderedRows.push(`
+      paymentRows.push(`
         <tr>
-          <td>${esc(paymentType)}</td>
-          <td>${esc(scorePeriod)}</td>
+          <td>${esc(formatScoreHistoryPeriodDisplay(scorePeriod))}</td>
           <td>${esc(formatScoreHistoryMetric("amount", match.metric_value))}</td>
         </tr>
       `);
     });
+    if (!paymentRows.length) {
+      return;
+    }
+    paymentRows[0] = paymentRows[0].replace(
+      "<tr>\n          <td>",
+      `<tr>\n          <td rowspan="${paymentRows.length}">${esc(paymentType)}</td>\n          <td>`
+    );
+    renderedRows.push(...paymentRows);
   });
 
   const additionalRows = ensureArray(rows)
@@ -10667,7 +10703,7 @@ function renderScoreHistoryPayTypeTable(bodyId, rows, emptyMessage) {
     renderedRows.push(`
       <tr>
         <td>${esc(row.payment_type || "")}</td>
-        <td>${esc(row.score_period || "")}</td>
+        <td>${esc(formatScoreHistoryPeriodDisplay(row.score_period || ""))}</td>
         <td>${esc(formatScoreHistoryMetric(row.metric_key, row.metric_value))}</td>
       </tr>
     `);
@@ -10676,11 +10712,26 @@ function renderScoreHistoryPayTypeTable(bodyId, rows, emptyMessage) {
   tbody.innerHTML = renderedRows.length
     ? renderedRows.join("")
     : `<tr><td colspan="3" class="empty-cell">${esc(emptyMessage)}</td></tr>`;
+
+  const note = el("score-history-paytype-note");
+  if (note) {
+    note.textContent = renderedRows.length
+      ? ""
+      : "";
+  }
 }
 
 function renderScoreHistoryLatest() {
+  const selectedSnapshot = getSelectedScoreHistorySnapshotGroup();
   const latest = state.scoreHistory.latest || {};
-  const reports = latest.reports || {};
+  const reports = selectedSnapshot
+    ? {
+        score: { rows: ensureArray(selectedSnapshot.rows).filter((row) => row.report_key === "score") },
+        moneyReceived: { rows: ensureArray(selectedSnapshot.rows).filter((row) => row.report_key === "moneyReceived") },
+        moneyReceivedByPayType: { rows: ensureArray(selectedSnapshot.rows).filter((row) => row.report_key === "moneyReceivedByPayType") },
+        applicationsReceived: { rows: ensureArray(selectedSnapshot.rows).filter((row) => row.report_key === "applicationsReceived") },
+      }
+    : (latest.reports || {});
   renderScoreHistorySingleGroupingTable(
     "score-history-latest-score-body",
     reports.score?.rows || [],
@@ -10709,23 +10760,23 @@ function renderScoreHistoryLatest() {
   );
 
   if (el("score-history-last-date")) {
-    el("score-history-last-date").textContent = latest.snapshotDate
-      ? formatDateOnly(latest.snapshotDate)
+    el("score-history-last-date").textContent = selectedSnapshot?.snapshotDate
+      ? formatDateOnly(selectedSnapshot.snapshotDate)
       : "Not captured yet";
   }
   if (el("score-history-last-captured-at")) {
-    el("score-history-last-captured-at").textContent = latest.capturedAt
-      ? `Captured ${formatDate(latest.capturedAt)}`
+    el("score-history-last-captured-at").textContent = selectedSnapshot?.capturedAt
+      ? `Captured ${formatDate(selectedSnapshot.capturedAt)}`
       : "Not captured yet";
   }
   if (el("score-history-last-as-of")) {
-    el("score-history-last-as-of").textContent = latest.salesforceAsOfText
-      ? latest.salesforceAsOfText
+    el("score-history-last-as-of").textContent = selectedSnapshot?.salesforceAsOfText
+      ? selectedSnapshot.salesforceAsOfText
       : "Salesforce As Of not available";
   }
   if (el("score-history-hero-kicker")) {
-    el("score-history-hero-kicker").textContent = latest.snapshotDate
-      ? `Latest saved snapshot for ${formatDateOnly(latest.snapshotDate)}`
+    el("score-history-hero-kicker").textContent = selectedSnapshot?.snapshotDate
+      ? `Viewing saved snapshot for ${formatDateOnly(selectedSnapshot.snapshotDate)}`
       : "Daily dashboard snapshot";
   }
   syncScoreHistoryReportLinks();
@@ -10736,45 +10787,19 @@ function renderScoreHistoryTable() {
   if (!tbody) {
     return;
   }
-  const rows = ensureArray(state.scoreHistory.rows);
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">No SCORE history yet.</td></tr>';
+  const snapshotGroups = groupScoreHistoryRowsBySnapshot(state.scoreHistory.rows);
+  if (!snapshotGroups.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">No SCORE history yet.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = rows.map((row) => `
+  tbody.innerHTML = snapshotGroups.map((snapshot) => `
     <tr>
-      <td>${esc(formatDateOnly(row.snapshot_date))}</td>
-      <td>${esc(row.report_label || "")}</td>
-      <td>${esc(row.payment_type || "-")}</td>
-      <td>${esc(row.score_period || "-")}</td>
-      <td>${esc(row.metric_label || "")}</td>
-      <td>${esc(formatScoreHistoryMetric(row.metric_key, row.metric_value))}</td>
-      <td>${esc(row.salesforce_as_of_text || "-")}</td>
-      <td>${esc(formatDate(row.captured_at || ""))}</td>
-    </tr>
-  `).join("");
-}
-
-function renderScoreHistoryTrend() {
-  const tbody = el("score-history-trend-body");
-  if (!tbody) {
-    return;
-  }
-  const rows = ensureArray(state.scoreHistory.trendRows);
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-cell">No trend rows match the current filters.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = rows.map((row) => `
-    <tr>
-      <td>${esc(formatDateOnly(row.snapshotDate))}</td>
-      <td>${esc(row.reportLabel || "")}</td>
-      <td>${esc(row.paymentType || "-")}</td>
-      <td>${esc(row.scorePeriod || "-")}</td>
-      <td>${esc(row.metricLabel || "")}</td>
-      <td>${esc(formatScoreHistoryMetric(row.metricKey, row.metricValue))}</td>
+      <td>${esc(formatDateOnly(snapshot.snapshotDate))}</td>
+      <td>${esc(snapshot.reportLabels.join(", "))}</td>
+      <td>${esc(snapshot.salesforceAsOfText || "-")}</td>
+      <td>${esc(formatDate(snapshot.capturedAt || ""))}</td>
+      <td><button class="secondary-button table-action-button" data-score-history-open="${esc(snapshot.snapshotDate)}">Open</button></td>
     </tr>
   `).join("");
 }
@@ -10782,10 +10807,9 @@ function renderScoreHistoryTrend() {
 async function loadScoreHistoryPage() {
   const filters = ensureScoreHistoryFilters();
   const query = buildScoreHistoryQuery(filters);
-  const [latestPayload, listPayload, trendPayload, authPayload] = await Promise.all([
+  const [latestPayload, listPayload, authPayload] = await Promise.all([
     apiRequest("/api/score-dashboard-snapshots/latest"),
     apiRequest(`/api/score-dashboard-snapshots${query}`),
-    apiRequest(`/api/score-dashboard-snapshots/trend${query}`),
     apiRequest("/api/salesforce/auth-status"),
   ]);
 
@@ -10793,17 +10817,22 @@ async function loadScoreHistoryPage() {
   state.scoreHistory.rows = ensureArray(listPayload?.rows);
   state.scoreHistory.options = listPayload?.options || null;
   state.scoreHistory.config = listPayload?.config || latestPayload?.config || null;
-  state.scoreHistory.trendRows = ensureArray(trendPayload?.rows);
   state.scoreHistory.auth = authPayload?.auth || null;
   state.scoreHistory.filters = {
     ...filters,
     ...(listPayload?.filters || {}),
   };
+  state.scoreHistory.selectedSnapshotDate =
+    state.scoreHistory.selectedSnapshotDate
+    && groupScoreHistoryRowsBySnapshot(state.scoreHistory.rows).some(
+      (entry) => entry.snapshotDate === state.scoreHistory.selectedSnapshotDate
+    )
+      ? state.scoreHistory.selectedSnapshotDate
+      : String(latestPayload?.snapshotDate || "");
 
   syncScoreHistoryFilterInputs();
   renderScoreHistoryLatest();
   renderScoreHistoryTable();
-  renderScoreHistoryTrend();
 }
 
 async function captureScoreHistorySnapshot(options = {}) {
@@ -10829,6 +10858,7 @@ async function captureScoreHistorySnapshot(options = {}) {
         `Captured ${result.totalMetricsSaved} metric(s) from ${result.successfulReports} report(s).`
       );
     }
+    state.scoreHistory.selectedSnapshotDate = String(result.snapshotDate || "");
     await loadScoreHistoryPage();
   } catch (error) {
     const message = /oauth|authentication failed|reconnect salesforce|expired access\/refresh token|token refresh failed/i.test(error.message)
@@ -10868,6 +10898,20 @@ function bindScoreHistoryEvents() {
     } catch (error) {
       setStatus("score-history-status", `Unable to export SCORE history: ${error.message}`);
     }
+  });
+  el("score-history-table-body")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const snapshotDate = target.getAttribute("data-score-history-open");
+    if (!snapshotDate) {
+      return;
+    }
+    state.scoreHistory.selectedSnapshotDate = snapshotDate;
+    renderScoreHistoryLatest();
+    const top = document.querySelector(".score-history-hero");
+    top?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 

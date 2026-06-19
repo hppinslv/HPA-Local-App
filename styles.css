@@ -1352,6 +1352,12 @@ textarea {
   text-align: center;
 }
 
+.score-history-card-note {
+  margin: 12px 0 0;
+  text-align: center;
+  color: #23457a;
+}
+
 .score-history-report-link {
   color: #0b43ff;
   text-decoration: none;
@@ -1370,6 +1376,12 @@ textarea {
 
 .score-history-filter-grid {
   margin-top: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.score-history-dashboard-table td[rowspan] {
+  vertical-align: middle;
+  font-weight: 600;
 }
 
 @media (max-width: 720px) {
