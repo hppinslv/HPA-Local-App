@@ -915,7 +915,6 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  const ccPaymentImportSessionMatch = requestUrl.pathname.match(/^\/api\/cc-payment-imports\/([^/]+)$/);
   if (ccPaymentImportSessionMatch && request.method === "GET") {
     try {
       const session = getCcPaymentImportSession(ccPaymentImportSessionMatch[1]);
