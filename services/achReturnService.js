@@ -683,12 +683,17 @@ function validateImportableRow(row) {
   return issues;
 }
 
+function buildAchRefundName(certificateNumber, processedAt = new Date().toISOString()) {
+  const formattedDate = formatDateMmDdYyyy(processedAt) || formatDateMmDdYyyy(new Date().toISOString()) || "";
+  return `${normalizeText(certificateNumber) || "-"} - ACH - Returned Check - ${formattedDate}`;
+}
+
 function buildAchRefundSalesforceRecord(row) {
   const matchedPaymentPolicyId = normalizeText(row.matched_payment?.policyId || row.matched_payment?.policy_id);
   const effectivePolicyId = normalizeText(matchedPaymentPolicyId || row.policyId);
   return {
     attributes: { type: "Refund__c" },
-    Name: normalizeText(row.refundName) || undefined,
+    Name: buildAchRefundName(row.certificateNumber || row.certificate_number || ""),
     Policy__c: effectivePolicyId || undefined,
     Certificate__c: normalizeText(row.certificateRecordId) || undefined,
     Type__c: "ACH",
@@ -1228,8 +1233,7 @@ function buildPendingReversalCredit(parsed, matchedPayment) {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  const refundNameDate = formatDateMmDdYyyy(parsed.batchDate);
-  const refundName = `${normalizeText(matchedPayment.certificateNumber)} - ACH - Returned Check - ${refundNameDate || formatDateMmDdYyyy(new Date().toISOString())}`;
+  const refundName = buildAchRefundName(matchedPayment.certificateNumber || "");
   const enteredDate = formatDateMmDdYyyy(new Date().toISOString());
   const creditDate = formatDateMmDdYyyy(parsed.batchDate) || parsed.batchDate || "";
   const creditBatchId = parsed.achTransactionId || parsed.traceNumber || "";

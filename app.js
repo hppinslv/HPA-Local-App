@@ -200,6 +200,8 @@ const esc = (value) =>
 
 const cloneData = (value) => JSON.parse(JSON.stringify(value));
 const ensureArray = (value) => (Array.isArray(value) ? value : []);
+const buildAchRefundName = (certificateNumber, processedAt = new Date().toISOString()) =>
+  `${String(certificateNumber || "").trim() || "-"} - ACH - Returned Check - ${formatShortDate(processedAt) || formatShortDate(new Date().toISOString())}`;
 const comparisonDebugEnabled = (() => {
   try {
     return new URLSearchParams(window.location.search).get(COMPARISON_DEBUG_QUERY_PARAM) === "1";
@@ -3616,7 +3618,6 @@ function buildAchReturnPendingCredit(parsed, selectedMatch) {
       ? Number(parsed.amount)
       : null;
   const parsedDate = formatShortDate(parsed?.batchDate || "");
-  const refundNameDate = parsedDate || formatShortDate(new Date().toISOString());
   const reasonForCredit = [returnCode, returnReason ? `(${returnReason})` : "", parsed?.identifier1, parsed?.identifier3]
     .filter(Boolean)
     .join(" ")
@@ -3648,7 +3649,7 @@ function buildAchReturnPendingCredit(parsed, selectedMatch) {
     deathClaimMonthsCredited: "",
     reasonCode: returnCode,
     reasonForCredit: reasonForCredit || (returnCode ? `Return Code: ${returnCode}${returnReason ? ` (${returnReason})` : ""}` : "-"),
-    refundName: `${certificateNumber || "-"} - ACH - Returned Check - ${refundNameDate}`,
+    refundName: buildAchRefundName(certificateNumber || ""),
     returnCode,
     returnReason,
     status: "Completed",
