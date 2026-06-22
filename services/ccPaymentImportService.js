@@ -1906,12 +1906,28 @@ async function confirmCcPaymentImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
     .filter((entry) => entry.session_id === sessionId)
     .sort((a, b) => Number(a.row_number || 0) - Number(b.row_number || 0));
 
+  const sessionCertificateNumbers = Array.from(
+    new Set(
+      sessionRows
+        .map((entry) => normalizeCertificateNumber(entry.certificate_number))
+        .filter(Boolean)
+    )
+  );
+  const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
+
   const importableRows = [];
   sessionRows.forEach((row) => {
     row.import_result_status = "";
     row.import_result_message = "";
     row.imported_salesforce_id = "";
     row.imported_salesforce_created = false;
+    const certificateNumber = normalizeCertificateNumber(row.certificate_number);
+    const refreshedCertificateRecordId = normalizeSalesforceId(
+      certificateRecordIdMap.get(certificateNumber.toLowerCase()) || ""
+    );
+    if (refreshedCertificateRecordId) {
+      row.matched_certificate_record_id = refreshedCertificateRecordId;
+    }
     const blockingIssues = validateImportableRow(row);
     if (row.status === "error" || blockingIssues.length) {
       row.import_result_status = "validation_failed";
@@ -1991,7 +2007,7 @@ function buildExportRows(sessionId) {
   return (session.rows || []).map((row) => ({
     Type: row.type,
     "Pay Type": row.pay_type,
-    "Certificate Record ID": row.matched_policy_id,
+    "Certificate Record ID": row.matched_certificate_record_id,
     "Manual Payment": row.manual_payment,
     "Payment Name": row.payment_name,
     Amount: normalizeAmount(row.amount),
