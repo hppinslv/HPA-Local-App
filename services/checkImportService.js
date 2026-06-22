@@ -25,6 +25,7 @@ const IMPORT_TEMPLATE_KEY = "check-payments";
 const IMPORT_BATCH_SIZE = 200;
 const ACTIVE_POLICY_STATUSES = new Set(["in force", "payment issues", "follow up"]);
 const ACTIVE_POLICY_STATUS_LABEL = "In Force, Payment Issues, or Follow Up";
+const DEFAULT_ACTIVE_POLICY_STATUS = "In Force";
 const CHECK_HEADER_ROW = [
   "Transaction Type",
   "Deposit Date",
@@ -135,6 +136,11 @@ function isActivePolicyStatus(value) {
 function describePolicyStatus(value) {
   const status = normalizePolicyStatus(value);
   return status || "unknown";
+}
+
+function coerceActivePolicyStatus(value) {
+  const status = normalizePolicyStatus(value);
+  return status || DEFAULT_ACTIVE_POLICY_STATUS;
 }
 
 function logCheckImportEvent(message, details = null) {
@@ -465,7 +471,7 @@ function buildPolicyLookupEntriesFromRows(rows) {
       row["Certificate Record Id"] ||
       ""
     );
-    const policyStatus = normalizePolicyStatus(
+    const policyStatus = coerceActivePolicyStatus(
       row["Policy Status"] ||
       row["Policy: Policy Status"] ||
       row["Policy: Status"] ||

@@ -1228,7 +1228,7 @@
                 type="button"
                 class="primary-button"
                 disabled
-                onclick="window.__hpaHandleAchReturnConfirmImport?.(event)"
+                onclick="window.__hpaHandleAchReturnConfirmImportDirect?.(event)"
               >
                 Confirm Import
               </button>
@@ -1715,6 +1715,62 @@
       </main>
     </div>
 
-    <script type="module" src="./app.js?v=20260622-ach-confirm-1"></script>
+    <script type="module" src="./app.js?v=20260622-ach-confirm-3"></script>
+    <script>
+      window.__hpaHandleAchReturnConfirmImportDirect = async function (event) {
+        event?.preventDefault?.();
+
+        const statusEl = document.getElementById("ach-return-status");
+        const setStatus = (message) => {
+          if (statusEl) statusEl.textContent = message || "";
+        };
+
+        const button = document.getElementById("ach-return-confirm-button");
+        if (button?.disabled) {
+          return;
+        }
+
+        try {
+          const sessionResponse = await fetch("/api/ach-returns", {
+            headers: { Accept: "application/json" },
+          });
+          const sessionPayload = await sessionResponse.json();
+          const session = sessionPayload?.currentSession || null;
+          if (!session?.id) {
+            setStatus("Open or save an ACH return batch before importing.");
+            return;
+          }
+
+          const rows = Array.isArray(session.rows) ? session.rows : [];
+          const readyCount = rows.filter((row) => (row.import_result_status || row.validation_status || "") === "ready").length;
+          if (readyCount <= 0) {
+            setStatus("Save at least one ready ACH credit row before importing.");
+            return;
+          }
+
+          setStatus(`Importing ${readyCount} ACH credit row(s) into Salesforce...`);
+
+          const response = await fetch(`/api/ach-returns/${encodeURIComponent(session.id)}/confirm-import`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ confirmedBy: "Local User" }),
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload?.error || "Unable to import ACH return credits.");
+          }
+
+          const successfulCount = Number(payload?.session?.successful_import_count || payload?.session?.imported_row_count || 0);
+          const failedCount = Number(payload?.session?.salesforce_failed_row_count || 0);
+          setStatus(`Salesforce import finished. Success: ${successfulCount}. Failed: ${failedCount}. Refreshing...`);
+          window.location.reload();
+        } catch (error) {
+          setStatus(`Import failed: ${error?.message || error}`);
+        }
+      };
+    </script>
   </body>
 </html>

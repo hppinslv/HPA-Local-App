@@ -4107,14 +4107,13 @@ async function handleAchReturnConfirmImport() {
     setStatus("ach-return-status", "This ACH return batch has already been imported.");
     return;
   }
-  const confirmMessage = [
-    `Import ${readyCount} ACH credit row(s) into Salesforce?`,
-    errorCount > 0 ? `${errorCount} row(s) with errors will be skipped.` : "",
-  ].filter(Boolean).join(" ");
-  if (!confirm(confirmMessage)) {
-    return;
-  }
-  setStatus("ach-return-status", "Importing ACH credits into Salesforce...");
+  setStatus(
+    "ach-return-status",
+    [
+      `Importing ${readyCount} ACH credit row(s) into Salesforce...`,
+      errorCount > 0 ? `${errorCount} row(s) with errors will be skipped.` : "",
+    ].filter(Boolean).join(" ")
+  );
   try {
     const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(session.id)}/confirm-import`, {
       method: "POST",

@@ -28,6 +28,7 @@ const IMPORT_TEMPLATE_KEY = "credit-card-payments";
 const IMPORT_BATCH_SIZE = 200;
 const ACTIVE_POLICY_STATUSES = new Set(["in force", "payment issues", "follow up"]);
 const ACTIVE_POLICY_STATUS_LABEL = "In Force, Payment Issues, or Follow Up";
+const DEFAULT_ACTIVE_POLICY_STATUS = "In Force";
 
 const IMPORT_TEMPLATES = [
   {
@@ -178,6 +179,11 @@ function buildPolicyStatusLookupValue(row, labels) {
 function describePolicyStatus(value) {
   const status = normalizePolicyStatus(value);
   return status || "unknown";
+}
+
+function coerceActivePolicyStatus(value) {
+  const status = normalizePolicyStatus(value);
+  return status || DEFAULT_ACTIVE_POLICY_STATUS;
 }
 
 function buildPolicyEntriesByCertificateMap(cache) {
@@ -814,7 +820,7 @@ function buildPolicyLookupEntriesFromRows(rows) {
       p12: null,
       member_1_name: "",
       member_2_name: "",
-      policy_status: normalizePolicyStatus(
+      policy_status: coerceActivePolicyStatus(
         buildPolicyStatusLookupValue(row, [
           "Policy Status",
           "Policy: Policy Status",
@@ -879,7 +885,7 @@ function buildPremiumLookupEntriesFromRows(rows) {
       p12: normalizeAmount(findValueByLabels(row, ["P12"])),
       member_1_name: normalizeText(findValueByLabels(row, ["Member 1", "Member 1 Name"])),
       member_2_name: normalizeText(findValueByLabels(row, ["Member 2", "Member 2 Name"])),
-      policy_status: normalizePolicyStatus(
+      policy_status: coerceActivePolicyStatus(
         buildPolicyStatusLookupValue(row, [
           "Policy Status",
           "Policy: Policy Status",
