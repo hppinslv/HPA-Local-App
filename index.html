@@ -1731,26 +1731,9 @@
         }
 
         try {
-          const sessionResponse = await fetch("/api/ach-returns", {
-            headers: { Accept: "application/json" },
-          });
-          const sessionPayload = await sessionResponse.json();
-          const session = sessionPayload?.currentSession || null;
-          if (!session?.id) {
-            setStatus("Open or save an ACH return batch before importing.");
-            return;
-          }
+          setStatus("Importing ACH credit row(s) into Salesforce...");
 
-          const rows = Array.isArray(session.rows) ? session.rows : [];
-          const readyCount = rows.filter((row) => (row.import_result_status || row.validation_status || "") === "ready").length;
-          if (readyCount <= 0) {
-            setStatus("Save at least one ready ACH credit row before importing.");
-            return;
-          }
-
-          setStatus(`Importing ${readyCount} ACH credit row(s) into Salesforce...`);
-
-          const response = await fetch(`/api/ach-returns/${encodeURIComponent(session.id)}/confirm-import`, {
+          const response = await fetch("/api/ach-returns/current/confirm-import", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

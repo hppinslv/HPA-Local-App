@@ -85,6 +85,7 @@ const {
 const {
   clearCurrentAchReturnSession,
   confirmAchReturnImport,
+  confirmCurrentAchReturnImport,
   createAchReturnRow,
   exportAchReturnSession,
   getAchReturnSession,
@@ -451,6 +452,23 @@ const server = http.createServer((request, response) => {
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to clear ACH reversal table." });
     }
+    return;
+  }
+
+  if (achReturnsPath === "/api/ach-returns/current/confirm-import" && request.method === "POST") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await confirmCurrentAchReturnImport({
+          confirmedBy: body.confirmedBy || body.user,
+        });
+        sendJson(response, 200, {
+          session,
+          sessions: listAchReturnSessions(),
+        });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to import the current ACH return batch." });
+      });
     return;
   }
 

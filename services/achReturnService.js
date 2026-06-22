@@ -844,6 +844,15 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
   return updateSessionCounts(sessionId);
 }
 
+async function confirmCurrentAchReturnImport({ confirmedBy = DEFAULT_ACTOR } = {}) {
+  const currentSession = getCurrentAchReturnSession();
+  if (!currentSession?.id) {
+    throw new Error("Open or save an ACH return batch before importing.");
+  }
+
+  return confirmAchReturnImport(currentSession.id, { confirmedBy });
+}
+
 function extractLabelValueMap(emailBody = "") {
   const text = String(emailBody || "").replace(/\r/g, "").trim();
   const values = new Map();
@@ -1517,6 +1526,7 @@ function exportAchReturnSession(sessionId) {
 module.exports = {
   clearCurrentAchReturnSession,
   confirmAchReturnImport,
+  confirmCurrentAchReturnImport,
   createAchReturnRow,
   exportAchReturnSession,
   getAchReturnSession,
