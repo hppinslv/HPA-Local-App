@@ -458,6 +458,9 @@ const server = http.createServer((request, response) => {
   if (achReturnsPath === "/api/ach-returns/current/confirm-import" && request.method === "POST") {
     collectRequestBody(request)
       .then(async (body) => {
+        console.log("[ach-returns] POST /api/ach-returns/current/confirm-import", {
+          confirmedBy: body.confirmedBy || body.user || "",
+        });
         const session = await confirmCurrentAchReturnImport({
           confirmedBy: body.confirmedBy || body.user,
         });
@@ -478,6 +481,10 @@ const server = http.createServer((request, response) => {
   if (achReturnConfirmImportMatch && request.method === "POST") {
     collectRequestBody(request)
       .then(async (body) => {
+        console.log("[ach-returns] POST /api/ach-returns/:id/confirm-import", {
+          sessionId: achReturnConfirmImportMatch[1],
+          confirmedBy: body.confirmedBy || body.user || "",
+        });
         const session = await confirmAchReturnImport(achReturnConfirmImportMatch[1], {
           confirmedBy: body.confirmedBy || body.user,
         });

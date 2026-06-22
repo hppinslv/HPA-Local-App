@@ -779,6 +779,13 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
     importableRows.push(row);
   });
 
+  logAchReturnEvent("Confirm import requested", {
+    sessionId,
+    confirmedBy: normalizeText(confirmedBy || DEFAULT_ACTOR),
+    sessionRowCount: sessionRows.length,
+    importableRowCount: importableRows.length,
+  });
+
   if (!importableRows.length) {
     writeRows(rows);
     session.attempted_import_count = 0;
@@ -788,6 +795,10 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
     session.import_confirmed_by = normalizeText(confirmedBy || DEFAULT_ACTOR);
     session.final_status = "validation_failed";
     writeSessions(sessions);
+    logAchReturnEvent("Confirm import finished with no importable rows", {
+      sessionId,
+      finalStatus: session.final_status,
+    });
     return updateSessionCounts(sessionId);
   }
 
@@ -797,6 +808,11 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
 
   for (let startIndex = 0; startIndex < importableRows.length; startIndex += IMPORT_BATCH_SIZE) {
     const batchRows = importableRows.slice(startIndex, startIndex + IMPORT_BATCH_SIZE);
+    logAchReturnEvent("Submitting ACH refund batch to Salesforce", {
+      sessionId,
+      batchStartIndex: startIndex,
+      batchRowCount: batchRows.length,
+    });
     const payload = await insertSalesforceRecords(tokenRecord, batchRows);
     const results = Array.isArray(payload) ? payload : Array.isArray(payload.results) ? payload.results : [];
 
@@ -841,6 +857,13 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
   session.final_status = failedRows > 0 ? "imported_with_errors" : "imported";
   session.updated_at = new Date().toISOString();
   writeSessions(sessions);
+  logAchReturnEvent("Confirm import finished", {
+    sessionId,
+    attemptedImportCount: importableRows.length,
+    successfulRows,
+    failedRows,
+    finalStatus: session.final_status,
+  });
   return updateSessionCounts(sessionId);
 }
 

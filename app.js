@@ -4086,6 +4086,7 @@ async function handleAchReturnConfirmImport() {
     const draftPendingCredit = selectedMatch ? buildAchReturnPendingCredit(draft.parsed || {}, selectedMatch) : null;
     if (draftErrors.length || !selectedMatch || !draftPendingCredit) {
       setStatus("ach-return-status", "Finish the visible ACH draft before importing. Save Row is required when the draft has errors or no matched payment.");
+      setStatus("ach-return-export-status", "Finish the visible ACH draft before importing. Save Row is required when the draft has errors or no matched payment.");
       return;
     }
     await handleAchReturnCreateRow();
@@ -4094,6 +4095,7 @@ async function handleAchReturnConfirmImport() {
   const session = getCurrentAchReturnSession();
   if (!session?.id) {
     setStatus("ach-return-status", "Open or save an ACH return batch before importing.");
+    setStatus("ach-return-export-status", "Open or save an ACH return batch before importing.");
     return;
   }
   const rows = Array.isArray(session.rows) ? session.rows : [];
@@ -4101,19 +4103,20 @@ async function handleAchReturnConfirmImport() {
   const errorCount = Number(session.error_count || 0);
   if (readyCount <= 0) {
     setStatus("ach-return-status", "Save at least one ready ACH credit row before importing.");
+    setStatus("ach-return-export-status", "Save at least one ready ACH credit row before importing.");
     return;
   }
   if (["imported", "imported_with_errors"].includes(String(session.final_status || ""))) {
     setStatus("ach-return-status", "This ACH return batch has already been imported.");
+    setStatus("ach-return-export-status", "This ACH return batch has already been imported.");
     return;
   }
-  setStatus(
-    "ach-return-status",
-    [
-      `Importing ${readyCount} ACH credit row(s) into Salesforce...`,
-      errorCount > 0 ? `${errorCount} row(s) with errors will be skipped.` : "",
-    ].filter(Boolean).join(" ")
-  );
+  const importStartMessage = [
+    `Importing ${readyCount} ACH credit row(s) into Salesforce...`,
+    errorCount > 0 ? `${errorCount} row(s) with errors will be skipped.` : "",
+  ].filter(Boolean).join(" ");
+  setStatus("ach-return-status", importStartMessage);
+  setStatus("ach-return-export-status", importStartMessage);
   try {
     const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(session.id)}/confirm-import`, {
       method: "POST",
@@ -4126,12 +4129,12 @@ async function handleAchReturnConfirmImport() {
     state.achReturns.emailBody = "";
     clearPersistedAchReturnDraftState();
     await loadAchReturnData("");
-    setStatus(
-      "ach-return-status",
-      `Salesforce import finished. Success: ${Number(payload.session?.successful_import_count || payload.session?.imported_row_count || 0)}. Failed: ${Number(payload.session?.salesforce_failed_row_count || 0)}. The imported batch has been moved to ACH Return History.`
-    );
+    const finishedMessage = `Salesforce import finished. Success: ${Number(payload.session?.successful_import_count || payload.session?.imported_row_count || 0)}. Failed: ${Number(payload.session?.salesforce_failed_row_count || 0)}. The imported batch has been moved to ACH Return History.`;
+    setStatus("ach-return-status", finishedMessage);
+    setStatus("ach-return-export-status", finishedMessage);
   } catch (error) {
     setStatus("ach-return-status", `Import failed: ${error.message}`);
+    setStatus("ach-return-export-status", `Import failed: ${error.message}`);
   }
 }
 

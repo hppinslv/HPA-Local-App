@@ -1720,9 +1720,11 @@
       window.__hpaHandleAchReturnConfirmImportDirect = async function (event) {
         event?.preventDefault?.();
 
-        const statusEl = document.getElementById("ach-return-status");
+        const topStatusEl = document.getElementById("ach-return-status");
+        const exportStatusEl = document.getElementById("ach-return-export-status");
         const setStatus = (message) => {
-          if (statusEl) statusEl.textContent = message || "";
+          if (topStatusEl) topStatusEl.textContent = message || "";
+          if (exportStatusEl) exportStatusEl.textContent = message || "";
         };
 
         const button = document.getElementById("ach-return-confirm-button");
