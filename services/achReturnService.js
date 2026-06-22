@@ -18,6 +18,8 @@ const EXPORT_DIR = path.join(os.tmpdir(), "hpa-ach-return-exports");
 const DEFAULT_ACTOR = "Local User";
 const ACH_RETURN_PAYMENT_DETAIL_REPORT_ID = "00OQm000003QDEPMA4";
 const IMPORT_BATCH_SIZE = 200;
+const ACH_RETURN_SKIP_POLICY_PAY_TYPE_RETURN_CODE = "R01";
+const MONTHLY_BILLING_PAY_TYPE = "3";
 
 let sessionCache = null;
 let rowCache = null;
@@ -747,6 +749,47 @@ async function insertSalesforceRecords(tokenRecord, rows) {
   return payload;
 }
 
+async function updatePolicyPayTypeForAchReturns(tokenRecord, rows) {
+  const policyIdsToUpdate = Array.from(
+    new Set(
+      (rows || [])
+        .filter((row) => row.import_result_status === "imported")
+        .filter((row) => normalizeText(row.returnCode || row.reasonCode).toUpperCase() !== ACH_RETURN_SKIP_POLICY_PAY_TYPE_RETURN_CODE)
+        .map((row) => normalizeText(row.matched_payment?.policyId || row.matched_payment?.policy_id || row.policyId))
+        .filter(Boolean)
+    )
+  );
+
+  const failures = [];
+  for (const policyId of policyIdsToUpdate) {
+    const response = await salesforceRequest(
+      tokenRecord,
+      `/services/data/v61.0/sobjects/Policy__c/${encodeURIComponent(policyId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          Pay_Type__c: MONTHLY_BILLING_PAY_TYPE,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch {
+        payload = {};
+      }
+      failures.push({
+        policyId,
+        message: payload[0]?.message || payload.message || "Unable to update Policy Pay Type.",
+      });
+    }
+  }
+
+  return failures;
+}
+
 async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR } = {}) {
   const sessions = readSessions();
   const session = sessions.find((entry) => entry.id === sessionId);
@@ -810,6 +853,7 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
   const tokenRecord = await getConnectedSalesforceToken();
   let successfulRows = 0;
   let failedRows = 0;
+  let policyUpdateFailures = [];
 
   for (let startIndex = 0; startIndex < importableRows.length; startIndex += IMPORT_BATCH_SIZE) {
     const batchRows = importableRows.slice(startIndex, startIndex + IMPORT_BATCH_SIZE);
@@ -851,6 +895,27 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
     });
   }
 
+  if (successfulRows > 0) {
+    policyUpdateFailures = await updatePolicyPayTypeForAchReturns(tokenRecord, importableRows);
+    if (policyUpdateFailures.length) {
+      const failureMessageByPolicyId = new Map(
+        policyUpdateFailures.map((entry) => [normalizeText(entry.policyId), entry.message])
+      );
+      importableRows.forEach((row) => {
+        const policyId = normalizeText(row.matched_payment?.policyId || row.matched_payment?.policy_id || row.policyId);
+        const failureMessage = failureMessageByPolicyId.get(policyId);
+        if (!failureMessage) return;
+        if (row.import_result_status === "imported") {
+          row.import_result_message = `${row.import_result_message} Policy Pay Type update failed: ${failureMessage}`.trim();
+        }
+      });
+      logAchReturnEvent("Policy pay type update failures", {
+        sessionId,
+        failures: policyUpdateFailures,
+      });
+    }
+  }
+
   writeRows(rows);
   session.attempted_import_count = importableRows.length;
   session.successful_import_count = successfulRows;
@@ -859,7 +924,7 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
   session.import_confirmed_at = new Date().toISOString();
   session.import_completed_at = new Date().toISOString();
   session.import_confirmed_by = normalizeText(confirmedBy || DEFAULT_ACTOR);
-  session.final_status = failedRows > 0 ? "imported_with_errors" : "imported";
+  session.final_status = failedRows > 0 || policyUpdateFailures.length > 0 ? "imported_with_errors" : "imported";
   session.updated_at = new Date().toISOString();
   writeSessions(sessions);
   logAchReturnEvent("Confirm import finished", {
