@@ -806,11 +806,12 @@ function buildPolicyLookupEntriesFromRows(rows) {
     entries.push({
       certificate_number: certificateNumber,
       policy_id: policyId,
-      certificate_record_id: normalizeText(
+      certificate_record_id: normalizeSalesforceId(
         findValueByLabels(row, [
-          "Certificate: Certificate Name",
           "Certificate Record ID",
           "Certificate ID",
+          "Certificate: ID",
+          "Account ID",
         ])
       ),
       p1: null,
@@ -868,13 +869,14 @@ function buildPremiumLookupEntriesFromRows(rows) {
     entries.push({
       certificate_number: certificateNumber,
       policy_id: policyId,
-      certificate_record_id: normalizeText(
+      certificate_record_id: normalizeSalesforceId(
         findValueByLabels(
           row,
           [
-            "Certificate: Certificate Name",
             "Certificate Record ID",
             "Certificate ID",
+            "Certificate: ID",
+            "Account ID",
           ]
         )
       ),
@@ -915,7 +917,9 @@ function mergeLookupEntries(...entryGroups) {
     merged.set(key, {
       certificate_number: certificateNumber,
       policy_id: policyId,
-      certificate_record_id: normalizeText(entry?.certificate_record_id || previous.certificate_record_id || ""),
+      certificate_record_id: normalizeSalesforceId(entry?.certificate_record_id)
+        || normalizeSalesforceId(previous.certificate_record_id)
+        || "",
       p1: entry?.p1 ?? previous.p1 ?? null,
       p2: entry?.p2 ?? previous.p2 ?? null,
       p3: entry?.p3 ?? previous.p3 ?? null,
@@ -1254,7 +1258,7 @@ function buildPolicyLookupByPolicyIdMap(cache) {
 function buildPolicyLookupByCertificateRecordIdMap(cache) {
   const map = new Map();
   (cache?.items || []).forEach((entry) => {
-    const certificateRecordId = normalizeText(entry.certificate_record_id);
+    const certificateRecordId = normalizeSalesforceId(entry.certificate_record_id);
     if (!certificateRecordId) {
       return;
     }
@@ -1345,7 +1349,7 @@ function revalidateSession(sessionId) {
     });
     const policyEntry = policySelection.entry;
     const matchedPolicyId = normalizePolicyId(policyEntry?.policy_id || "");
-    const matchedCertificateRecordId = normalizeText(policyEntry?.certificate_record_id || "");
+    const matchedCertificateRecordId = normalizeSalesforceId(policyEntry?.certificate_record_id || "");
     const expectedAmount = getExpectedPremiumAmount(policyEntry, row.months);
     const premiumLabel = getPremiumLabelForMonths(row.months);
     const issues = [];
@@ -1816,6 +1820,11 @@ function normalizeDateTimeText(value) {
   return parsed.toISOString();
 }
 
+function normalizeSalesforceId(value) {
+  const text = normalizeText(value);
+  return /^[a-zA-Z0-9]{15,18}$/.test(text) ? text : "";
+}
+
 function buildCcPaymentSalesforceRecord(row, template) {
   return {
     attributes: { type: template.salesforceObjectApiName },
@@ -1842,7 +1851,7 @@ function validateImportableRow(row) {
   if (!normalizePolicyId(row.matched_policy_id)) {
     issues.push("Missing Policy__c lookup.");
   }
-  if (!normalizeText(row.matched_certificate_record_id)) {
+  if (!normalizeSalesforceId(row.matched_certificate_record_id)) {
     issues.push("Missing Certificate__c lookup.");
   }
   if (normalizeAmount(row.amount) === null) {

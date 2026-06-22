@@ -1228,7 +1228,6 @@
                 type="button"
                 class="primary-button"
                 disabled
-                onclick="window.__hpaHandleAchReturnConfirmImportDirect?.(event)"
               >
                 Confirm Import
               </button>
@@ -1716,46 +1715,5 @@
     </div>
 
     <script type="module" src="./app.js?v=20260622-ach-confirm-3"></script>
-    <script>
-      window.__hpaHandleAchReturnConfirmImportDirect = async function (event) {
-        event?.preventDefault?.();
-
-        const topStatusEl = document.getElementById("ach-return-status");
-        const exportStatusEl = document.getElementById("ach-return-export-status");
-        const setStatus = (message) => {
-          if (topStatusEl) topStatusEl.textContent = message || "";
-          if (exportStatusEl) exportStatusEl.textContent = message || "";
-        };
-
-        const button = document.getElementById("ach-return-confirm-button");
-        if (button?.disabled) {
-          return;
-        }
-
-        try {
-          setStatus("Importing ACH credit row(s) into Salesforce...");
-
-          const response = await fetch("/api/ach-returns/current/confirm-import", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({ confirmedBy: "Local User" }),
-          });
-          const payload = await response.json();
-          if (!response.ok) {
-            throw new Error(payload?.error || "Unable to import ACH return credits.");
-          }
-
-          const successfulCount = Number(payload?.session?.successful_import_count || payload?.session?.imported_row_count || 0);
-          const failedCount = Number(payload?.session?.salesforce_failed_row_count || 0);
-          setStatus(`Salesforce import finished. Success: ${successfulCount}. Failed: ${failedCount}. Refreshing...`);
-          window.location.reload();
-        } catch (error) {
-          setStatus(`Import failed: ${error?.message || error}`);
-        }
-      };
-    </script>
   </body>
 </html>
