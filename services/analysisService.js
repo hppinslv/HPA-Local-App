@@ -2548,9 +2548,14 @@ async function executeAnalysisRun(runId) {
     const results = [];
     const savedReports = [];
     const errors = [];
+    const totalPulls = run.reportPulls.length;
 
-    for (const pull of run.reportPulls) {
+    for (let index = 0; index < run.reportPulls.length; index += 1) {
+      const pull = run.reportPulls[index];
       try {
+        run.updatedAt = new Date().toISOString();
+        run.statusDetail = `Running report ${index + 1} of ${totalPulls}: ${pull.analysisLabel || pull.reportId || pull.id}`;
+        writeAnalysisRuns(runs);
         console.log("Starting report:", pull.analysisLabel || pull.reportId || pull.id);
         const filterValues = buildSalesforceFilterValues(pull);
         const result = await fetchFlexibleSalesforceReportData(pull.reportId, {
@@ -2651,6 +2656,9 @@ async function executeAnalysisRun(runId) {
           warningMessage: savedReport.warning_message || "",
           diagnostics,
         });
+        run.updatedAt = new Date().toISOString();
+        run.statusDetail = `Completed report ${index + 1} of ${totalPulls}: ${pull.analysisLabel || pull.reportId || pull.id}`;
+        writeAnalysisRuns(runs);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error || "Unknown error");
         errors.push(`${pull.analysisLabel}: ${message}`);
@@ -2691,6 +2699,9 @@ async function executeAnalysisRun(runId) {
           resultCount: 0,
           exportFileName: null,
         });
+        run.updatedAt = new Date().toISOString();
+        run.statusDetail = `Report ${index + 1} of ${totalPulls} failed: ${pull.analysisLabel || pull.reportId || pull.id}. ${message}`;
+        writeAnalysisRuns(runs);
       }
     }
 

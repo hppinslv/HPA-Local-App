@@ -10,6 +10,45 @@ const {
 } = require("./reportCatalog");
 
 const SALESFORCE_API_VERSION = "v61.0";
+const DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS = 45000;
+
+function parseSalesforceRequestTimeoutMs(candidate) {
+  const parsed = Number(candidate);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS;
+  }
+  return Math.max(1000, Math.floor(parsed));
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const timeoutMs = parseSalesforceRequestTimeoutMs(process.env.SALESFORCE_REQUEST_TIMEOUT_MS);
+  let timeoutId = null;
+  let timeoutController = null;
+
+  try {
+    if (typeof AbortController !== "undefined") {
+      timeoutController = new AbortController();
+      timeoutId = setTimeout(() => {
+        timeoutController.abort();
+      }, timeoutMs);
+      return await fetch(url, {
+        ...options,
+        signal: timeoutController.signal,
+      });
+    }
+
+    return await fetch(url, options);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Salesforce request timed out after ${timeoutMs}ms.`);
+    }
+    throw error;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 function getMonthDateRange(reportMonth) {
   const [yearString, monthString] = String(reportMonth || "").split("-");
@@ -192,7 +231,7 @@ async function salesforceRequest(tokenRecord, pathName, options = {}) {
     ...(options.headers || {}),
   };
 
-  const response = await fetch(requestUrl, {
+  const response = await fetchWithTimeout(requestUrl, {
     ...options,
     headers,
   });
@@ -207,7 +246,7 @@ async function salesforceRequest(tokenRecord, pathName, options = {}) {
     Authorization: `Bearer ${refreshedToken.accessToken}`,
   };
 
-  return fetch(requestUrl, {
+  return fetchWithTimeout(requestUrl, {
     ...options,
     headers: retryHeaders,
   });
