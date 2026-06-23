@@ -2549,6 +2549,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   let reportPayloadDetailExport = { columns: [], rows: [] };
   let normalizedDetailSummary = { columns: [], rows: [], summaryValues: [] };
   let preferredExportSummary = { columns: [], rows: [], summaryValues: [] };
+  let payloadDetailSummary = { columns: [], rows: [], summaryValues: [] };
 
   try {
     const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
@@ -2570,6 +2571,9 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
       dateRange: effectiveDateRange,
     });
     reportPayloadDetailExport = reportPayload ? buildDetailExportRows(reportPayload) : { columns: [], rows: [] };
+    payloadDetailSummary = reportPayloadDetailExport.rows.length
+      ? buildFlatRowsFromDetailExport(reportPayloadDetailExport.rows)
+      : { columns: [], rows: [], summaryValues: [] };
     const preferredExport = choosePreferredAnalysisExportRows(
       fullDetailExport,
       reportPayloadDetailExport
@@ -2594,7 +2598,8 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   const mergedFlattened = mergeAnalysisSummaryDatasets(
     flattened.rows.length || flattened.columns.length ? flattened : normalizedDetailSummary,
     normalizedDetailSummary,
-    preferredExportSummary
+    preferredExportSummary,
+    payloadDetailSummary
   );
   const finalizedFlattened = {
     ...mergedFlattened,
