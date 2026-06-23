@@ -1207,7 +1207,6 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
     { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: totals.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: totals.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: totals.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
-    { key: "Average Monthly Premium", label: "Average Monthly Premium", value: averageMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
   ];
 }
 
@@ -1262,8 +1261,7 @@ function fillAnalysisRateFallbacks(row = {}) {
   row["Converted Rate"] = nextConvertedRate.toFixed(10);
   row["converted rate"] = nextConvertedRate.toFixed(10);
   const averageMonthlyPremium = oppCount > 0 ? totalMonthlyPremium / oppCount : 0;
-  row["Average Monthly Premium"] = averageMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" });
-  row["average monthly premium"] = averageMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  row.averageMonthlyPremium = averageMonthlyPremium;
   return row;
 }
 
@@ -1358,22 +1356,6 @@ function buildGroupedReportRows(reportPayload) {
     return scfA.localeCompare(scfB, undefined, { numeric: true });
   });
 
-  const derivedAverageColumn = {
-    key: "Average Monthly Premium",
-    label: "Average Monthly Premium",
-    normalized: "average monthly premium",
-    dataType: "currency",
-  };
-  const averageInsertIndex = aggregateColumns.findIndex(
-    (column) => String(column.label || "").trim() === "Sum of Total Converted Monthly Premiums"
-  );
-  const extendedAggregateColumns = [...aggregateColumns];
-  if (averageInsertIndex >= 0) {
-    extendedAggregateColumns.splice(averageInsertIndex + 1, 0, derivedAverageColumn);
-  } else {
-    extendedAggregateColumns.push(derivedAverageColumn);
-  }
-
   return {
     columns: [
       ...groupingColumns.map((column) => ({
@@ -1382,7 +1364,7 @@ function buildGroupedReportRows(reportPayload) {
         normalized: column.normalized,
         dataType: column.dataType,
       })),
-      ...extendedAggregateColumns,
+      ...aggregateColumns,
     ],
     rows,
     summaryValues: buildAnalysisSummaryValuesFromRows(rows),
@@ -1567,6 +1549,21 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       ""
     ).trim();
     const aggregateKey = `${scf}::${keyCode}`;
+    const rowTotalMonthlyPremium = parseNumber(
+      row["Total Monthly Premium"] ??
+      row["total monthly premium"] ??
+      row["Sum of Total Monthly Premium"] ??
+      row["sum of total monthly premium"] ??
+      0
+    );
+    const rowConvertedPremium = parseNumber(
+      row["Total Converted Monthly Premiums"] ??
+      row["total converted monthly premiums"] ??
+      row["Sum of Total Converted Monthly Premiums"] ??
+      row["sum of total converted monthly premiums"] ??
+      0
+    );
+    const rowOppCount = parseNumber(row["Opp Count"] ?? row["opp count"] ?? row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
     const current = aggregateMap.get(aggregateKey) || {
       scf,
       keyCode,
@@ -1583,18 +1580,14 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       inForceRateWeight: 0,
       convertedRateWeightedTotal: 0,
       convertedRateWeight: 0,
+      highPremium: null,
+      lowPremium: null,
     };
 
     current.mailed += parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
-    current.oppCount += parseNumber(row["Opp Count"] ?? row["opp count"] ?? row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
+    current.oppCount += rowOppCount;
     current.inForce += parseNumber(row["In Force"] ?? row["in force"] ?? row["Sum of In Force"] ?? row["sum of in force"] ?? 0);
-    current.totalMonthlyPremium += parseNumber(
-      row["Total Monthly Premium"] ??
-      row["total monthly premium"] ??
-      row["Sum of Total Monthly Premium"] ??
-      row["sum of total monthly premium"] ??
-      0
-    );
+    current.totalMonthlyPremium += rowTotalMonthlyPremium;
     current.inForceMonthlyPremium += parseNumber(
       row["In Force Monthly Premium"] ??
       row["in force monthly premium"] ??
@@ -1602,28 +1595,18 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       row["sum of in force monthly premium"] ??
       0
     );
-    current.totalConvertedMonthlyPremiums += parseNumber(
-      row["Total Converted Monthly Premiums"] ??
-      row["total converted monthly premiums"] ??
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      0
-    );
-    current.sold += resolveAnalysisSoldValue(row, parseNumber(
-      row["Total Converted Monthly Premiums"] ??
-      row["total converted monthly premiums"] ??
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      0
-    ));
+    current.totalConvertedMonthlyPremiums += rowConvertedPremium;
+    current.sold += resolveAnalysisSoldValue(row, rowConvertedPremium);
+    if (rowOppCount > 0 && rowTotalMonthlyPremium > 0) {
+      current.highPremium = current.highPremium === null
+        ? rowTotalMonthlyPremium
+        : Math.max(current.highPremium, rowTotalMonthlyPremium);
+      current.lowPremium = current.lowPremium === null
+        ? rowTotalMonthlyPremium
+        : Math.min(current.lowPremium, rowTotalMonthlyPremium);
+    }
     const rowMailed = parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
-    const rowSold = resolveAnalysisSoldValue(row, parseNumber(
-      row["Total Converted Monthly Premiums"] ??
-      row["total converted monthly premiums"] ??
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      0
-    ));
+    const rowSold = resolveAnalysisSoldValue(row, rowConvertedPremium);
     const sourceSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
     const sourceInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
     const sourceConvertedRate = rowMailed > 0 ? (rowSold / rowMailed) * 100 : 0;
@@ -1679,8 +1662,9 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "sum of in force monthly premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of Total Converted Monthly Premiums": entry.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of total converted monthly premiums": entry.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-        "Average Monthly Premium": averageSoldPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-        "average monthly premium": averageSoldPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+        averageMonthlyPremium: averageSoldPremium,
+        highPremium: entry.highPremium,
+        lowPremium: entry.lowPremium,
         "Sold Rate": soldRate.toFixed(10),
         "sold rate": soldRate.toFixed(10),
         "In Force Rate": inForceRate.toFixed(10),
@@ -1701,7 +1685,6 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", normalized: "sum of total monthly premium", dataType: "currency" },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", normalized: "sum of in force monthly premium", dataType: "currency" },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
-      { key: "Average Monthly Premium", label: "Average Monthly Premium", normalized: "average monthly premium", dataType: "currency" },
       { key: "Sold Rate", label: "Sold Rate", normalized: "sold rate", dataType: "double" },
       { key: "In Force Rate", label: "In Force Rate", normalized: "in force rate", dataType: "double" },
       { key: "Converted Rate", label: "Converted Rate", normalized: "converted rate", dataType: "double" },
@@ -1713,15 +1696,6 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForce, 0)).toLocaleString("en-US") },
       { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
-      { key: "Average Monthly Premium", label: "Average Monthly Premium", value: (() => {
-        const totals = Array.from(aggregateMap.values()).reduce((acc, entry) => {
-          acc.premium += entry.totalMonthlyPremium;
-          acc.sold += entry.oppCount;
-          return acc;
-        }, { premium: 0, sold: 0 });
-        const average = totals.sold > 0 ? totals.premium / totals.sold : 0;
-        return average.toLocaleString("en-US", { style: "currency", currency: "USD" });
-      })() },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForceMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalConvertedMonthlyPremiums, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     ],
@@ -1826,6 +1800,15 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
   );
   const grouped = buildGroupedReportRows(executed.reportPayload);
   const rows = Array.isArray(grouped?.rows) ? grouped.rows : [];
+  const fullDetailExport = await buildFullDetailExportRows(tokenRecord, describePayload, {
+    scf: normalizedScf,
+    keyCodes: filters.keyCodes,
+    dateRange: filters.dateRange,
+  });
+  const detailSummary = Array.isArray(fullDetailExport?.rows) && fullDetailExport.rows.length
+    ? buildFlatRowsFromDetailExport(fullDetailExport.rows)
+    : { rows: [] };
+  const detailRows = Array.isArray(detailSummary?.rows) ? detailSummary.rows : [];
   const normalizedKeys = Array.isArray(filters.keyCodes)
     ? filters.keyCodes.map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase()).filter(Boolean)
     : [];
@@ -1840,12 +1823,52 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
     const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
     return normalizedKeys.includes(rowKey);
   });
+  const matchingDetailRows = detailRows.filter((row) => {
+    const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row["scf"] ?? "");
+    if (rowScf !== normalizedScf) {
+      return false;
+    }
+    if (!normalizedKeys.length) {
+      return true;
+    }
+    const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
+    return normalizedKeys.includes(rowKey);
+  });
+  const mergeMetricRows = (groupedRow, detailRow) => {
+    if (!groupedRow && !detailRow) {
+      return null;
+    }
+    return {
+      ...(detailRow || {}),
+      ...(groupedRow || {}),
+      averageMonthlyPremium: Number.isFinite(detailRow?.averageMonthlyPremium)
+        ? detailRow.averageMonthlyPremium
+        : Number.isFinite(groupedRow?.averageMonthlyPremium)
+          ? groupedRow.averageMonthlyPremium
+          : null,
+      highPremium: Number.isFinite(detailRow?.highPremium)
+        ? detailRow.highPremium
+        : Number.isFinite(groupedRow?.highPremium)
+          ? groupedRow.highPremium
+          : null,
+      lowPremium: Number.isFinite(detailRow?.lowPremium)
+        ? detailRow.lowPremium
+        : Number.isFinite(groupedRow?.lowPremium)
+          ? groupedRow.lowPremium
+          : null,
+    };
+  };
+  const mergedRows = matchingRows.length || matchingDetailRows.length
+    ? Array.from({ length: Math.max(matchingRows.length, matchingDetailRows.length) }, (_, index) =>
+        mergeMetricRows(matchingRows[index] || null, matchingDetailRows[index] || null)
+      ).filter(Boolean)
+    : [];
 
   return {
     reportId: normalizedReportId,
     scf: normalizedScf,
-    row: matchingRows[0] || null,
-    rows: matchingRows,
+    row: mergedRows[0] || mergeMetricRows(matchingRows[0] || null, matchingDetailRows[0] || null),
+    rows: mergedRows,
   };
 }
 
@@ -2081,12 +2104,27 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     fullDetailExport,
     reportPayloadDetailExport
   );
+  const preferredExportSummary = preferredExport.rows.length
+    ? buildFlatRowsFromDetailExport(preferredExport.rows)
+    : { columns: [], rows: [], summaryValues: [] };
+  const shouldPreferDetailSummary =
+    normalizedDetailSummary.rows.length > flattened.rows.length
+    || countRowsWithScfValue(normalizedDetailSummary.rows) > countRowsWithScfValue(flattened.rows);
+  const shouldPreferPreferredExportSummary =
+    preferredExportSummary.rows.length > flattened.rows.length
+    || countRowsWithScfValue(preferredExportSummary.rows) > countRowsWithScfValue(flattened.rows);
   const effectiveFlattened =
-    flattened.rows.length || flattened.columns.length
-      ? flattened
-      : normalizedDetailSummary.rows.length || normalizedDetailSummary.columns.length
-        ? normalizedDetailSummary
-        : buildFlatRowsFromDetailExport(preferredExport.rows);
+    shouldPreferDetailSummary && (normalizedDetailSummary.rows.length || normalizedDetailSummary.columns.length)
+      ? normalizedDetailSummary
+      : shouldPreferPreferredExportSummary && (preferredExportSummary.rows.length || preferredExportSummary.columns.length)
+        ? preferredExportSummary
+      : flattened.rows.length || flattened.columns.length
+        ? flattened
+        : normalizedDetailSummary.rows.length || normalizedDetailSummary.columns.length
+          ? normalizedDetailSummary
+          : preferredExportSummary.rows.length || preferredExportSummary.columns.length
+            ? preferredExportSummary
+            : buildFlatRowsFromDetailExport(preferredExport.rows);
   const availableKeyValues = Array.from(
     new Set(
       effectiveFlattened.rows

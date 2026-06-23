@@ -5465,6 +5465,22 @@ function formatWholeNumber(value) {
   return Math.round(numeric).toLocaleString("en-US");
 }
 
+function formatCurrencyMetricValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  const numeric = Number(String(value).replace(/[$,%()\s,]/g, ""));
+  if (!Number.isFinite(numeric)) {
+    return "-";
+  }
+
+  return numeric.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
+}
+
 function formatRateDecimalValue(value) {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -7315,6 +7331,21 @@ function renderAnalysisComparisonReviewPanel() {
       : isMetricLoading
         ? "Loading..."
         : "-";
+    const averagePremiumDisplay = row
+      ? formatCurrencyMetricValue(row.averageMonthlyPremium)
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
+    const highPremiumDisplay = row
+      ? formatCurrencyMetricValue(row.highPremium)
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
+    const lowPremiumDisplay = row
+      ? formatCurrencyMetricValue(row.lowPremium)
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
     const cardStatusLabel = !row && isMetricLoading
       ? "Loading exact report metrics..."
       : hasMetricError && row
@@ -7342,6 +7373,18 @@ function renderAnalysisComparisonReviewPanel() {
           <div>
             <span class="field-label">Converted Rate</span>
             <strong>${esc(convertedRateDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Average Premium</span>
+            <strong>${esc(averagePremiumDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Hi Premium</span>
+            <strong>${esc(highPremiumDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Lo Premium</span>
+            <strong>${esc(lowPremiumDisplay)}</strong>
           </div>
           <div>
             <span class="field-label">TOTAL MAILED</span>
