@@ -1125,6 +1125,117 @@ function getReferenceListLookup(listType) {
   return new Map((list?.items || []).map((entry) => [entry.scf, entry]));
 }
 
+function resolveAnalysisReferenceListType(clientType) {
+  const normalized = String(clientType || "").trim().toLowerCase();
+  if (normalized === "nhcl" || normalized === "n") {
+    return "nhcl";
+  }
+  if (normalized === "rfc") {
+    return "rfc";
+  }
+  return "";
+}
+
+function buildAnalysisEmptyCell(column = {}, clientType = "") {
+  const label = String(column.label || column.key || "").trim().toLowerCase();
+  const dataType = String(column.dataType || "").trim().toLowerCase();
+
+  if (label === "scf grouping") {
+    return "";
+  }
+  if (label === "key") {
+    return resolveAnalysisReferenceListType(clientType) === "nhcl" ? "N" : "RFC";
+  }
+  if (label.includes("rate")) {
+    return "0.0000000000";
+  }
+  if (dataType === "currency" || label.includes("premium")) {
+    return "$0.00";
+  }
+  if (dataType === "double" || label.includes("sum of")) {
+    return "0";
+  }
+  return "";
+}
+
+function sortAnalysisReportRows(rows = []) {
+  return [...ensureArray(rows)].sort((rowA, rowB) => {
+    const soldRateA = Number.parseFloat(
+      String(rowA?.["Sold Rate"] ?? rowA?.["sold rate"] ?? "0").replace(/,/g, "")
+    ) || 0;
+    const soldRateB = Number.parseFloat(
+      String(rowB?.["Sold Rate"] ?? rowB?.["sold rate"] ?? "0").replace(/,/g, "")
+    ) || 0;
+    if (soldRateB !== soldRateA) {
+      return soldRateB - soldRateA;
+    }
+
+    const scfA = normalizeScf(rowA?.["SCF Grouping"] ?? rowA?.["scf grouping"] ?? "");
+    const scfB = normalizeScf(rowB?.["SCF Grouping"] ?? rowB?.["scf grouping"] ?? "");
+    if (scfA !== scfB) {
+      return scfA.localeCompare(scfB, undefined, { numeric: true });
+    }
+
+    const keyA = String(rowA?.Key ?? rowA?.key ?? "").trim();
+    const keyB = String(rowB?.Key ?? rowB?.key ?? "").trim();
+    return keyA.localeCompare(keyB, undefined, { numeric: true });
+  });
+}
+
+function padAnalysisRowsWithReferenceList(rows = [], columns = [], clientType = "") {
+  const listType = resolveAnalysisReferenceListType(clientType);
+  if (!listType) {
+    return ensureArray(rows);
+  }
+
+  const list = getReferenceList(listType);
+  const scfValues = Array.from(
+    new Set(
+      ensureArray(list?.items)
+        .map((entry) => normalizeScf(entry?.scf))
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  if (!scfValues.length) {
+    return ensureArray(rows);
+  }
+
+  const paddedRows = ensureArray(rows).map((row) => ({ ...row }));
+  const existingScfs = new Set(
+    paddedRows
+      .map((row) => normalizeScf(row?.["SCF Grouping"] ?? row?.["scf grouping"] ?? ""))
+      .filter(Boolean)
+  );
+
+  scfValues.forEach((scf) => {
+    if (existingScfs.has(scf)) {
+      return;
+    }
+
+    const row = {};
+    ensureArray(columns).forEach((column) => {
+      const value = buildAnalysisEmptyCell(column, clientType);
+      if (column.label) {
+        row[column.label] = value;
+      }
+      if (column.normalized) {
+        row[column.normalized] = value;
+      }
+      if (column.key && !row[column.key]) {
+        row[column.key] = value;
+      }
+    });
+    row["SCF Grouping"] = scf;
+    row["scf grouping"] = scf;
+    row.Key = resolveAnalysisReferenceListType(clientType) === "nhcl" ? "N" : "RFC";
+    row.key = row.Key;
+    paddedRows.push(row);
+  });
+
+  return sortAnalysisReportRows(paddedRows);
+}
+
 function isDoNotMailScf(scf) {
   return getReferenceListLookup("dnm").has(normalizeScf(scf));
 }
@@ -2222,7 +2333,12 @@ async function rebuildAnalysisReport(reportId) {
   });
 
   const inputRows = Number(result.unfilteredRowCount || 0);
-  const rows = ensureArray(result.rows);
+  const rows = padAnalysisRowsWithReferenceList(result.rows, result.columns, pull.clientType);
+  const exportRows = padAnalysisRowsWithReferenceList(
+    result.exportRows || result.rows,
+    result.exportColumns || result.columns,
+    pull.clientType
+  );
   let zeroReason = "";
   if (inputRows === 0) {
     zeroReason = "No matching source rows were returned from Salesforce.";
@@ -2248,8 +2364,8 @@ async function rebuildAnalysisReport(reportId) {
     columns: result.columns,
     summaryValues: result.summaryValues || [],
     exportColumns: result.exportColumns || [],
-    exportRows: result.exportRows || [],
-    exportRowCount: Number(result.exportRowCount || (result.exportRows || []).length || 0),
+    exportRows,
+    exportRowCount: exportRows.length,
     inputRowCount: inputRows,
     zeroReason,
   });
@@ -2357,7 +2473,16 @@ async function executeAnalysisRun(runId) {
           clientType: filterValues.clientType,
         });
         const inputRows = Number(result.unfilteredRowCount || 0);
-        const exportRows = ensureArray(result.rows);
+        const exportRows = padAnalysisRowsWithReferenceList(
+          result.rows,
+          result.columns,
+          pull.clientType
+        );
+        const savedExportRows = padAnalysisRowsWithReferenceList(
+          result.exportRows || result.rows,
+          result.exportColumns || result.columns,
+          pull.clientType
+        );
         console.log("Input rows:", inputRows);
         console.log("Export rows:", exportRows.length);
 
@@ -2390,8 +2515,8 @@ async function executeAnalysisRun(runId) {
           columns: result.columns,
           summaryValues: result.summaryValues || [],
           exportColumns: result.exportColumns || [],
-          exportRows: result.exportRows || [],
-          exportRowCount: Number(result.exportRowCount || (result.exportRows || []).length || 0),
+          exportRows: savedExportRows,
+          exportRowCount: savedExportRows.length,
           inputRowCount: inputRows,
           zeroReason,
         });
@@ -2412,7 +2537,7 @@ async function executeAnalysisRun(runId) {
           summaryValues: result.summaryValues || [],
           rows: exportRows,
           rawRowCount: result.unfilteredRowCount,
-          exportRowCount: Number(result.exportRowCount || (result.exportRows || []).length || 0),
+          exportRowCount: savedExportRows.length,
           executedAt: new Date().toISOString(),
           savedReportId: savedReport.id,
           reportName: savedReport.report_name,
