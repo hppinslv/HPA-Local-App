@@ -2428,10 +2428,14 @@ function matchesAnyToken(value, tokens) {
 
 function filterAnalysisRows(rows, filters = {}) {
   const keyCodes = Array.isArray(filters.keyCodes)
-    ? filters.keyCodes.map((value) => String(value).trim()).filter(Boolean)
+    ? filters.keyCodes
+        .map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase())
+        .filter(Boolean)
     : [];
   const keyFilters = Array.isArray(filters.keyFilters)
-    ? filters.keyFilters.map((value) => String(value).trim()).filter(Boolean)
+    ? filters.keyFilters
+        .map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase())
+        .filter(Boolean)
     : [];
   const scfFilter = String(filters.scf || "").trim();
   const clientType = String(filters.clientType || "").trim();
@@ -2455,7 +2459,12 @@ function filterAnalysisRows(rows, filters = {}) {
         "auth code",
       ]);
 
-      if (keyValue !== null && !matchesAnyToken(String(keyValue), combinedKeyFilters)) {
+      if (keyValue === null) {
+        return false;
+      }
+
+      const normalizedRowKey = normalizeAnalysisKeyCodeValue(keyValue).toUpperCase();
+      if (!normalizedRowKey || !combinedKeyFilters.includes(normalizedRowKey)) {
         return false;
       }
     }

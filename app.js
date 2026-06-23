@@ -6341,14 +6341,13 @@ function renderAnalysisPulls() {
       )
     );
     const normalizedClientType = String(pull.clientType || "").trim().toUpperCase();
-    const clientTypeOptions = Array.from(
-      new Set(
-        [
-          ...ANALYSIS_CLIENT_TYPE_OPTIONS,
-          ...(normalizedClientType ? [normalizedClientType] : []),
-        ].filter(Boolean)
-      )
-    );
+    const derivedClientType =
+      normalizedClientType ||
+      (normalizedKeyCode === "N" || normalizedKeyCode === "NHCL"
+        ? "NHCL"
+        : normalizedKeyCode === "RFC"
+          ? "RFC"
+          : "");
     const card = document.createElement("article");
     card.className = "analysis-pull-card";
     card.setAttribute("data-pull-id", pull.id);
@@ -6369,7 +6368,7 @@ function renderAnalysisPulls() {
         </div>
         <div class="field-stack">
           <label class="field-label">Analysis Label</label>
-          <div class="field-input analysis-readonly-field">${esc(autoAnalysisLabel)}</div>
+          <div class="field-input analysis-readonly-field" data-derived-field="analysisLabel">${esc(autoAnalysisLabel)}</div>
         </div>
         <div class="field-stack">
           <label class="field-label">Key Codes</label>
@@ -6398,11 +6397,7 @@ function renderAnalysisPulls() {
         </div>
         <div class="field-stack">
           <label class="field-label">Client / List Type</label>
-          <select class="field-input" data-pull-field="clientType" data-pull-id="${esc(pull.id)}">
-            ${clientTypeOptions.map((option) => `
-              <option value="${esc(option)}"${normalizedClientType === option ? " selected" : ""}>${esc(option)}</option>
-            `).join("")}
-          </select>
+          <div class="field-input analysis-readonly-field" data-derived-field="clientType">${esc(derivedClientType || "Set by Key Codes")}</div>
         </div>
         <div class="field-stack analysis-pull-wide">
           <label class="field-label">Notes</label>
@@ -6445,9 +6440,22 @@ function updateAnalysisPullCardPreview(pullId) {
     title.textContent = nextLabel;
   }
 
-  const readonlyLabel = card.querySelector(".analysis-readonly-field");
+  const readonlyLabel = card.querySelector('[data-derived-field="analysisLabel"]');
   if (readonlyLabel) {
     readonlyLabel.textContent = nextLabel;
+  }
+
+  const normalizedKeyCode = String((pull.keyCodes || [])[0] || "").trim().toUpperCase();
+  const derivedClientType =
+    String(pull.clientType || "").trim().toUpperCase() ||
+    (normalizedKeyCode === "N" || normalizedKeyCode === "NHCL"
+      ? "NHCL"
+      : normalizedKeyCode === "RFC"
+        ? "RFC"
+        : "");
+  const readonlyClientType = card.querySelector('[data-derived-field="clientType"]');
+  if (readonlyClientType) {
+    readonlyClientType.textContent = derivedClientType || "Set by Key Codes";
   }
 }
 
@@ -6466,11 +6474,7 @@ function syncAnalysisPullFromForm(pullId) {
   const keyCodeField = card.querySelector('[data-pull-field="keyCodes"]');
   if (keyCodeField instanceof HTMLSelectElement || keyCodeField instanceof HTMLInputElement) {
     pull.keyCodes = splitCsvValue(keyCodeField.value);
-  }
-
-  const clientTypeField = card.querySelector('[data-pull-field="clientType"]');
-  if (clientTypeField instanceof HTMLSelectElement || clientTypeField instanceof HTMLInputElement) {
-    pull.clientType = String(clientTypeField.value || "").trim();
+    syncAnalysisPullClientTypeWithKeyCodes(pull);
   }
 
   const startDateField = card.querySelector('[data-pull-field="startDate"]');
@@ -9116,7 +9120,7 @@ function bindAnalysisButtons() {
       pull[field] = value;
     }
 
-    if (field === "keyCodes" || field === "clientType" || field === "startDate" || field === "endDate") {
+    if (field === "keyCodes" || field === "startDate" || field === "endDate") {
       updateAnalysisPullCardPreview(pullId);
     }
   });
@@ -9133,8 +9137,6 @@ function bindAnalysisButtons() {
           if (field === "keyCodes") {
             pull.keyCodes = splitCsvValue(value);
             syncAnalysisPullClientTypeWithKeyCodes(pull);
-          } else if (field === "clientType") {
-            pull.clientType = value;
           } else if (field === "startDate" || field === "endDate") {
             const current = pull.dateRange || { startDate: "", endDate: "" };
             current[field] = normalizeIsoDateInput(value);
