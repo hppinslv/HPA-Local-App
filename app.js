@@ -6061,6 +6061,48 @@ function getWorkingListEntry(listType, scf) {
   return (list?.items || []).find((entry) => normalizeScf(entry.scf) === normalizedScf) || null;
 }
 
+function getBaselineListEntry(listType, scf) {
+  const normalizedType = String(listType || "").trim().toLowerCase();
+  const normalizedScf = normalizeScf(scf);
+  const baselineList = (state.analysis.reviewBaselineLists || []).find(
+    (entry) => String(entry?.type || "").trim().toLowerCase() === normalizedType
+  );
+  return (baselineList?.items || []).find((entry) => normalizeScf(entry.scf) === normalizedScf) || null;
+}
+
+function getWorkingListDecisionStatus(listType, scf) {
+  const baselineEntry = getBaselineListEntry(listType, scf);
+  const workingEntry = getWorkingListEntry(listType, scf);
+
+  if (!baselineEntry && workingEntry) {
+    return {
+      code: "pending-add",
+      label: "Pending add",
+      note: "Pending add to the live list when this analysis is completed.",
+      baselineEntry,
+      workingEntry,
+    };
+  }
+
+  if (baselineEntry && !workingEntry) {
+    return {
+      code: "pending-remove",
+      label: "Pending remove",
+      note: "Pending removal from the live list when this analysis is completed.",
+      baselineEntry,
+      workingEntry,
+    };
+  }
+
+  return {
+    code: "none",
+    label: "",
+    note: "",
+    baselineEntry,
+    workingEntry,
+  };
+}
+
 function getDoNotMailStatusForScf(scf, stateValue = "") {
   const normalizedScf = normalizeScf(scf);
   const entry = getWorkingListEntry("dnm", normalizedScf);
@@ -7283,6 +7325,7 @@ function renderAnalysisComparisonReviewPanel() {
   const effectiveSelectedStateValue = getRowStateValue(effectiveSelectedPrimaryRow);
   const effectiveDnmStatus = getDoNotMailStatusForScf(effectiveSelectedScf, effectiveSelectedStateValue);
   const effectiveTargetListEntry = getWorkingListEntry(targetListType, effectiveSelectedScf);
+  const decisionStatus = getWorkingListDecisionStatus(targetListType, effectiveSelectedScf);
   const selectedIndex = sortedFilteredRows.findIndex((entry) => entry.scf === effectiveSelectedScf);
   const pagination = getComparisonReviewPagination(sortedFilteredRows.length, selectedIndex);
   const visibleRows = sortedFilteredRows.slice(pagination.startIndex, pagination.endIndex);
@@ -7374,6 +7417,8 @@ function renderAnalysisComparisonReviewPanel() {
             <span class="field-label">Converted Rate</span>
             <strong>${esc(convertedRateDisplay)}</strong>
           </div>
+        </div>
+        <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
           <div>
             <span class="field-label">Average Premium</span>
             <strong>${esc(averagePremiumDisplay)}</strong>
@@ -7399,6 +7444,10 @@ function renderAnalysisComparisonReviewPanel() {
     ? "Choose an SCF from the primary report to start the review."
     : effectiveDnmStatus.isDoNotMail
       ? `SCF ${effectiveSelectedScf} is on Do Not Mail${effectiveDnmStatus.label ? ` (${effectiveDnmStatus.label})` : ""} and cannot be added to ${listType}.`
+      : decisionStatus.code === "pending-add"
+        ? `SCF ${effectiveSelectedScf} is pending add to ${listType}.`
+      : decisionStatus.code === "pending-remove"
+        ? `SCF ${effectiveSelectedScf} is pending removal from ${listType}.`
       : effectiveTargetListEntry
         ? `SCF ${effectiveSelectedScf} is already on ${listType}.`
         : `SCF ${effectiveSelectedScf} is not on ${listType}.`;
@@ -7515,8 +7564,21 @@ function renderAnalysisComparisonReviewPanel() {
           </article>
           <article class="analysis-review-status-card">
             <span class="field-label">${esc(listType)} List</span>
-            <strong>${effectiveTargetListEntry ? "On list" : "Not on list"}</strong>
-            <p>${esc(effectiveTargetListEntry ? (effectiveTargetListEntry.state || effectiveTargetListEntry.scope || "Included in working export.") : `This SCF is not currently on the ${listType} working list.`)}</p>
+            <strong>${esc(
+              decisionStatus.code === "pending-add"
+                ? "Pending add"
+                : decisionStatus.code === "pending-remove"
+                  ? "Pending remove"
+                  : effectiveTargetListEntry
+                    ? "On list"
+                    : "Not on list"
+            )}</strong>
+            <p>${esc(
+              decisionStatus.note
+              || (effectiveTargetListEntry
+                ? (effectiveTargetListEntry.state || effectiveTargetListEntry.scope || "Included in working export.")
+                : `This SCF is not currently on the ${listType} working list.`)
+            )}</p>
           </article>
           <article class="analysis-review-status-card">
             <span class="field-label">Action</span>

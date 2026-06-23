@@ -738,6 +738,10 @@ textarea {
   align-items: stretch;
 }
 
+.analysis-review-metric-grid-secondary {
+  margin-top: 10px;
+}
+
 .analysis-review-metric-grid > div {
   min-width: 110px;
 }

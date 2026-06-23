@@ -1550,20 +1550,41 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     ).trim();
     const aggregateKey = `${scf}::${keyCode}`;
     const rowTotalMonthlyPremium = parseNumber(
-      row["Total Monthly Premium"] ??
-      row["total monthly premium"] ??
-      row["Sum of Total Monthly Premium"] ??
-      row["sum of total monthly premium"] ??
-      0
+      getLikelyColumnValue(row, [
+        "Total Monthly Premium",
+        "Sum of Total Monthly Premium",
+        "Monthly Premium",
+        "Sold Premium",
+      ]) ?? 0
+    );
+    const rowInForceMonthlyPremium = parseNumber(
+      getLikelyColumnValue(row, [
+        "In Force Monthly Premium",
+        "Sum of In Force Monthly Premium",
+      ]) ?? 0
     );
     const rowConvertedPremium = parseNumber(
-      row["Total Converted Monthly Premiums"] ??
-      row["total converted monthly premiums"] ??
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      0
+      getLikelyColumnValue(row, [
+        "Total Converted Monthly Premiums",
+        "Sum of Total Converted Monthly Premiums",
+        "Converted Monthly Premium",
+      ]) ?? 0
     );
-    const rowOppCount = parseNumber(row["Opp Count"] ?? row["opp count"] ?? row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
+    const rowOppCount = parseNumber(
+      getLikelyColumnValue(row, [
+        "Opp Count",
+        "Sum of Opp Count",
+        "Applications Received",
+        "Application Count",
+      ]) ?? 0
+    );
+    const rowApplicationPremium = rowTotalMonthlyPremium > 0
+      ? rowTotalMonthlyPremium
+      : rowConvertedPremium > 0
+        ? rowConvertedPremium
+        : rowInForceMonthlyPremium > 0
+          ? rowInForceMonthlyPremium
+          : 0;
     const current = aggregateMap.get(aggregateKey) || {
       scf,
       keyCode,
@@ -1574,6 +1595,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       totalMonthlyPremium: 0,
       inForceMonthlyPremium: 0,
       totalConvertedMonthlyPremiums: 0,
+      applicationPremiumTotal: 0,
       soldRateWeightedTotal: 0,
       soldRateWeight: 0,
       inForceRateWeightedTotal: 0,
@@ -1584,28 +1606,38 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       lowPremium: null,
     };
 
-    current.mailed += parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
-    current.oppCount += rowOppCount;
-    current.inForce += parseNumber(row["In Force"] ?? row["in force"] ?? row["Sum of In Force"] ?? row["sum of in force"] ?? 0);
-    current.totalMonthlyPremium += rowTotalMonthlyPremium;
-    current.inForceMonthlyPremium += parseNumber(
-      row["In Force Monthly Premium"] ??
-      row["in force monthly premium"] ??
-      row["Sum of In Force Monthly Premium"] ??
-      row["sum of in force monthly premium"] ??
-      0
+    current.mailed += parseNumber(
+      getLikelyColumnValue(row, [
+        "Mailed",
+        "Sum of Mailed",
+      ]) ?? 0
     );
+    current.oppCount += rowOppCount;
+    current.inForce += parseNumber(
+      getLikelyColumnValue(row, [
+        "In Force",
+        "Sum of In Force",
+      ]) ?? 0
+    );
+    current.totalMonthlyPremium += rowTotalMonthlyPremium;
+    current.inForceMonthlyPremium += rowInForceMonthlyPremium;
     current.totalConvertedMonthlyPremiums += rowConvertedPremium;
     current.sold += resolveAnalysisSoldValue(row, rowConvertedPremium);
-    if (rowOppCount > 0 && rowTotalMonthlyPremium > 0) {
+    if (rowOppCount > 0 && rowApplicationPremium > 0) {
+      current.applicationPremiumTotal += rowApplicationPremium;
       current.highPremium = current.highPremium === null
-        ? rowTotalMonthlyPremium
-        : Math.max(current.highPremium, rowTotalMonthlyPremium);
+        ? rowApplicationPremium
+        : Math.max(current.highPremium, rowApplicationPremium);
       current.lowPremium = current.lowPremium === null
-        ? rowTotalMonthlyPremium
-        : Math.min(current.lowPremium, rowTotalMonthlyPremium);
+        ? rowApplicationPremium
+        : Math.min(current.lowPremium, rowApplicationPremium);
     }
-    const rowMailed = parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
+    const rowMailed = parseNumber(
+      getLikelyColumnValue(row, [
+        "Mailed",
+        "Sum of Mailed",
+      ]) ?? 0
+    );
     const rowSold = resolveAnalysisSoldValue(row, rowConvertedPremium);
     const sourceSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
     const sourceInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
@@ -1641,7 +1673,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       const soldRate = entry.mailed > 0 ? (entry.oppCount / entry.mailed) * 100 : 0;
       const inForceRate = entry.mailed > 0 ? (entry.inForce / entry.mailed) * 100 : 0;
       const convertedRate = entry.mailed > 0 ? (entry.sold / entry.mailed) * 100 : 0;
-      const averageSoldPremium = entry.oppCount > 0 ? entry.totalMonthlyPremium / entry.oppCount : 0;
+      const averageSoldPremium = entry.oppCount > 0 ? entry.applicationPremiumTotal / entry.oppCount : 0;
 
       return {
         "SCF Grouping": entry.scf,
