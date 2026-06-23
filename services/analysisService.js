@@ -348,7 +348,7 @@ function buildAnalysisReportSummary({ inputRowCount, exportRowCount, zeroReason,
 }
 
 const ANALYSIS_REPORT_LABEL_MAP = {
-  "Sum of Opp Count": "Sum of Sold",
+  "Sum of Opp Count": "Applications Received",
   "Sum of Sold": "Sum of Converted",
   "Sum of In Force": "Inforce (policy currently in effect)",
   "Sum of Total Monthly Premium": "Sum of Total Sold",

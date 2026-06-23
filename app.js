@@ -8096,7 +8096,7 @@ function renderPullResultCard(pull, options = {}) {
       ? pull.summaryValues
       : [];
   const analysisLabelHints = {
-    "Sum of Sold": "application received",
+    "Applications Received": "application received",
     "Sold Rate": "application received",
     "Inforce (policy currently in effect)": "currently in force",
     "In Force Rate": "currently in force",
