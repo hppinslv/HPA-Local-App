@@ -8095,12 +8095,28 @@ function renderPullResultCard(pull, options = {}) {
     : Array.isArray(pull.summaryValues)
       ? pull.summaryValues
       : [];
+  const analysisLabelHints = {
+    "Sum of Sold": "application received",
+    "Sold Rate": "application received",
+    "Inforce (policy currently in effect)": "currently in force",
+    "In Force Rate": "currently in force",
+    "Sum of Converted": "received at least one payment",
+    "Converted Rate": "received at least one payment",
+  };
+  const renderAnalysisLabelHtml = (label, suffix = "") => {
+    const safeLabel = esc(label || "");
+    const hint = analysisLabelHints[String(label || "").trim()];
+    if (!hint) {
+      return `${safeLabel}${suffix}`;
+    }
+    return `${safeLabel}<span class="analysis-label-hint">(${esc(hint)})</span>${suffix}`;
+  };
   const sortState = state.analysis.tableSorts[tableId];
   const columnHeaders = columns.length
     ? columns.map((column, index) => {
         const isSorted = sortState && sortState.index === index;
         const indicator = isSorted ? (sortState.direction === "desc" ? " ↓" : " ↑") : "";
-        return `<th class="sortable-column" data-sort-table-id="${esc(tableId)}" data-sort-column-index="${index}">${esc(column.label || column)}${indicator}</th>`;
+        return `<th class="sortable-column" data-sort-table-id="${esc(tableId)}" data-sort-column-index="${index}">${renderAnalysisLabelHtml(column.label || column, indicator)}</th>`;
       }).join("")
     : "";
   const previewRows = sortedRows.slice(0, 25).map((row) => {
@@ -8152,7 +8168,7 @@ function renderPullResultCard(pull, options = {}) {
         <div class="analysis-summary-grid">
           ${summaryValues.map((entry) => `
             <div class="analysis-summary-card">
-              <span class="field-label">${esc(entry.label || "")}</span>
+              <span class="field-label">${renderAnalysisLabelHtml(entry.label || "")}</span>
               <strong>${esc(entry.value ?? "")}</strong>
             </div>
           `).join("")}

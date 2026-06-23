@@ -90,6 +90,16 @@ textarea {
   color: var(--muted);
 }
 
+.analysis-label-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.62rem;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  color: var(--muted);
+}
+
 .brand h1 {
   margin-top: 10px;
   font-size: 1.9rem;

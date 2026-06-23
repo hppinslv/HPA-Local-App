@@ -1214,13 +1214,9 @@ function fillAnalysisRateFallbacks(row = {}) {
       : inForce > 0
         ? (inForce / mailed) * 100
         : 0;
-  const nextConvertedRate = Math.abs(currentConvertedRate) > 0.000001
-    ? currentConvertedRate
-    : premiumRateDenominator > 0 && totalConvertedMonthlyPremiums > 0
-      ? (totalConvertedMonthlyPremiums * 100) / premiumRateDenominator
-      : oppCount > 0
-        ? (oppCount / mailed) * 100
-        : 0;
+  const nextConvertedRate = sold > 0
+    ? (sold / mailed) * 100
+    : 0;
 
   row["Sold Rate"] = nextSoldRate.toFixed(10);
   row["sold rate"] = nextSoldRate.toFixed(10);
@@ -1565,9 +1561,16 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       0
     ));
     const rowMailed = parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
+    const rowSold = resolveAnalysisSoldValue(row, parseNumber(
+      row["Total Converted Monthly Premiums"] ??
+      row["total converted monthly premiums"] ??
+      row["Sum of Total Converted Monthly Premiums"] ??
+      row["sum of total converted monthly premiums"] ??
+      0
+    ));
     const sourceSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
     const sourceInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
-    const sourceConvertedRate = parseNumber(row["Converted Rate"] ?? row["converted rate"]);
+    const sourceConvertedRate = rowMailed > 0 ? (rowSold / rowMailed) * 100 : 0;
     if (rowMailed > 0 && Number.isFinite(sourceSoldRate) && Math.abs(sourceSoldRate) > 0.000001) {
       current.soldRateWeightedTotal += sourceSoldRate * rowMailed;
       current.soldRateWeight += rowMailed;
@@ -1627,11 +1630,9 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
             : 0;
       const convertedRate = entry.convertedRateWeight > 0
         ? entry.convertedRateWeightedTotal / entry.convertedRateWeight
-        : rateDenominator > 0 && hasPremiumFieldValues
-          ? (entry.totalConvertedMonthlyPremiums * 100) / rateDenominator
-          : entry.mailed > 0
-            ? (entry.oppCount / entry.mailed) * 100
-            : 0;
+        : entry.mailed > 0
+          ? (entry.sold / entry.mailed) * 100
+          : 0;
       const averageSoldPremium = entry.sold > 0 ? entry.totalMonthlyPremium / entry.sold : 0;
 
       return {
@@ -2019,15 +2020,20 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   let groupedReportUnavailableReason = "";
 
   try {
-    if (effectiveDateRange) {
-      const rangePayload = await executeReportForDateRange(tokenRecord, reportId, effectiveDateRange);
-      describePayload = rangePayload.describePayload;
-      reportPayload = rangePayload.reportPayload;
-    } else {
-      const basePayload = await executeReportWithoutDateOverride(tokenRecord, reportId);
-      describePayload = basePayload.describePayload;
-      reportPayload = basePayload.reportPayload;
-    }
+    describePayload = await fetchReportDescribe(tokenRecord, reportId);
+    const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
+      scf: filters.scf,
+      keyCodes: filters.keyCodes,
+      dateRange: effectiveDateRange,
+    });
+    const executed = await executeReportWithDescribeMetadata(
+      tokenRecord,
+      reportId,
+      reportMetadata,
+      describePayload
+    );
+    describePayload = executed.describePayload || describePayload;
+    reportPayload = executed.reportPayload;
   } catch (error) {
     groupedReportUnavailableReason = error instanceof Error ? error.message : String(error || "");
     if (!effectiveDateRange) {
