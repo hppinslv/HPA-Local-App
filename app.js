@@ -5471,7 +5471,7 @@ function formatCurrencyMetricValue(value) {
   }
 
   const numeric = Number(String(value).replace(/[$,%()\s,]/g, ""));
-  if (!Number.isFinite(numeric)) {
+  if (!Number.isFinite(numeric) || numeric <= 0) {
     return "-";
   }
 
@@ -7390,13 +7390,28 @@ function renderAnalysisComparisonReviewPanel() {
       : isMetricLoading
         ? "Loading..."
         : "-";
+    const soldCountDisplay = row
+      ? formatWholeNumber(getRowMetricValue(row, "Sum of Opp Count"))
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
     const inForceRateDisplay = row
       ? getRowMetricDisplayValue(row, "In Force Rate")
       : isMetricLoading
         ? "Loading..."
         : "-";
+    const inForceCountDisplay = row
+      ? formatWholeNumber(getRowMetricValue(row, "Sum of In Force"))
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
     const convertedRateDisplay = row
       ? getRowMetricDisplayValue(row, "Converted Rate")
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
+    const convertedCountDisplay = row
+      ? formatWholeNumber(getRowMetricValue(row, "Sum of Sold"))
       : isMetricLoading
         ? "Loading..."
         : "-";
@@ -7436,12 +7451,30 @@ function renderAnalysisComparisonReviewPanel() {
             <strong>${esc(soldRateDisplay)}</strong>
           </div>
           <div>
+            <span class="field-label">Converted Rate</span>
+            <strong>${esc(convertedRateDisplay)}</strong>
+          </div>
+          <div>
             <span class="field-label">In Force Rate</span>
             <strong>${esc(inForceRateDisplay)}</strong>
           </div>
+        </div>
+        <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
           <div>
-            <span class="field-label">Converted Rate</span>
-            <strong>${esc(convertedRateDisplay)}</strong>
+            <span class="field-label">Sold</span>
+            <strong>${esc(soldCountDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Converted</span>
+            <strong>${esc(convertedCountDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">In Force</span>
+            <strong>${esc(inForceCountDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Total Mailed</span>
+            <strong>${esc(displayedTotalMailed)}</strong>
           </div>
         </div>
         <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
@@ -7456,10 +7489,6 @@ function renderAnalysisComparisonReviewPanel() {
           <div>
             <span class="field-label">Lo Premium</span>
             <strong>${esc(lowPremiumDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">TOTAL MAILED</span>
-            <strong>${esc(displayedTotalMailed)}</strong>
           </div>
         </div>
       </article>

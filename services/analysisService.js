@@ -152,11 +152,14 @@ function buildSalesforceFilterValues(rawFilters) {
 
   const clientTypeAlias = resolveClientTypeKeyFilter(rawFilters.clientType);
   const clientTypeFilter = normalizeClientTypeForKeyFilter(rawFilters.clientType);
-  if (clientTypeFilter) {
+  if (!normalizedKeyCodes.length && clientTypeFilter) {
     addKey(clientTypeFilter);
   }
 
-  const legacyClientType = clientTypeAlias ? "" : String(rawFilters.clientType || "").trim();
+  const legacyClientType =
+    normalizedKeyCodes.length > 0 || clientTypeAlias
+      ? ""
+      : String(rawFilters.clientType || "").trim();
 
   return {
     keyCodes: normalizedKeyCodes,
