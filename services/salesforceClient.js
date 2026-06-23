@@ -1734,6 +1734,119 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
   };
 }
 
+function getAnalysisSummaryRowKey(row = {}) {
+  const scf = normalizeScf(
+    row["SCF Grouping"] ??
+    row["scf grouping"] ??
+    row["SCF"] ??
+    row.scf ??
+    ""
+  );
+  const keyCode = String(
+    row["Key"] ??
+    row.key ??
+    row["Report Key"] ??
+    row["report key"] ??
+    ""
+  ).trim().toUpperCase();
+  return `${scf}::${keyCode}`;
+}
+
+function getAnalysisCurrencyMetricNumber(row = {}, labels = []) {
+  return parseNumber(getLikelyColumnValue(row, labels) ?? 0);
+}
+
+function setAnalysisCurrencyMetric(row = {}, canonicalLabel, normalizedLabel, numericValue) {
+  const displayValue = Number(numericValue || 0).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
+  row[canonicalLabel] = displayValue;
+  row[normalizedLabel] = displayValue;
+}
+
+function mergeAnalysisPremiumMetrics(baseRow = null, candidateRow = null) {
+  if (!baseRow && !candidateRow) {
+    return null;
+  }
+
+  const mergedRow = { ...(baseRow || {}), ...(candidateRow || {}) };
+  const premiumFields = [
+    {
+      labels: ["Total Monthly Premium", "Sum of Total Monthly Premium"],
+      canonical: "Sum of Total Monthly Premium",
+      normalized: "sum of total monthly premium",
+    },
+    {
+      labels: ["In Force Monthly Premium", "Sum of In Force Monthly Premium"],
+      canonical: "Sum of In Force Monthly Premium",
+      normalized: "sum of in force monthly premium",
+    },
+    {
+      labels: ["Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premiums"],
+      canonical: "Sum of Total Converted Monthly Premiums",
+      normalized: "sum of total converted monthly premiums",
+    },
+  ];
+
+  premiumFields.forEach((field) => {
+    const baseValue = getAnalysisCurrencyMetricNumber(baseRow || {}, field.labels);
+    const candidateValue = getAnalysisCurrencyMetricNumber(candidateRow || {}, field.labels);
+    const mergedValue = candidateValue > 0 ? candidateValue : baseValue;
+    setAnalysisCurrencyMetric(mergedRow, field.canonical, field.normalized, mergedValue);
+  });
+
+  mergedRow.averageMonthlyPremium = Number(candidateRow?.averageMonthlyPremium) > 0
+    ? Number(candidateRow.averageMonthlyPremium)
+    : Number(baseRow?.averageMonthlyPremium) > 0
+      ? Number(baseRow.averageMonthlyPremium)
+      : 0;
+  mergedRow.highPremium = Number(candidateRow?.highPremium) > 0
+    ? Number(candidateRow.highPremium)
+    : Number(baseRow?.highPremium) > 0
+      ? Number(baseRow.highPremium)
+      : null;
+  mergedRow.lowPremium = Number(candidateRow?.lowPremium) > 0
+    ? Number(candidateRow.lowPremium)
+    : Number(baseRow?.lowPremium) > 0
+      ? Number(baseRow.lowPremium)
+      : null;
+
+  fillAnalysisRateFallbacks(mergedRow);
+  return mergedRow;
+}
+
+function mergeAnalysisSummaryDatasets(baseDataset = null, ...candidateDatasets) {
+  const datasetList = [baseDataset, ...candidateDatasets].filter(
+    (dataset) => dataset && (Array.isArray(dataset.rows) || Array.isArray(dataset.columns))
+  );
+  if (!datasetList.length) {
+    return { columns: [], rows: [], summaryValues: [] };
+  }
+
+  const base = datasetList[0];
+  const rowMap = new Map();
+
+  (Array.isArray(base?.rows) ? base.rows : []).forEach((row) => {
+    rowMap.set(getAnalysisSummaryRowKey(row), { ...row });
+  });
+
+  datasetList.slice(1).forEach((dataset) => {
+    (Array.isArray(dataset?.rows) ? dataset.rows : []).forEach((row) => {
+      const key = getAnalysisSummaryRowKey(row);
+      const current = rowMap.get(key) || null;
+      rowMap.set(key, mergeAnalysisPremiumMetrics(current, row));
+    });
+  });
+
+  const mergedRows = Array.from(rowMap.values());
+  return {
+    columns: Array.isArray(base?.columns) ? base.columns : [],
+    rows: mergedRows,
+    summaryValues: buildAnalysisSummaryValuesFromRows(mergedRows),
+  };
+}
+
 function normalizeAnalysisKeyCodeValue(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) {
@@ -2157,9 +2270,15 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
           : preferredExportSummary.rows.length || preferredExportSummary.columns.length
             ? preferredExportSummary
             : buildFlatRowsFromDetailExport(preferredExport.rows);
+  const mergedFlattened = mergeAnalysisSummaryDatasets(
+    effectiveFlattened,
+    flattened,
+    normalizedDetailSummary,
+    preferredExportSummary
+  );
   const availableKeyValues = Array.from(
     new Set(
-      effectiveFlattened.rows
+      mergedFlattened.rows
         .map((row) => String(row["Key"] || row.key || "").trim())
         .filter(Boolean)
     )
@@ -2173,13 +2292,13 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     describePayload,
     rawReportPayload: reportPayload,
     groupedReportUnavailableReason,
-    columns: effectiveFlattened.columns,
-    summaryValues: effectiveFlattened.summaryValues || [],
-    rows: filterAnalysisRows(effectiveFlattened.rows, filters),
-    exportColumns: effectiveFlattened.columns,
-    exportRows: filterAnalysisRows(effectiveFlattened.rows, filters),
-    unfilteredRowCount: effectiveFlattened.rows.length,
-    exportRowCount: filterAnalysisRows(effectiveFlattened.rows, filters).length,
+    columns: mergedFlattened.columns,
+    summaryValues: mergedFlattened.summaryValues || [],
+    rows: filterAnalysisRows(mergedFlattened.rows, filters),
+    exportColumns: mergedFlattened.columns,
+    exportRows: filterAnalysisRows(mergedFlattened.rows, filters),
+    unfilteredRowCount: mergedFlattened.rows.length,
+    exportRowCount: filterAnalysisRows(mergedFlattened.rows, filters).length,
     availableKeyValues,
   };
 }
