@@ -1163,7 +1163,8 @@ function buildSummaryAggregateValues(reportPayload, aggregateColumns) {
 }
 
 function buildAnalysisSummaryValuesFromRows(rows = []) {
-  const totals = ensureArray(rows).reduce((acc, row) => {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const totals = safeRows.reduce((acc, row) => {
     acc.mailed += parseNumber(row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
     acc.oppCount += parseNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
     acc.inForce += parseNumber(row["Sum of In Force"] ?? row["sum of in force"] ?? 0);
