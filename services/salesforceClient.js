@@ -2522,8 +2522,8 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   const effectiveDateRange = resolveAnalysisDateRange(filters);
 
   const describePayload = await fetchReportDescribe(tokenRecord, reportId);
-  const reportPayload = null;
-  const groupedReportUnavailableReason = "Analysis used the Salesforce aggregate query path instead of synchronous report execution.";
+  let reportPayload = null;
+  let groupedReportUnavailableReason = "Analysis used the Salesforce aggregate query path instead of synchronous report execution.";
   const flattened = { columns: [], rows: [], summaryValues: [] };
   const aggregateDataset = await fetchAnalysisAggregateRows(tokenRecord, describePayload, filters);
   const fullDetailExport = { columns: [], rows: [] };
@@ -2572,7 +2572,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     rows: mergedFlattened.rows,
     summaryValues: buildAnalysisSummaryValuesFromRows(mergedFlattened.rows),
   };
-  const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
+  let diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
     flattened,
     fullDetailExport,
     reportPayloadDetailExport,
@@ -2580,6 +2580,51 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     preferredExportSummary,
     mergedFlattened: finalizedFlattened,
   });
+  if (diagnostics?.suspicious) {
+    try {
+      const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
+        scf: filters.scf,
+        keyCodes: filters.keyCodes,
+        dateRange: effectiveDateRange,
+      });
+      const executed = await executeReportWithDescribeMetadata(
+        tokenRecord,
+        reportId,
+        reportMetadata,
+        describePayload
+      );
+      reportPayload = executed.reportPayload;
+      const payloadGrouped = buildGroupedReportRows(reportPayload) || { columns: [], rows: [], summaryValues: [] };
+      const payloadExport = reportPayload ? buildDetailExportRows(reportPayload) : { columns: [], rows: [] };
+      const payloadPreferredExport = choosePreferredAnalysisExportRows(
+        { columns: [], rows: [] },
+        payloadExport
+      );
+      const payloadPreferredSummary = payloadPreferredExport.rows.length
+        ? buildFlatRowsFromDetailExport(payloadPreferredExport.rows)
+        : { columns: [], rows: [], summaryValues: [] };
+      const repairedMerged = mergeAnalysisSummaryDatasets(
+        finalizedFlattened,
+        payloadGrouped,
+        payloadPreferredSummary
+      );
+      finalizedFlattened.rows = repairedMerged.rows;
+      finalizedFlattened.columns = repairedMerged.columns;
+      finalizedFlattened.summaryValues = buildAnalysisSummaryValuesFromRows(repairedMerged.rows);
+      diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
+        flattened: payloadGrouped,
+        fullDetailExport,
+        reportPayloadDetailExport: payloadExport,
+        normalizedDetailSummary,
+        preferredExportSummary: payloadPreferredSummary,
+        mergedFlattened: finalizedFlattened,
+      });
+      groupedReportUnavailableReason = "";
+    } catch (error) {
+      const repairMessage = error instanceof Error ? error.message : String(error || "");
+      groupedReportUnavailableReason = `${groupedReportUnavailableReason} Premium repair via Salesforce report execution was unavailable: ${repairMessage}`.trim();
+    }
+  }
   const availableKeyValues = Array.from(
     new Set(
       finalizedFlattened.rows
