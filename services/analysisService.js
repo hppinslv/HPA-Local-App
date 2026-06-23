@@ -358,63 +358,23 @@ const ANALYSIS_REPORT_LABEL_MAP = {
   "In Force Rate": "In Force Rate",
 };
 
-const ANALYSIS_REPORT_ORDER = [
-  "SCF Grouping",
-  "Key",
-  "Sum of Mailed",
-  "Sum of Opp Count",
-  "Sum of Sold",
-  "Sum of In Force",
-  "Sum of Total Monthly Premium",
-  "Average Monthly Premium Sold",
-  "Sum of In Force Monthly Premium",
-  "Sum of Total Converted Monthly Premiums",
-  "Sold Rate",
-  "Converted Rate",
-  "In Force Rate",
-];
-
-function getAnalysisReportOrderRank(labelOrKey) {
-  const trimmed = String(labelOrKey || "").trim();
-  const index = ANALYSIS_REPORT_ORDER.indexOf(trimmed);
-  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
-}
-
 function renameAnalysisReportLabel(label) {
   const trimmed = String(label || "").trim();
   return ANALYSIS_REPORT_LABEL_MAP[trimmed] || trimmed;
 }
 
 function relabelAnalysisColumns(columns = []) {
-  return ensureArray(columns)
-    .map((column) => ({
-      ...column,
-      label: renameAnalysisReportLabel(column?.label || column?.key || column?.normalized || ""),
-    }))
-    .sort((columnA, columnB) => {
-      const rankA = getAnalysisReportOrderRank(columnA?.key || columnA?.label || columnA?.normalized || "");
-      const rankB = getAnalysisReportOrderRank(columnB?.key || columnB?.label || columnB?.normalized || "");
-      if (rankA !== rankB) {
-        return rankA - rankB;
-      }
-      return String(columnA?.label || "").localeCompare(String(columnB?.label || ""));
-    });
+  return ensureArray(columns).map((column) => ({
+    ...column,
+    label: renameAnalysisReportLabel(column?.label || column?.key || column?.normalized || ""),
+  }));
 }
 
 function relabelAnalysisSummaryValues(summaryValues = []) {
-  return ensureArray(summaryValues)
-    .map((entry) => ({
-      ...entry,
-      label: renameAnalysisReportLabel(entry?.label || entry?.key || ""),
-    }))
-    .sort((entryA, entryB) => {
-      const rankA = getAnalysisReportOrderRank(entryA?.key || entryA?.label || "");
-      const rankB = getAnalysisReportOrderRank(entryB?.key || entryB?.label || "");
-      if (rankA !== rankB) {
-        return rankA - rankB;
-      }
-      return String(entryA?.label || "").localeCompare(String(entryB?.label || ""));
-    });
+  return ensureArray(summaryValues).map((entry) => ({
+    ...entry,
+    label: renameAnalysisReportLabel(entry?.label || entry?.key || ""),
+  }));
 }
 
 function relabelAnalysisRows(rows = [], columns = []) {
