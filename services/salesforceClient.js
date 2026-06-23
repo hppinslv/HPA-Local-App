@@ -1529,15 +1529,15 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     const sourceSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
     const sourceInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
     const sourceConvertedRate = parseNumber(row["Converted Rate"] ?? row["converted rate"]);
-    if (rowMailed > 0 && Number.isFinite(sourceSoldRate)) {
+    if (rowMailed > 0 && Number.isFinite(sourceSoldRate) && Math.abs(sourceSoldRate) > 0.000001) {
       current.soldRateWeightedTotal += sourceSoldRate * rowMailed;
       current.soldRateWeight += rowMailed;
     }
-    if (rowMailed > 0 && Number.isFinite(sourceInForceRate)) {
+    if (rowMailed > 0 && Number.isFinite(sourceInForceRate) && Math.abs(sourceInForceRate) > 0.000001) {
       current.inForceRateWeightedTotal += sourceInForceRate * rowMailed;
       current.inForceRateWeight += rowMailed;
     }
-    if (rowMailed > 0 && Number.isFinite(sourceConvertedRate)) {
+    if (rowMailed > 0 && Number.isFinite(sourceConvertedRate) && Math.abs(sourceConvertedRate) > 0.000001) {
       current.convertedRateWeightedTotal += sourceConvertedRate * rowMailed;
       current.convertedRateWeight += rowMailed;
     }
