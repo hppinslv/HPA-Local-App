@@ -36,7 +36,7 @@ const SCORE_HISTORY_VISIBLE_PAYMENT_TYPES = ["ACH", "Credit Card", "Check"];
 const DEFAULT_ANALYSIS_REPORT_ID = "00OQm000003PIxhMAG";
 const ANALYSIS_SETUP_STORAGE_KEY = "hpa.analysis.currentSetupId";
 const ANALYSIS_KEY_CODE_GROUPS = ["NHCL", "RFC"];
-const ANALYSIS_CLIENT_TYPE_OPTIONS = ["NHCL", "RFC"];
+const ANALYSIS_KEY_CODE_OPTIONS = ["N", "RFC"];
 const APPLICATION_DEFAULTS = Object.freeze({
   dues: "19.95",
   freeCoverageAmount: "3000",
@@ -418,7 +418,8 @@ function formatAutoAnalysisMonthPart(value) {
 }
 
 function buildAutoAnalysisLabel(pull = {}, index = 0) {
-  const keyCode = String((pull.keyCodes || [])[0] || pull.clientType || "").trim().toUpperCase();
+  const rawKeyCode = String((pull.keyCodes || [])[0] || pull.clientType || "").trim().toUpperCase();
+  const keyCode = rawKeyCode === "N" ? "NHCL" : rawKeyCode;
   const startDate = normalizeIsoDateInput(pull.dateRange?.startDate || "");
   const endDate = normalizeIsoDateInput(pull.dateRange?.endDate || "");
 
@@ -4556,6 +4557,9 @@ function createEmptyPull(index = 0) {
 
 function normalizeKeyCodeGroup(value) {
   const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "N") {
+    return "NHCL";
+  }
   return ANALYSIS_KEY_CODE_GROUPS.includes(normalized) ? normalized : "NHCL";
 }
 
@@ -6335,7 +6339,7 @@ function renderAnalysisPulls() {
     const keyCodeOptions = Array.from(
       new Set(
         [
-          ...ANALYSIS_CLIENT_TYPE_OPTIONS,
+          ...ANALYSIS_KEY_CODE_OPTIONS,
           ...(normalizedKeyCode ? [normalizedKeyCode] : []),
         ].filter(Boolean)
       )
