@@ -1906,6 +1906,11 @@ function buildAnalysisDollarDiagnostics(reportId, filters, datasets = {}) {
   const warningMessage = suspicious
     ? `Report ${reportId} has ${rowCount} rows and nonzero counts (sold=${soldCount}, converted=${convertedCount}, inForce=${inForceCount}) but all dollar fields aggregated to 0. Missing expected amount fields: ${missingExpectedAmountFields.length ? missingExpectedAmountFields.join(", ") : "none"}.`
     : "";
+  const keyDistribution = (Array.isArray(merged.rows) ? merged.rows : []).reduce((acc, row) => {
+    const key = String(row["Key"] ?? row.key ?? "").trim() || "(blank)";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
 
   return {
     reportId,
@@ -1922,6 +1927,7 @@ function buildAnalysisDollarDiagnostics(reportId, filters, datasets = {}) {
     expectedAmountFields,
     missingExpectedAmountFields,
     samplePremiumValues,
+    keyDistribution,
     summary: {
       soldCount,
       convertedCount,

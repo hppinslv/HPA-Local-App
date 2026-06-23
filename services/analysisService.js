@@ -507,6 +507,8 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
   const { runMonth, runYear } = buildRunMonthYear(run.createdAt || timestamp);
   const reportName = buildAnalysisReportName(run, pull);
   const reportId = options.id || createAnalysisReportId();
+  const listType = resolveAnalysisReferenceListTypeFromPull(pull);
+  const normalizedClientType = listType === "nhcl" ? "NHCL" : listType === "rfc" ? "RFC" : (pull.clientType || "");
   const rawColumns = ensureArray(options.columns);
   const rawRows = ensureArray(options.rows);
   const rawExportColumns = ensureArray(options.exportColumns || rawColumns);
@@ -535,7 +537,7 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
         start_date: pull.dateRange?.startDate || "",
         end_date: pull.dateRange?.endDate || "",
         scf_filter: pull.scf || "",
-        client_type: pull.clientType || "",
+        client_type: normalizedClientType,
         notes: pull.notes || "",
       },
     });
@@ -565,7 +567,7 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
       start_date: pull.dateRange?.startDate || "",
       end_date: pull.dateRange?.endDate || "",
       scf_filter: pull.scf || "",
-      client_type: pull.clientType || "",
+      client_type: normalizedClientType,
       notes: pull.notes || "",
     },
     results_summary: buildAnalysisReportSummary({
@@ -1206,6 +1208,15 @@ function resolveAnalysisReferenceListType(clientType) {
     return "rfc";
   }
   return "";
+}
+
+function resolveAnalysisReferenceListTypeFromPull(pull = {}) {
+  const firstKeyCode = String(ensureArray(pull.keyCodes)[0] || "").trim();
+  const fromKeyCode = resolveAnalysisReferenceListType(firstKeyCode);
+  if (fromKeyCode) {
+    return fromKeyCode;
+  }
+  return resolveAnalysisReferenceListType(pull.clientType);
 }
 
 function buildAnalysisEmptyCell(column = {}, clientType = "") {
@@ -2405,11 +2416,13 @@ async function rebuildAnalysisReport(reportId) {
   });
 
   const inputRows = Number(result.unfilteredRowCount || 0);
-  const rows = padAnalysisRowsWithReferenceList(result.rows, result.columns, pull.clientType);
+  const effectiveListType = resolveAnalysisReferenceListTypeFromPull(pull);
+  const effectiveClientType = effectiveListType === "nhcl" ? "NHCL" : effectiveListType === "rfc" ? "RFC" : pull.clientType;
+  const rows = padAnalysisRowsWithReferenceList(result.rows, result.columns, effectiveClientType);
   const exportRows = padAnalysisRowsWithReferenceList(
     result.exportRows || result.rows,
     result.exportColumns || result.columns,
-    pull.clientType
+    effectiveClientType
   );
   let zeroReason = "";
   if (inputRows === 0) {
@@ -2546,21 +2559,24 @@ async function executeAnalysisRun(runId) {
         });
         const diagnostics = result.diagnostics || null;
         const inputRows = Number(result.unfilteredRowCount || 0);
+        const effectiveListType = resolveAnalysisReferenceListTypeFromPull(pull);
+        const effectiveClientType = effectiveListType === "nhcl" ? "NHCL" : effectiveListType === "rfc" ? "RFC" : pull.clientType;
         const exportRows = padAnalysisRowsWithReferenceList(
           result.rows,
           result.columns,
-          pull.clientType
+          effectiveClientType
         );
         const savedExportRows = padAnalysisRowsWithReferenceList(
           result.exportRows || result.rows,
           result.exportColumns || result.columns,
-          pull.clientType
+          effectiveClientType
         );
         console.log("Input rows:", inputRows);
         console.log("Export rows:", exportRows.length);
         if (diagnostics) {
           console.log("Field names:", diagnostics.availableFieldNames);
           console.log("Premium samples:", diagnostics.samplePremiumValues);
+          console.log("Key distribution:", diagnostics.keyDistribution);
           if (diagnostics.suspicious) {
             console.warn("Dollar warning:", diagnostics.warningMessage);
           }
