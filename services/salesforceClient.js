@@ -544,18 +544,40 @@ function normalizeScf(value) {
   return digits.slice(-3).padStart(3, "0");
 }
 
-function translateReportFieldToSoql(columnName, rootObject = null) {
+function translateReportFieldToSoql(columnName, rootObject = null, preserveLeadingObject = false) {
   let translated = String(columnName || "").trim();
 
-  if (rootObject && translated.startsWith(`${rootObject}.`)) {
+  if (!preserveLeadingObject && rootObject && translated.startsWith(`${rootObject}.`)) {
     translated = translated.slice(rootObject.length + 1);
-  } else {
+  } else if (!preserveLeadingObject) {
     translated = translated.replace(/^[A-Za-z0-9_]+\./, "");
   }
 
   return translated
     .replace(/^FK_([A-Za-z0-9_]+)__c\./, "$1__r.")
     .replace(/__c\./g, "__r.");
+}
+
+function resolvePlanFieldsForObject(fields = [], objectName = "") {
+  const normalizedObjectName = String(objectName || "").trim();
+  return fields.map((field) => {
+    const fullyQualifiedName = field?.fullyQualifiedName || field?.key || "";
+    const rootObject = String(field?.rootObject || "").trim();
+    const preserveLeadingObject = Boolean(
+      normalizedObjectName &&
+      rootObject &&
+      rootObject !== normalizedObjectName
+    );
+
+    return {
+      ...field,
+      soqlField: translateReportFieldToSoql(
+        fullyQualifiedName,
+        normalizedObjectName,
+        preserveLeadingObject
+      ),
+    };
+  });
 }
 
 function mapDescribeFields(describePayload) {
@@ -931,14 +953,15 @@ function buildAnalysisDetailSoqlPlan(describePayload, filters = {}) {
   const objectName =
     fields.find((field) => String(field.rootObject || "").trim())?.rootObject ||
     getRootObjectName(fields[0].fullyQualifiedName || fields[0].key);
+  const resolvedFields = resolvePlanFieldsForObject(fields, objectName);
 
   const dateRange = resolveAnalysisDateRange(filters);
-  const fallbackDateField = fields.find((field) => looksLikeDateLabel(field.normalized))?.soqlField;
+  const fallbackDateField = resolvedFields.find((field) => looksLikeDateLabel(field.normalized))?.soqlField;
   const dateField =
     translateReportFieldToSoql(reportMetadata.standardDateFilter?.column, objectName) ||
     fallbackDateField;
   const dateFieldInfo =
-    fields.find((field) => field.soqlField === dateField) || {
+    resolvedFields.find((field) => field.soqlField === dateField) || {
       dataType: inferSoqlFieldDataType(dateField),
     };
 
@@ -963,16 +986,18 @@ function buildAnalysisDetailSoqlPlan(describePayload, filters = {}) {
 
   const keyField = findFieldByLikelyLabels(fields, ["Key", "Key Code", "Report Key"]);
   const scfField = findFieldByLikelyLabels(fields, ["SCF Grouping", "SCF"]);
+  const resolvedKeyField = findFieldByLikelyLabels(resolvedFields, ["Key", "Key Code", "Report Key"]);
+  const resolvedScfField = findFieldByLikelyLabels(resolvedFields, ["SCF Grouping", "SCF"]);
   const keyFilters = Array.isArray(filters.keyCodes)
     ? filters.keyCodes.map((value) => String(value || "").trim()).filter(Boolean)
     : [];
 
-  if (keyField?.soqlField && keyFilters.length > 0) {
+  if (resolvedKeyField?.soqlField && keyFilters.length > 0) {
     if (keyFilters.length === 1) {
-      whereClauses.push(`${keyField.soqlField} = '${escapeSoqlLiteral(keyFilters[0])}'`);
+      whereClauses.push(`${resolvedKeyField.soqlField} = '${escapeSoqlLiteral(keyFilters[0])}'`);
     } else {
       whereClauses.push(
-        `${keyField.soqlField} IN (${keyFilters
+        `${resolvedKeyField.soqlField} IN (${keyFilters
           .map((value) => `'${escapeSoqlLiteral(value)}'`)
           .join(", ")})`
       );
@@ -980,15 +1005,15 @@ function buildAnalysisDetailSoqlPlan(describePayload, filters = {}) {
   }
 
   const normalizedScf = String(filters.scf || "").trim();
-  if (scfField?.soqlField && normalizedScf) {
-    whereClauses.push(`${scfField.soqlField} = '${escapeSoqlLiteral(normalizedScf)}'`);
+  if (resolvedScfField?.soqlField && normalizedScf) {
+    whereClauses.push(`${resolvedScfField.soqlField} = '${escapeSoqlLiteral(normalizedScf)}'`);
   }
 
   return {
     objectName,
     dateField,
     whereClauses,
-    fields,
+    fields: resolvedFields,
   };
 }
 
@@ -1036,13 +1061,14 @@ function buildRawDetailSoqlPlan(describePayload) {
   const objectName =
     fields.find((field) => String(field.rootObject || "").trim())?.rootObject ||
     getRootObjectName(fields[0].fullyQualifiedName || fields[0].key);
+  const resolvedFields = resolvePlanFieldsForObject(fields, objectName);
 
   const dateField =
     translateReportFieldToSoql(reportMetadata.standardDateFilter?.column, objectName) ||
-    fields.find((field) => looksLikeDateLabel(field.normalized))?.soqlField ||
+    resolvedFields.find((field) => looksLikeDateLabel(field.normalized))?.soqlField ||
     "";
   const dateFieldInfo =
-    fields.find((field) => field.soqlField === dateField) || {
+    resolvedFields.find((field) => field.soqlField === dateField) || {
       dataType: inferSoqlFieldDataType(dateField),
     };
 
@@ -1072,7 +1098,7 @@ function buildRawDetailSoqlPlan(describePayload) {
     objectName,
     dateField,
     whereClauses,
-    fields,
+    fields: resolvedFields,
   };
 }
 
