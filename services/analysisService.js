@@ -347,6 +347,64 @@ function buildAnalysisReportSummary({ inputRowCount, exportRowCount, zeroReason,
   return `Exported ${exportRowCount} row(s) from Salesforce report ${reportId || "unknown"} after reviewing ${inputRowCount} source row(s).`;
 }
 
+const ANALYSIS_REPORT_LABEL_MAP = {
+  "Sum of Opp Count": "Number of Apps Received",
+  "Sum of Sold": "Converted (at least one payment received)",
+  "Sum of In Force": "Inforce (policy currently in effect)",
+  "Sum of Total Monthly Premium": "Sum of Total Sold",
+  "Average Monthly Premium Sold": "Average Monthly Premium Sold",
+  "Sold Rate": "Sold Rate (Apps Received)",
+  "Converted Rate": "Converted Rate (At least one payment received)",
+  "In Force Rate": "In Force Rate (policy currently in effect)",
+};
+
+function renameAnalysisReportLabel(label) {
+  const trimmed = String(label || "").trim();
+  return ANALYSIS_REPORT_LABEL_MAP[trimmed] || trimmed;
+}
+
+function relabelAnalysisColumns(columns = []) {
+  return ensureArray(columns).map((column) => ({
+    ...column,
+    label: renameAnalysisReportLabel(column?.label || column?.key || column?.normalized || ""),
+  }));
+}
+
+function relabelAnalysisSummaryValues(summaryValues = []) {
+  return ensureArray(summaryValues).map((entry) => ({
+    ...entry,
+    label: renameAnalysisReportLabel(entry?.label || entry?.key || ""),
+  }));
+}
+
+function relabelAnalysisRows(rows = [], columns = []) {
+  const rawColumns = ensureArray(columns);
+  if (!rawColumns.length) {
+    return ensureArray(rows);
+  }
+
+  return ensureArray(rows).map((row) => {
+    const output = { ...row };
+    rawColumns.forEach((column) => {
+      const originalLabel = String(column?.label || column?.key || "").trim();
+      const renamedLabel = renameAnalysisReportLabel(originalLabel);
+      if (!originalLabel || !renamedLabel || originalLabel === renamedLabel) {
+        return;
+      }
+
+      const value =
+        row?.[originalLabel] ??
+        row?.[column?.normalized || ""] ??
+        row?.[column?.key || ""];
+
+      if (value !== undefined) {
+        output[renamedLabel] = value;
+      }
+    });
+    return output;
+  });
+}
+
 function ensureAnalysisReportExportDir() {
   ensureDir(ANALYSIS_REPORT_EXPORT_DIR);
   return ANALYSIS_REPORT_EXPORT_DIR;
@@ -446,10 +504,15 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
   const { runMonth, runYear } = buildRunMonthYear(run.createdAt || timestamp);
   const reportName = buildAnalysisReportName(run, pull);
   const reportId = options.id || createAnalysisReportId();
-  const rows = ensureArray(options.rows);
-  const columns = ensureArray(options.columns);
-  const exportRows = ensureArray(options.exportRows || rows);
-  const exportColumns = ensureArray(options.exportColumns || columns);
+  const rawColumns = ensureArray(options.columns);
+  const rawRows = ensureArray(options.rows);
+  const rawExportColumns = ensureArray(options.exportColumns || rawColumns);
+  const rawExportRows = ensureArray(options.exportRows || rawRows);
+  const columns = relabelAnalysisColumns(rawColumns);
+  const rows = relabelAnalysisRows(rawRows, rawColumns);
+  const exportColumns = relabelAnalysisColumns(rawExportColumns);
+  const exportRows = relabelAnalysisRows(rawExportRows, rawExportColumns);
+  const summaryValues = relabelAnalysisSummaryValues(options.summaryValues);
   const zeroReason =
     options.zeroReason ||
     (options.inputRowCount === 0
@@ -510,7 +573,7 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
     }),
     created_by: DEFAULT_ACTOR,
     columns,
-    summaryValues: ensureArray(options.summaryValues),
+    summaryValues,
     rows,
     exportColumns,
     exportRows,
@@ -2529,13 +2592,17 @@ async function executeAnalysisRun(runId) {
             : null
         );
 
+        const displayColumns = relabelAnalysisColumns(result.columns);
+        const displaySummaryValues = relabelAnalysisSummaryValues(result.summaryValues || []);
+        const displayRows = relabelAnalysisRows(exportRows, result.columns);
+
         results.push({
           ...pull,
           status: "complete",
           error: "",
-          columns: result.columns,
-          summaryValues: result.summaryValues || [],
-          rows: exportRows,
+          columns: displayColumns,
+          summaryValues: displaySummaryValues,
+          rows: displayRows,
           rawRowCount: result.unfilteredRowCount,
           exportRowCount: savedExportRows.length,
           executedAt: new Date().toISOString(),

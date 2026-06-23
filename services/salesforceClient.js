@@ -1192,33 +1192,9 @@ function fillAnalysisRateFallbacks(row = {}) {
     0
   );
   const sold = resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
-
-  const currentSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
-  const currentInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
-  const currentConvertedRate = parseNumber(row["Converted Rate"] ?? row["converted rate"]);
-  const premiumRateDenominator = mailed * 14.86;
-
-  const nextSoldRate = Math.abs(currentSoldRate) > 0.000001
-    ? currentSoldRate
-    : premiumRateDenominator > 0 && totalMonthlyPremium > 0
-      ? (totalMonthlyPremium * 100) / premiumRateDenominator
-      : sold > 0
-        ? (sold / mailed) * 100
-        : 0;
-  const nextInForceRate = Math.abs(currentInForceRate) > 0.000001
-    ? currentInForceRate
-    : premiumRateDenominator > 0 && inForceMonthlyPremium > 0
-      ? (inForceMonthlyPremium * 100) / premiumRateDenominator
-      : inForce > 0
-        ? (inForce / mailed) * 100
-        : 0;
-  const nextConvertedRate = Math.abs(currentConvertedRate) > 0.000001
-    ? currentConvertedRate
-    : premiumRateDenominator > 0 && totalConvertedMonthlyPremiums > 0
-      ? (totalConvertedMonthlyPremiums * 100) / premiumRateDenominator
-      : oppCount > 0
-        ? (oppCount / mailed) * 100
-        : 0;
+  const nextSoldRate = oppCount > 0 ? (oppCount / mailed) * 100 : 0;
+  const nextInForceRate = inForce > 0 ? (inForce / mailed) * 100 : 0;
+  const nextConvertedRate = sold > 0 ? (sold / mailed) * 100 : 0;
 
   row["Sold Rate"] = nextSoldRate.toFixed(10);
   row["sold rate"] = nextSoldRate.toFixed(10);
@@ -1246,6 +1222,20 @@ function resolveAnalysisSoldValue(row = {}, precomputedConvertedPremium = null) 
   }
 
   return baseSold;
+}
+
+function resolveAnalysisSoldCountFromDetailRow(row = {}, precomputedConvertedPremium = null) {
+  const convertedPremium = precomputedConvertedPremium === null
+    ? parseNumber(
+      row["Sum of Total Converted Monthly Premiums"] ??
+      row["sum of total converted monthly premiums"] ??
+      row["Total Converted Monthly Premiums"] ??
+      row["total converted monthly premiums"] ??
+      0
+    )
+    : precomputedConvertedPremium;
+
+  return convertedPremium > 0 ? 1 : 0;
 }
 
 function buildGroupedReportRows(reportPayload) {
@@ -1462,24 +1452,6 @@ function buildFlatReportRows(reportPayload) {
 
 function buildFlatRowsFromDetailExport(exportRows = []) {
   const aggregateMap = new Map();
-  const hasPremiumFieldValues = exportRows.some((row) => {
-    const premiumValue =
-      row["Total Monthly Premium"] ??
-      row["total monthly premium"] ??
-      row["Sum of Total Monthly Premium"] ??
-      row["sum of total monthly premium"] ??
-      row["In Force Monthly Premium"] ??
-      row["in force monthly premium"] ??
-      row["Sum of In Force Monthly Premium"] ??
-      row["sum of in force monthly premium"] ??
-      row["Total Converted Monthly Premiums"] ??
-      row["total converted monthly premiums"] ??
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      "";
-    return parseNumber(premiumValue) !== 0;
-  });
-
   exportRows.forEach((row) => {
     const scf = normalizeScf(
       row["SCF Grouping"] ??
@@ -1510,12 +1482,6 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       totalMonthlyPremium: 0,
       inForceMonthlyPremium: 0,
       totalConvertedMonthlyPremiums: 0,
-      soldRateWeightedTotal: 0,
-      soldRateWeight: 0,
-      inForceRateWeightedTotal: 0,
-      inForceRateWeight: 0,
-      convertedRateWeightedTotal: 0,
-      convertedRateWeight: 0,
     };
 
     current.mailed += parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
@@ -1542,51 +1508,20 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       row["sum of total converted monthly premiums"] ??
       0
     );
-    current.sold += resolveAnalysisSoldValue(row, parseNumber(
+    current.sold += resolveAnalysisSoldCountFromDetailRow(row, parseNumber(
       row["Total Converted Monthly Premiums"] ??
       row["total converted monthly premiums"] ??
       row["Sum of Total Converted Monthly Premiums"] ??
       row["sum of total converted monthly premiums"] ??
       0
     ));
-
-    const rowMailed = parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
-    const sourceSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
-    const sourceInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
-    const sourceConvertedRate = parseNumber(row["Converted Rate"] ?? row["converted rate"]);
-    if (rowMailed > 0 && Number.isFinite(sourceSoldRate) && Math.abs(sourceSoldRate) > 0.000001) {
-      current.soldRateWeightedTotal += sourceSoldRate * rowMailed;
-      current.soldRateWeight += rowMailed;
-    }
-    if (rowMailed > 0 && Number.isFinite(sourceInForceRate) && Math.abs(sourceInForceRate) > 0.000001) {
-      current.inForceRateWeightedTotal += sourceInForceRate * rowMailed;
-      current.inForceRateWeight += rowMailed;
-    }
-    if (rowMailed > 0 && Number.isFinite(sourceConvertedRate) && Math.abs(sourceConvertedRate) > 0.000001) {
-      current.convertedRateWeightedTotal += sourceConvertedRate * rowMailed;
-      current.convertedRateWeight += rowMailed;
-    }
     aggregateMap.set(aggregateKey, current);
   });
 
   const rows = Array.from(aggregateMap.values())
     .sort((entryA, entryB) => {
-      const soldRateA =
-        entryA.soldRateWeight > 0
-          ? entryA.soldRateWeightedTotal / entryA.soldRateWeight
-          : entryA.mailed > 0 && hasPremiumFieldValues
-            ? (entryA.totalMonthlyPremium * 100) / (entryA.mailed * 14.86)
-            : entryA.mailed > 0
-              ? (entryA.sold / entryA.mailed) * 100
-              : 0;
-      const soldRateB =
-        entryB.soldRateWeight > 0
-          ? entryB.soldRateWeightedTotal / entryB.soldRateWeight
-          : entryB.mailed > 0 && hasPremiumFieldValues
-            ? (entryB.totalMonthlyPremium * 100) / (entryB.mailed * 14.86)
-            : entryB.mailed > 0
-              ? (entryB.sold / entryB.mailed) * 100
-              : 0;
+      const soldRateA = entryA.mailed > 0 ? (entryA.oppCount / entryA.mailed) * 100 : 0;
+      const soldRateB = entryB.mailed > 0 ? (entryB.oppCount / entryB.mailed) * 100 : 0;
       if (soldRateB !== soldRateA) {
         return soldRateB - soldRateA;
       }
@@ -1596,28 +1531,10 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       return entryA.keyCode.localeCompare(entryB.keyCode, undefined, { numeric: true });
     })
     .map((entry) => {
-      const rateDenominator = entry.mailed > 0 ? entry.mailed * 14.86 : 0;
-      const soldRate = entry.soldRateWeight > 0
-        ? entry.soldRateWeightedTotal / entry.soldRateWeight
-        : rateDenominator > 0 && hasPremiumFieldValues
-          ? (entry.totalMonthlyPremium * 100) / rateDenominator
-          : entry.mailed > 0
-            ? (entry.sold / entry.mailed) * 100
-            : 0;
-      const inForceRate = entry.inForceRateWeight > 0
-        ? entry.inForceRateWeightedTotal / entry.inForceRateWeight
-        : rateDenominator > 0 && hasPremiumFieldValues
-          ? (entry.inForceMonthlyPremium * 100) / rateDenominator
-          : entry.mailed > 0
-            ? (entry.inForce / entry.mailed) * 100
-            : 0;
-      const convertedRate = entry.convertedRateWeight > 0
-        ? entry.convertedRateWeightedTotal / entry.convertedRateWeight
-        : rateDenominator > 0 && hasPremiumFieldValues
-          ? (entry.totalConvertedMonthlyPremiums * 100) / rateDenominator
-          : entry.mailed > 0
-            ? (entry.oppCount / entry.mailed) * 100
-            : 0;
+      const soldRate = entry.mailed > 0 ? (entry.oppCount / entry.mailed) * 100 : 0;
+      const inForceRate = entry.mailed > 0 ? (entry.inForce / entry.mailed) * 100 : 0;
+      const convertedRate = entry.mailed > 0 ? (entry.sold / entry.mailed) * 100 : 0;
+      const averageSoldPremium = entry.sold > 0 ? entry.totalMonthlyPremium / entry.sold : 0;
 
       return {
         "SCF Grouping": entry.scf,
@@ -1634,6 +1551,8 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "sum of sold": Math.round(entry.sold).toLocaleString("en-US"),
         "Sum of Total Monthly Premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of total monthly premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+        "Average Monthly Premium Sold": averageSoldPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+        "average monthly premium sold": averageSoldPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of In Force Monthly Premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of in force monthly premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of Total Converted Monthly Premiums": entry.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
@@ -1656,6 +1575,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of In Force", label: "Sum of In Force", normalized: "sum of in force", dataType: "double" },
       { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", normalized: "sum of total monthly premium", dataType: "currency" },
+      { key: "Average Monthly Premium Sold", label: "Average Monthly Premium Sold", normalized: "average monthly premium sold", dataType: "currency" },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", normalized: "sum of in force monthly premium", dataType: "currency" },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
       { key: "Sold Rate", label: "Sold Rate", normalized: "sold rate", dataType: "double" },
@@ -1669,6 +1589,15 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForce, 0)).toLocaleString("en-US") },
       { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
+      { key: "Average Monthly Premium Sold", label: "Average Monthly Premium Sold", value: (() => {
+        const totals = Array.from(aggregateMap.values()).reduce((acc, entry) => {
+          acc.premium += entry.totalMonthlyPremium;
+          acc.sold += entry.sold;
+          return acc;
+        }, { premium: 0, sold: 0 });
+        const average = totals.sold > 0 ? totals.premium / totals.sold : 0;
+        return average.toLocaleString("en-US", { style: "currency", currency: "USD" });
+      })() },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForceMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalConvertedMonthlyPremiums, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     ],
