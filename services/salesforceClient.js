@@ -1950,10 +1950,25 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
     keyCodes: filters.keyCodes,
     dateRange: filters.dateRange,
   });
+  const reportPayloadDetailExport = executed.reportPayload
+    ? buildDetailExportRows(executed.reportPayload)
+    : { columns: [], rows: [] };
   const detailSummary = Array.isArray(fullDetailExport?.rows) && fullDetailExport.rows.length
     ? buildFlatRowsFromDetailExport(fullDetailExport.rows)
     : { rows: [] };
-  const detailRows = Array.isArray(detailSummary?.rows) ? detailSummary.rows : [];
+  const preferredExport = choosePreferredAnalysisExportRows(
+    fullDetailExport,
+    reportPayloadDetailExport
+  );
+  const preferredExportSummary = Array.isArray(preferredExport?.rows) && preferredExport.rows.length
+    ? buildFlatRowsFromDetailExport(preferredExport.rows)
+    : { rows: [] };
+  const mergedDataset = mergeAnalysisSummaryDatasets(
+    grouped || { columns: [], rows: [] },
+    detailSummary,
+    preferredExportSummary
+  );
+  const detailRows = Array.isArray(mergedDataset?.rows) ? mergedDataset.rows : [];
   const normalizedKeys = Array.isArray(filters.keyCodes)
     ? filters.keyCodes.map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase()).filter(Boolean)
     : [];
