@@ -6340,14 +6340,6 @@ function renderAnalysisPulls() {
         ].filter(Boolean)
       )
     );
-    const normalizedClientType = String(pull.clientType || "").trim().toUpperCase();
-    const derivedClientType =
-      normalizedClientType ||
-      (normalizedKeyCode === "N" || normalizedKeyCode === "NHCL"
-        ? "NHCL"
-        : normalizedKeyCode === "RFC"
-          ? "RFC"
-          : "");
     const card = document.createElement("article");
     card.className = "analysis-pull-card";
     card.setAttribute("data-pull-id", pull.id);
@@ -6395,10 +6387,6 @@ function renderAnalysisPulls() {
           <label class="field-label">SCF Filter</label>
           <input class="field-input" data-pull-field="scf" data-pull-id="${esc(pull.id)}" type="text" value="${esc(pull.scf || "")}" />
         </div>
-        <div class="field-stack">
-          <label class="field-label">Client / List Type</label>
-          <div class="field-input analysis-readonly-field" data-derived-field="clientType">${esc(derivedClientType || "Set by Key Codes")}</div>
-        </div>
         <div class="field-stack analysis-pull-wide">
           <label class="field-label">Notes</label>
           <textarea class="field-input multiline-input" data-pull-field="notes" data-pull-id="${esc(pull.id)}">${esc(pull.notes || "")}</textarea>
@@ -6445,18 +6433,6 @@ function updateAnalysisPullCardPreview(pullId) {
     readonlyLabel.textContent = nextLabel;
   }
 
-  const normalizedKeyCode = String((pull.keyCodes || [])[0] || "").trim().toUpperCase();
-  const derivedClientType =
-    String(pull.clientType || "").trim().toUpperCase() ||
-    (normalizedKeyCode === "N" || normalizedKeyCode === "NHCL"
-      ? "NHCL"
-      : normalizedKeyCode === "RFC"
-        ? "RFC"
-        : "");
-  const readonlyClientType = card.querySelector('[data-derived-field="clientType"]');
-  if (readonlyClientType) {
-    readonlyClientType.textContent = derivedClientType || "Set by Key Codes";
-  }
 }
 
 function syncAnalysisPullFromForm(pullId) {
