@@ -1162,6 +1162,73 @@ function buildSummaryAggregateValues(reportPayload, aggregateColumns) {
   }));
 }
 
+function fillAnalysisRateFallbacks(row = {}) {
+  const mailed = parseNumber(row["Sum of Mailed"] ?? row["sum of mailed"] ?? row["Mailed"] ?? row["mailed"] ?? 0);
+  if (!(mailed > 0)) {
+    return row;
+  }
+
+  const sold = parseNumber(row["Sum of Sold"] ?? row["sum of sold"] ?? row["Sold"] ?? row["sold"] ?? 0);
+  const inForce = parseNumber(row["Sum of In Force"] ?? row["sum of in force"] ?? row["In Force"] ?? row["in force"] ?? 0);
+  const oppCount = parseNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? row["Opp Count"] ?? row["opp count"] ?? 0);
+  const totalMonthlyPremium = parseNumber(
+    row["Sum of Total Monthly Premium"] ??
+    row["sum of total monthly premium"] ??
+    row["Total Monthly Premium"] ??
+    row["total monthly premium"] ??
+    0
+  );
+  const inForceMonthlyPremium = parseNumber(
+    row["Sum of In Force Monthly Premium"] ??
+    row["sum of in force monthly premium"] ??
+    row["In Force Monthly Premium"] ??
+    row["in force monthly premium"] ??
+    0
+  );
+  const totalConvertedMonthlyPremiums = parseNumber(
+    row["Sum of Total Converted Monthly Premiums"] ??
+    row["sum of total converted monthly premiums"] ??
+    row["Total Converted Monthly Premiums"] ??
+    row["total converted monthly premiums"] ??
+    0
+  );
+
+  const currentSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
+  const currentInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
+  const currentConvertedRate = parseNumber(row["Converted Rate"] ?? row["converted rate"]);
+  const premiumRateDenominator = mailed * 14.86;
+
+  const nextSoldRate = Math.abs(currentSoldRate) > 0.000001
+    ? currentSoldRate
+    : premiumRateDenominator > 0 && totalMonthlyPremium > 0
+      ? (totalMonthlyPremium * 100) / premiumRateDenominator
+      : sold > 0
+        ? (sold / mailed) * 100
+        : 0;
+  const nextInForceRate = Math.abs(currentInForceRate) > 0.000001
+    ? currentInForceRate
+    : premiumRateDenominator > 0 && inForceMonthlyPremium > 0
+      ? (inForceMonthlyPremium * 100) / premiumRateDenominator
+      : inForce > 0
+        ? (inForce / mailed) * 100
+        : 0;
+  const nextConvertedRate = Math.abs(currentConvertedRate) > 0.000001
+    ? currentConvertedRate
+    : premiumRateDenominator > 0 && totalConvertedMonthlyPremiums > 0
+      ? (totalConvertedMonthlyPremiums * 100) / premiumRateDenominator
+      : oppCount > 0
+        ? (oppCount / mailed) * 100
+        : 0;
+
+  row["Sold Rate"] = nextSoldRate.toFixed(10);
+  row["sold rate"] = nextSoldRate.toFixed(10);
+  row["In Force Rate"] = nextInForceRate.toFixed(10);
+  row["in force rate"] = nextInForceRate.toFixed(10);
+  row["Converted Rate"] = nextConvertedRate.toFixed(10);
+  row["converted rate"] = nextConvertedRate.toFixed(10);
+  return row;
+}
+
 function buildGroupedReportRows(reportPayload) {
   const groupingColumns = getGroupingColumns(reportPayload);
   const aggregateColumns = getAggregateColumns(reportPayload);
@@ -1202,6 +1269,7 @@ function buildGroupedReportRows(reportPayload) {
       row[column.normalized] = value;
     });
 
+    fillAnalysisRateFallbacks(row);
     rows.push(row);
   };
 
