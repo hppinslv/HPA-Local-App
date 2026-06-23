@@ -2098,41 +2098,14 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
 }
 
 async function fetchMergedAnalysisRowsForScopedFilters(tokenRecord, reportId, describePayload, filters = {}) {
-  const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
-    scf: filters.scf,
-    keyCodes: filters.keyCodes,
-    dateRange: filters.dateRange,
-  });
-  const executed = await executeReportWithDescribeMetadata(
-    tokenRecord,
-    reportId,
-    reportMetadata,
-    describePayload
-  );
-  const grouped = buildGroupedReportRows(executed.reportPayload);
   const fullDetailExport = await buildFullDetailExportRows(tokenRecord, describePayload, {
     scf: filters.scf,
     keyCodes: filters.keyCodes,
     dateRange: filters.dateRange,
   });
-  const reportPayloadDetailExport = executed.reportPayload
-    ? buildDetailExportRows(executed.reportPayload)
-    : { columns: [], rows: [] };
-  const detailSummary = Array.isArray(fullDetailExport?.rows) && fullDetailExport.rows.length
+  const mergedDataset = Array.isArray(fullDetailExport?.rows) && fullDetailExport.rows.length
     ? buildFlatRowsFromDetailExport(fullDetailExport.rows)
-    : { rows: [] };
-  const preferredExport = choosePreferredAnalysisExportRows(
-    fullDetailExport,
-    reportPayloadDetailExport
-  );
-  const preferredExportSummary = Array.isArray(preferredExport?.rows) && preferredExport.rows.length
-    ? buildFlatRowsFromDetailExport(preferredExport.rows)
-    : { rows: [] };
-  const mergedDataset = mergeAnalysisSummaryDatasets(
-    grouped || { columns: [], rows: [] },
-    detailSummary,
-    preferredExportSummary
-  );
+    : { columns: [], rows: [], summaryValues: [] };
   return Array.isArray(mergedDataset?.rows) ? mergedDataset.rows : [];
 }
 
@@ -2386,47 +2359,16 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   const tokenRecord = await getConnectedSalesforceToken();
   const effectiveDateRange = resolveAnalysisDateRange(filters);
 
-  let describePayload = null;
-  let reportPayload = null;
-  let groupedReportUnavailableReason = "";
-
-  try {
-    describePayload = await fetchReportDescribe(tokenRecord, reportId);
-    const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
-      scf: filters.scf,
-      keyCodes: filters.keyCodes,
-      dateRange: effectiveDateRange,
-    });
-    const executed = await executeReportWithDescribeMetadata(
-      tokenRecord,
-      reportId,
-      reportMetadata,
-      describePayload
-    );
-    describePayload = executed.describePayload || describePayload;
-    reportPayload = executed.reportPayload;
-  } catch (error) {
-    groupedReportUnavailableReason = error instanceof Error ? error.message : String(error || "");
-    if (!effectiveDateRange) {
-      throw error;
-    }
-    describePayload = await fetchReportDescribe(tokenRecord, reportId);
-  }
-
-  const flattened = reportPayload
-    ? buildFlatReportRows(reportPayload)
-    : { columns: [], rows: [], summaryValues: [] };
+  const describePayload = await fetchReportDescribe(tokenRecord, reportId);
+  const reportPayload = null;
+  const groupedReportUnavailableReason = "Analysis used the Salesforce detail query path instead of synchronous report execution.";
+  const flattened = { columns: [], rows: [], summaryValues: [] };
   const fullDetailExport = await buildFullDetailExportRows(tokenRecord, describePayload, filters);
-  const reportPayloadDetailExport = reportPayload
-    ? buildDetailExportRows(reportPayload)
-    : { columns: [], rows: [] };
+  const reportPayloadDetailExport = { columns: [], rows: [] };
   const normalizedDetailSummary = fullDetailExport.rows.length
     ? buildFlatRowsFromDetailExport(fullDetailExport.rows)
     : { columns: [], rows: [], summaryValues: [] };
-  const preferredExport = choosePreferredAnalysisExportRows(
-    fullDetailExport,
-    reportPayloadDetailExport
-  );
+  const preferredExport = fullDetailExport;
   const preferredExportSummary = preferredExport.rows.length
     ? buildFlatRowsFromDetailExport(preferredExport.rows)
     : { columns: [], rows: [], summaryValues: [] };
