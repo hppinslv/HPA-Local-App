@@ -749,6 +749,25 @@ async function insertSalesforceRecords(tokenRecord, rows) {
   return payload;
 }
 
+async function fetchPolicyPayType(tokenRecord, policyId) {
+  const normalizedPolicyId = normalizeText(policyId);
+  if (!normalizedPolicyId) {
+    return "";
+  }
+
+  const records = await runSoqlQuery(
+    tokenRecord,
+    `
+SELECT Id, Pay_Type__c
+FROM Policy__c
+WHERE Id = '${escapeSoqlString(normalizedPolicyId)}'
+LIMIT 1
+`.trim()
+  );
+
+  return normalizeText(records?.[0]?.Pay_Type__c);
+}
+
 async function updatePolicyPayTypeForAchReturns(tokenRecord, rows) {
   const policyIdsToUpdate = Array.from(
     new Set(
@@ -762,27 +781,50 @@ async function updatePolicyPayTypeForAchReturns(tokenRecord, rows) {
 
   const failures = [];
   for (const policyId of policyIdsToUpdate) {
-    const response = await salesforceRequest(
-      tokenRecord,
-      `/services/data/v61.0/sobjects/Policy__c/${encodeURIComponent(policyId)}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({
-          Pay_Type__c: MONTHLY_BILLING_PAY_TYPE,
-        }),
-      }
-    );
+    const patchPolicyPayType = async () => {
+      const response = await salesforceRequest(
+        tokenRecord,
+        `/services/data/v61.0/sobjects/Policy__c/${encodeURIComponent(policyId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            Pay_Type__c: MONTHLY_BILLING_PAY_TYPE,
+          }),
+        }
+      );
 
-    if (!response.ok) {
-      let payload = {};
-      try {
-        payload = await response.json();
-      } catch {
-        payload = {};
+      if (!response.ok) {
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+        throw new Error(payload[0]?.message || payload.message || "Unable to update Policy Pay Type.");
       }
+    };
+
+    try {
+      await patchPolicyPayType();
+      let confirmedPayType = await fetchPolicyPayType(tokenRecord, policyId);
+      if (confirmedPayType !== MONTHLY_BILLING_PAY_TYPE) {
+        await patchPolicyPayType();
+        confirmedPayType = await fetchPolicyPayType(tokenRecord, policyId);
+      }
+      if (confirmedPayType !== MONTHLY_BILLING_PAY_TYPE) {
+        failures.push({
+          policyId,
+          message: confirmedPayType
+            ? `Policy Pay Type remained ${confirmedPayType} after update. Salesforce automation may have reverted it.`
+            : "Policy Pay Type could not be confirmed after update.",
+        });
+      }
+    } catch (error) {
       failures.push({
         policyId,
-        message: payload[0]?.message || payload.message || "Unable to update Policy Pay Type.",
+        message: error instanceof Error
+          ? error.message
+          : String(error || "Unable to update Policy Pay Type."),
       });
     }
   }
@@ -905,7 +947,7 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
         const policyId = normalizeText(row.matched_payment?.policyId || row.matched_payment?.policy_id || row.policyId);
         const failureMessage = failureMessageByPolicyId.get(policyId);
         if (!failureMessage) return;
-        if (row.import_result_status === "imported") {
+        if (["imported", "already_exists"].includes(row.import_result_status)) {
           row.import_result_message = `${row.import_result_message} Policy Pay Type update failed: ${failureMessage}`.trim();
         }
       });

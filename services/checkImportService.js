@@ -1470,13 +1470,7 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
   return revalidateSession(sessionId);
 }
 
-async function updateCheckImportRow(sessionId, rowId, updates = {}) {
-  const rows = readRows();
-  const row = rows.find((entry) => entry.session_id === sessionId && entry.id === rowId);
-  if (!row) {
-    throw new Error("Check import row not found.");
-  }
-
+function applyCheckImportRowUpdates(row, updates = {}) {
   if (Object.prototype.hasOwnProperty.call(updates, "certificate_number")) {
     row.corrected_certificate_number = normalizeCertificateNumber(updates.certificate_number);
     logCheckImportEvent("Manual Cert Number correction saved", {
@@ -1499,47 +1493,83 @@ async function updateCheckImportRow(sessionId, rowId, updates = {}) {
   }
   row.corrected_by = normalizeText(updates.corrected_by || DEFAULT_ACTOR);
   row.corrected_at = new Date().toISOString();
-  writeRows(rows);
+}
 
-  const correctedCertificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
-  if (correctedCertificateNumber) {
-    logCheckImportEvent("Certificate lookup started", {
-      rowId: row.id,
-      importedCertNumber: row.certificate_number || "",
-      normalizedCertNumber: correctedCertificateNumber,
-    });
-    const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates([correctedCertificateNumber]);
-    const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates([correctedCertificateNumber]);
-    const certificateIdEntries = [{
-      certificate_number: correctedCertificateNumber,
-      certificate_record_id: normalizeText(certificateRecordIdMap.get(correctedCertificateNumber.toLowerCase()) || ""),
-      refreshed_at: new Date().toISOString(),
-      source_report_id: POLICY_REPORT_ID,
-    }];
-    const knownCertificatePolicyKeys = new Set(
-      (readPolicyCache().items || []).map((entry) =>
-        `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-      )
-    );
-    const nextCache = {
-      ...readPolicyCache(),
-      refreshedAt: new Date().toISOString(),
-      source: "manual-certificate-refresh",
-      items: mergeLookupEntries(
-        readPolicyCache().items,
-        targetedPolicyEntries.filter((entry) =>
-          knownCertificatePolicyKeys.has(
-            `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-          )
-        ),
-        certificateIdEntries
-      ),
-    };
-    writePolicyCache(nextCache);
+async function refreshManualCertificateLookup(certificateNumbers = []) {
+  const normalizedCertificateNumbers = Array.from(
+    new Set((certificateNumbers || []).map((entry) => normalizeCertificateNumber(entry)).filter(Boolean))
+  );
+  if (!normalizedCertificateNumbers.length) {
+    return;
   }
 
+  const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(normalizedCertificateNumbers);
+  const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(normalizedCertificateNumbers);
+  const certificateIdEntries = normalizedCertificateNumbers.map((certificateNumber) => ({
+    certificate_number: certificateNumber,
+    certificate_record_id: normalizeText(certificateRecordIdMap.get(certificateNumber.toLowerCase()) || ""),
+    refreshed_at: new Date().toISOString(),
+    source_report_id: POLICY_REPORT_ID,
+  }));
+  const currentCache = readPolicyCache();
+  const knownCertificatePolicyKeys = new Set(
+    (currentCache.items || []).map((entry) =>
+      `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+    )
+  );
+  const nextCache = {
+    ...currentCache,
+    refreshedAt: new Date().toISOString(),
+    source: "manual-certificate-refresh",
+    items: mergeLookupEntries(
+      currentCache.items,
+      targetedPolicyEntries.filter((entry) =>
+        knownCertificatePolicyKeys.has(
+          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+        )
+      ),
+      certificateIdEntries
+    ),
+  };
+  writePolicyCache(nextCache);
+}
+
+async function updateCheckImportRows(sessionId, rowUpdates = [], defaultCorrectedBy = DEFAULT_ACTOR) {
+  const rows = readRows();
+  const changedCertificateNumbers = [];
+
+  rowUpdates.forEach((entry) => {
+    const row = rows.find((candidate) => candidate.session_id === sessionId && candidate.id === entry?.id);
+    if (!row) {
+      throw new Error("Check import row not found.");
+    }
+    applyCheckImportRowUpdates(row, {
+      ...entry,
+      corrected_by: entry?.corrected_by || defaultCorrectedBy,
+    });
+    const correctedCertificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
+    if (correctedCertificateNumber) {
+      logCheckImportEvent("Certificate lookup started", {
+        rowId: row.id,
+        importedCertNumber: row.certificate_number || "",
+        normalizedCertNumber: correctedCertificateNumber,
+      });
+      changedCertificateNumbers.push(correctedCertificateNumber);
+    }
+  });
+
+  writeRows(rows);
+  await refreshManualCertificateLookup(changedCertificateNumbers);
   await hydrateCheckImportSession(sessionId);
   return revalidateSession(sessionId);
+}
+
+async function updateCheckImportRow(sessionId, rowId, updates = {}) {
+  return updateCheckImportRows(
+    sessionId,
+    [{ id: rowId, ...updates }],
+    normalizeText(updates.corrected_by || DEFAULT_ACTOR)
+  );
 }
 
 function buildCheckSalesforceRecord(row, template) {
@@ -1747,4 +1777,5 @@ module.exports = {
   refreshCheckImportPolicyLookupFromSalesforce,
   revalidateSession,
   updateCheckImportRow,
+  updateCheckImportRows,
 };

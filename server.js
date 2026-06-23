@@ -81,6 +81,7 @@ const {
   refreshCheckImportPolicyLookupFromSalesforce,
   revalidateSession: revalidateCheckImportSession,
   updateCheckImportRow,
+  updateCheckImportRows,
 } = require("./services/checkImportService");
 const {
   clearCurrentAchReturnSession,
@@ -1191,6 +1192,25 @@ const server = http.createServer((request, response) => {
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to import checks into Salesforce." });
+      });
+    return;
+  }
+
+  const checkImportBulkRowMatch = requestUrl.pathname.match(
+    /^\/api\/check-imports\/([^/]+)\/rows\/bulk$/
+  );
+  if (checkImportBulkRowMatch && request.method === "PATCH") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await updateCheckImportRows(
+          checkImportBulkRowMatch[1],
+          Array.isArray(body?.rows) ? body.rows : [],
+          body?.corrected_by || "Local User"
+        );
+        sendJson(response, 200, { session });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to update check import rows." });
       });
     return;
   }

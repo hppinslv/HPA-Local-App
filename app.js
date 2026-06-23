@@ -3247,8 +3247,13 @@ function updateCheckImportPolicyStatus() {
 
 function updateCheckImportButtons() {
   const session = getCurrentCheckImportSession();
+  const saveAllButton = el("check-import-save-all-button");
   const confirmButton = el("check-import-confirm-button");
   const exportButton = el("check-import-export-errors-button");
+  if (saveAllButton) {
+    const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+    saveAllButton.disabled = !session || alreadyImported;
+  }
   if (confirmButton) {
     const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
     const readyCount = Number(session?.ready_count || 0);
@@ -3307,6 +3312,35 @@ async function loadCheckImportSessions(preferredSessionId = "") {
   state.checkImports.currentSession = null;
   state.checkImports.launchSessionId = "";
   renderCheckImportPage();
+}
+
+function collectCheckImportRowEdits(session) {
+  const rows = Array.isArray(session?.rows) ? session.rows : [];
+  return rows
+    .filter((row) => !row.excluded)
+    .map((row) => {
+      const certificateInput = document.querySelector(`[data-check-row-field="certificate_number"][data-check-row-id="${row.id}"]`);
+      const monthsInput = document.querySelector(`[data-check-row-field="months"][data-check-row-id="${row.id}"]`);
+      if (!(certificateInput instanceof HTMLInputElement) && !(monthsInput instanceof HTMLInputElement)) {
+        return null;
+      }
+      const nextCertificateNumber = certificateInput instanceof HTMLInputElement ? certificateInput.value || "" : "";
+      const nextMonths = monthsInput instanceof HTMLInputElement ? monthsInput.value || "" : "";
+      const currentCertificateNumber = row.corrected_certificate_number || row.certificate_number || "";
+      const currentMonths = String(row.corrected_months ?? "").trim() !== "" ? String(row.corrected_months) : String(row.months ?? "");
+      if (
+        String(nextCertificateNumber).trim() === String(currentCertificateNumber).trim()
+        && String(nextMonths).trim() === String(currentMonths).trim()
+      ) {
+        return null;
+      }
+      return {
+        id: row.id,
+        certificate_number: nextCertificateNumber,
+        months: nextMonths,
+      };
+    })
+    .filter(Boolean);
 }
 
 function bindCheckImportEvents() {
@@ -3384,6 +3418,32 @@ function bindCheckImportEvents() {
       setStatus("check-import-status", "Session revalidated.");
     } catch (error) {
       setStatus("check-import-status", `Revalidation failed: ${error.message}`);
+    }
+  });
+
+  el("check-import-save-all-button")?.addEventListener("click", async () => {
+    const session = getCurrentCheckImportSession();
+    if (!session?.id) return;
+    const rowEdits = collectCheckImportRowEdits(session);
+    if (!rowEdits.length) {
+      setStatus("check-import-status", "There are no unsaved certificate or months changes.");
+      return;
+    }
+    setStatus("check-import-status", `Saving ${rowEdits.length} row correction(s)...`);
+    try {
+      const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(session.id)}/rows/bulk`, {
+        method: "PATCH",
+        body: {
+          rows: rowEdits,
+          corrected_by: "Local User",
+        },
+      });
+      state.checkImports.currentSession = payload.session || null;
+      state.checkImports.currentSessionId = payload.session?.id || session.id;
+      renderCheckImportPage();
+      setStatus("check-import-status", `Saved ${rowEdits.length} row correction(s).`);
+    } catch (error) {
+      setStatus("check-import-status", `Unable to save corrections: ${error.message}`);
     }
   });
 
