@@ -2523,47 +2523,51 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
 
   const describePayload = await fetchReportDescribe(tokenRecord, reportId);
   let reportPayload = null;
-  let groupedReportUnavailableReason = "Analysis used the Salesforce aggregate query path instead of synchronous report execution.";
-  const flattened = { columns: [], rows: [], summaryValues: [] };
-  const aggregateDataset = await fetchAnalysisAggregateRows(tokenRecord, describePayload, filters);
-  const fullDetailExport = { columns: [], rows: [] };
-  const reportPayloadDetailExport = { columns: [], rows: [] };
-  const normalizedDetailSummary = aggregateDataset.rows.length
-    ? {
-        columns: aggregateDataset.columns,
-        rows: aggregateDataset.rows,
-        summaryValues: aggregateDataset.summaryValues,
-      }
-    : { columns: [], rows: [], summaryValues: [] };
-  const preferredExport = aggregateDataset;
-  const preferredExportSummary = preferredExport.rows.length
-    ? {
-        columns: preferredExport.columns,
-        rows: preferredExport.rows,
-        summaryValues: preferredExport.summaryValues,
-      }
-    : { columns: [], rows: [], summaryValues: [] };
-  const shouldPreferDetailSummary =
-    normalizedDetailSummary.rows.length > flattened.rows.length
-    || countRowsWithScfValue(normalizedDetailSummary.rows) > countRowsWithScfValue(flattened.rows);
-  const shouldPreferPreferredExportSummary =
-    preferredExportSummary.rows.length > flattened.rows.length
-    || countRowsWithScfValue(preferredExportSummary.rows) > countRowsWithScfValue(flattened.rows);
-  const effectiveFlattened =
-    shouldPreferDetailSummary && (normalizedDetailSummary.rows.length || normalizedDetailSummary.columns.length)
-      ? normalizedDetailSummary
-      : shouldPreferPreferredExportSummary && (preferredExportSummary.rows.length || preferredExportSummary.columns.length)
-        ? preferredExportSummary
-      : flattened.rows.length || flattened.columns.length
-        ? flattened
-        : normalizedDetailSummary.rows.length || normalizedDetailSummary.columns.length
-          ? normalizedDetailSummary
-          : preferredExportSummary.rows.length || preferredExportSummary.columns.length
-            ? preferredExportSummary
-            : preferredExportSummary;
+  let groupedReportUnavailableReason = "";
+  let flattened = { columns: [], rows: [], summaryValues: [] };
+  let fullDetailExport = { columns: [], rows: [] };
+  let reportPayloadDetailExport = { columns: [], rows: [] };
+  let normalizedDetailSummary = { columns: [], rows: [], summaryValues: [] };
+  let preferredExportSummary = { columns: [], rows: [], summaryValues: [] };
+
+  try {
+    const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
+      scf: filters.scf,
+      keyCodes: filters.keyCodes,
+      dateRange: effectiveDateRange,
+    });
+    const executed = await executeReportWithDescribeMetadata(
+      tokenRecord,
+      reportId,
+      reportMetadata,
+      describePayload
+    );
+    reportPayload = executed.reportPayload;
+    flattened = buildGroupedReportRows(reportPayload) || { columns: [], rows: [], summaryValues: [] };
+    reportPayloadDetailExport = reportPayload ? buildDetailExportRows(reportPayload) : { columns: [], rows: [] };
+    const preferredExport = choosePreferredAnalysisExportRows(
+      { columns: [], rows: [] },
+      reportPayloadDetailExport
+    );
+    preferredExportSummary = preferredExport.rows.length
+      ? buildFlatRowsFromDetailExport(preferredExport.rows)
+      : { columns: [], rows: [], summaryValues: [] };
+    normalizedDetailSummary = preferredExportSummary;
+  } catch (error) {
+    groupedReportUnavailableReason = `Analysis fell back to the Salesforce query path because synchronous report execution was unavailable: ${error instanceof Error ? error.message : String(error || "")}`.trim();
+    const aggregateDataset = await fetchAnalysisAggregateRows(tokenRecord, describePayload, filters);
+    normalizedDetailSummary = aggregateDataset.rows.length
+      ? {
+          columns: aggregateDataset.columns,
+          rows: aggregateDataset.rows,
+          summaryValues: aggregateDataset.summaryValues,
+        }
+      : { columns: [], rows: [], summaryValues: [] };
+    preferredExportSummary = normalizedDetailSummary;
+  }
+
   const mergedFlattened = mergeAnalysisSummaryDatasets(
-    effectiveFlattened,
-    flattened,
+    flattened.rows.length || flattened.columns.length ? flattened : normalizedDetailSummary,
     normalizedDetailSummary,
     preferredExportSummary
   );
@@ -2572,7 +2576,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     rows: mergedFlattened.rows,
     summaryValues: buildAnalysisSummaryValuesFromRows(mergedFlattened.rows),
   };
-  let diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
+  const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
     flattened,
     fullDetailExport,
     reportPayloadDetailExport,
@@ -2580,51 +2584,6 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     preferredExportSummary,
     mergedFlattened: finalizedFlattened,
   });
-  if (diagnostics?.suspicious) {
-    try {
-      const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
-        scf: filters.scf,
-        keyCodes: filters.keyCodes,
-        dateRange: effectiveDateRange,
-      });
-      const executed = await executeReportWithDescribeMetadata(
-        tokenRecord,
-        reportId,
-        reportMetadata,
-        describePayload
-      );
-      reportPayload = executed.reportPayload;
-      const payloadGrouped = buildGroupedReportRows(reportPayload) || { columns: [], rows: [], summaryValues: [] };
-      const payloadExport = reportPayload ? buildDetailExportRows(reportPayload) : { columns: [], rows: [] };
-      const payloadPreferredExport = choosePreferredAnalysisExportRows(
-        { columns: [], rows: [] },
-        payloadExport
-      );
-      const payloadPreferredSummary = payloadPreferredExport.rows.length
-        ? buildFlatRowsFromDetailExport(payloadPreferredExport.rows)
-        : { columns: [], rows: [], summaryValues: [] };
-      const repairedMerged = mergeAnalysisSummaryDatasets(
-        finalizedFlattened,
-        payloadGrouped,
-        payloadPreferredSummary
-      );
-      finalizedFlattened.rows = repairedMerged.rows;
-      finalizedFlattened.columns = repairedMerged.columns;
-      finalizedFlattened.summaryValues = buildAnalysisSummaryValuesFromRows(repairedMerged.rows);
-      diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
-        flattened: payloadGrouped,
-        fullDetailExport,
-        reportPayloadDetailExport: payloadExport,
-        normalizedDetailSummary,
-        preferredExportSummary: payloadPreferredSummary,
-        mergedFlattened: finalizedFlattened,
-      });
-      groupedReportUnavailableReason = "";
-    } catch (error) {
-      const repairMessage = error instanceof Error ? error.message : String(error || "");
-      groupedReportUnavailableReason = `${groupedReportUnavailableReason} Premium repair via Salesforce report execution was unavailable: ${repairMessage}`.trim();
-    }
-  }
   const availableKeyValues = Array.from(
     new Set(
       finalizedFlattened.rows
