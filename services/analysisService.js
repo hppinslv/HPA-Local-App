@@ -352,7 +352,7 @@ const ANALYSIS_REPORT_LABEL_MAP = {
   "Sum of Sold": "Sum of Converted",
   "Sum of In Force": "Inforce (policy currently in effect)",
   "Sum of Total Monthly Premium": "Sum of Total Sold",
-  "Average Monthly Premium Sold": "Average Monthly Premium Sold",
+  "Average Monthly Premium": "Average Monthly Premium",
   "Sold Rate": "Sold Rate",
   "Converted Rate": "Converted Rate",
   "In Force Rate": "In Force Rate",

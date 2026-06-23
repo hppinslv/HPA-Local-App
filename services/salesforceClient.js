@@ -1650,12 +1650,12 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "sum of sold": Math.round(entry.sold).toLocaleString("en-US"),
         "Sum of Total Monthly Premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of total monthly premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-        "Average Monthly Premium Sold": averageSoldPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-        "average monthly premium sold": averageSoldPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of In Force Monthly Premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of in force monthly premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of Total Converted Monthly Premiums": entry.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of total converted monthly premiums": entry.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+        "Average Monthly Premium": averageSoldPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+        "average monthly premium": averageSoldPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sold Rate": soldRate.toFixed(10),
         "sold rate": soldRate.toFixed(10),
         "In Force Rate": inForceRate.toFixed(10),
@@ -1674,9 +1674,9 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of In Force", label: "Sum of In Force", normalized: "sum of in force", dataType: "double" },
       { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", normalized: "sum of total monthly premium", dataType: "currency" },
-      { key: "Average Monthly Premium Sold", label: "Average Monthly Premium Sold", normalized: "average monthly premium sold", dataType: "currency" },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", normalized: "sum of in force monthly premium", dataType: "currency" },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
+      { key: "Average Monthly Premium", label: "Average Monthly Premium", normalized: "average monthly premium", dataType: "currency" },
       { key: "Sold Rate", label: "Sold Rate", normalized: "sold rate", dataType: "double" },
       { key: "In Force Rate", label: "In Force Rate", normalized: "in force rate", dataType: "double" },
       { key: "Converted Rate", label: "Converted Rate", normalized: "converted rate", dataType: "double" },
@@ -1688,7 +1688,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForce, 0)).toLocaleString("en-US") },
       { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
-      { key: "Average Monthly Premium Sold", label: "Average Monthly Premium Sold", value: (() => {
+      { key: "Average Monthly Premium", label: "Average Monthly Premium", value: (() => {
         const totals = Array.from(aggregateMap.values()).reduce((acc, entry) => {
           acc.premium += entry.totalMonthlyPremium;
           acc.sold += entry.sold;
