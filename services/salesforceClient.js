@@ -1468,6 +1468,13 @@ function fillAnalysisRateFallbacks(row = {}) {
 
 function resolveAnalysisSoldValue(row = {}, precomputedConvertedPremium = null) {
   const baseSold = parseNumber(row["Sum of Sold"] ?? row["sum of sold"] ?? row["Sold"] ?? row["sold"] ?? 0);
+  const inForce = parseNumber(
+    row["Sum of In Force"] ??
+    row["sum of in force"] ??
+    row["In Force"] ??
+    row["in force"] ??
+    0
+  );
   const convertedPremium = precomputedConvertedPremium === null
     ? parseNumber(
       row["Sum of Total Converted Monthly Premiums"] ??
@@ -1479,13 +1486,20 @@ function resolveAnalysisSoldValue(row = {}, precomputedConvertedPremium = null) 
     : precomputedConvertedPremium;
 
   if (convertedPremium > 0) {
-    return Math.max(baseSold, 1);
+    return Math.max(baseSold, inForce, 1);
   }
 
-  return baseSold;
+  return Math.max(baseSold, inForce);
 }
 
 function resolveAnalysisSoldCountFromDetailRow(row = {}, precomputedConvertedPremium = null) {
+  const inForce = parseNumber(
+    row["Sum of In Force"] ??
+    row["sum of in force"] ??
+    row["In Force"] ??
+    row["in force"] ??
+    0
+  );
   const convertedPremium = precomputedConvertedPremium === null
     ? parseNumber(
       row["Sum of Total Converted Monthly Premiums"] ??
@@ -1496,7 +1510,7 @@ function resolveAnalysisSoldCountFromDetailRow(row = {}, precomputedConvertedPre
     )
     : precomputedConvertedPremium;
 
-  return convertedPremium > 0 ? 1 : 0;
+  return convertedPremium > 0 ? Math.max(inForce, 1) : inForce;
 }
 
 function buildGroupedReportRows(reportPayload) {
@@ -2026,6 +2040,20 @@ function mergeAnalysisPremiumMetrics(baseRow = null, candidateRow = null) {
 
   fillAnalysisRateFallbacks(mergedRow);
   return mergedRow;
+}
+
+function restorePremiumsFromGroupedRows(summaryRows = [], groupedRows = []) {
+  const groupedMap = new Map(
+    ensureArray(groupedRows).map((row) => [getAnalysisSummaryRowKey(row), row])
+  );
+
+  return ensureArray(summaryRows).map((row) => {
+    const groupedRow = groupedMap.get(getAnalysisSummaryRowKey(row));
+    if (!groupedRow) {
+      return row;
+    }
+    return mergeAnalysisPremiumMetrics(row, groupedRow);
+  });
 }
 
 function mergeAnalysisSummaryDatasets(baseDataset = null, ...candidateDatasets) {
@@ -2601,10 +2629,14 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     preferredExportSummary,
     payloadDetailSummary
   );
+  const mergedRowsWithGroupedPremiumRescue = restorePremiumsFromGroupedRows(
+    mergedFlattened.rows,
+    flattened.rows
+  );
   const finalizedFlattened = {
     ...mergedFlattened,
-    rows: mergedFlattened.rows,
-    summaryValues: buildAnalysisSummaryValuesFromRows(mergedFlattened.rows),
+    rows: mergedRowsWithGroupedPremiumRescue,
+    summaryValues: buildAnalysisSummaryValuesFromRows(mergedRowsWithGroupedPremiumRescue),
   };
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
     flattened,
