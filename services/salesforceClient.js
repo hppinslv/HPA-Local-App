@@ -1162,6 +1162,29 @@ ORDER BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
       break;
     } catch (error) {
       lastError = error;
+      const message = String(error?.message || "");
+      if (message.includes("can not be grouped in a query call")) {
+        const detailFields = [
+          plan.scfField,
+          plan.keyField,
+          ...activeMetrics.map((metric) => metric.field).filter(Boolean),
+        ];
+        const detailPlan = {
+          objectName: plan.objectName,
+          dateField: plan.dateField,
+          whereClauses: [...plan.whereClauses],
+          fields: detailFields,
+        };
+        const detailResult = await runDetailSoqlWithFallback(tokenRecord, detailPlan);
+        const detailRows = detailResult.records.map((record) => buildRowObjectFromSoqlRecord(record, detailResult.fields));
+        const aggregated = buildFlatRowsFromDetailExport(detailRows);
+        return {
+          columns: aggregated.columns,
+          rows: aggregated.rows,
+          summaryValues: aggregated.summaryValues,
+        };
+      }
+
       const invalidField = extractInvalidSoqlField(error);
       if (!invalidField) {
         throw error;
