@@ -3830,6 +3830,7 @@ function renderAchReturnReview() {
   const createButton = el("ach-return-create-row-button");
   if (createButton) {
     createButton.disabled = Boolean(errors.length) || !selectedMatch;
+    createButton.textContent = "Save Row & Add Another";
   }
 }
 
@@ -3878,9 +3879,9 @@ function renderAchReturnTable() {
           visualStatus: draftErrors.length ? "error" : "warning",
           importResult: draftErrors.length
             ? draftErrors.join(" ")
-            : "Parsed and matched. Save Row to add it to this ACH return batch.",
+            : "Parsed and matched. Save Row & Add Another to add it to this ACH return batch.",
           actionsHtml: draftCanSave
-            ? '<button class="secondary-button table-action-button" data-ach-save-draft="1">Save Row</button>'
+            ? '<button class="secondary-button table-action-button" data-ach-save-draft="1">Save Row &amp; Add Another</button>'
             : '<span class="cc-row-note">Finish the match above to save</span>',
         }
       )
@@ -4066,12 +4067,48 @@ async function handleAchReturnCreateRow() {
       state.achReturns.draft = null;
       state.achReturns.emailBody = "";
       clearPersistedAchReturnDraftState();
-      setStatus("ach-return-status", "Reversal credit row saved in the Export Table. It will stay there until you import it.");
+      const rowCount = Number(payload.session?.row_count || 0);
+      setStatus(
+        "ach-return-status",
+        `Reversal credit row saved in the Export Table. ${rowCount || 1} row(s) are staged. Paste the next ACH return to add another, or click Confirm Import when the batch is ready.`
+      );
     }
     persistUiState();
     renderAchReturnPage();
   } catch (error) {
     setStatus("ach-return-status", `Unable to create ACH reversal row: ${error.message}`);
+  }
+}
+
+async function submitAchReturnImport(sessionId, confirmedBy = "Local User") {
+  const importErrors = [];
+
+  if (sessionId) {
+    try {
+      return await apiRequest(`/api/ach-returns/${encodeURIComponent(sessionId)}/confirm-import`, {
+        method: "POST",
+        body: {
+          confirmedBy,
+        },
+      });
+    } catch (error) {
+      importErrors.push(error);
+    }
+  }
+
+  try {
+    return await apiRequest("/api/ach-returns/current/confirm-import", {
+      method: "POST",
+      body: {
+        confirmedBy,
+      },
+    });
+  } catch (fallbackError) {
+    const primaryError = importErrors[0];
+    if (primaryError) {
+      throw new Error(`${primaryError.message} Fallback import failed: ${fallbackError.message}`);
+    }
+    throw fallbackError;
   }
 }
 
@@ -4119,12 +4156,7 @@ async function handleAchReturnConfirmImport() {
   setStatus("ach-return-status", importStartMessage);
   setStatus("ach-return-export-status", importStartMessage);
   try {
-    const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(session.id)}/confirm-import`, {
-      method: "POST",
-      body: {
-        confirmedBy: "Local User",
-      },
-    });
+    const payload = await submitAchReturnImport(session.id, "Local User");
     state.achReturns.sessions = payload.sessions || [];
     state.achReturns.draft = null;
     state.achReturns.emailBody = "";
