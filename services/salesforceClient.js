@@ -2564,9 +2564,14 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     );
     reportPayload = executed.reportPayload;
     flattened = buildGroupedReportRows(reportPayload) || { columns: [], rows: [], summaryValues: [] };
+    fullDetailExport = await buildFullDetailExportRows(tokenRecord, describePayload, {
+      scf: filters.scf,
+      keyCodes: filters.keyCodes,
+      dateRange: effectiveDateRange,
+    });
     reportPayloadDetailExport = reportPayload ? buildDetailExportRows(reportPayload) : { columns: [], rows: [] };
     const preferredExport = choosePreferredAnalysisExportRows(
-      { columns: [], rows: [] },
+      fullDetailExport,
       reportPayloadDetailExport
     );
     preferredExportSummary = preferredExport.rows.length
