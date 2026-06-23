@@ -1168,7 +1168,6 @@ function fillAnalysisRateFallbacks(row = {}) {
     return row;
   }
 
-  const sold = parseNumber(row["Sum of Sold"] ?? row["sum of sold"] ?? row["Sold"] ?? row["sold"] ?? 0);
   const inForce = parseNumber(row["Sum of In Force"] ?? row["sum of in force"] ?? row["In Force"] ?? row["in force"] ?? 0);
   const oppCount = parseNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? row["Opp Count"] ?? row["opp count"] ?? 0);
   const totalMonthlyPremium = parseNumber(
@@ -1192,6 +1191,7 @@ function fillAnalysisRateFallbacks(row = {}) {
     row["total converted monthly premiums"] ??
     0
   );
+  const sold = resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
 
   const currentSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
   const currentInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
@@ -1227,6 +1227,25 @@ function fillAnalysisRateFallbacks(row = {}) {
   row["Converted Rate"] = nextConvertedRate.toFixed(10);
   row["converted rate"] = nextConvertedRate.toFixed(10);
   return row;
+}
+
+function resolveAnalysisSoldValue(row = {}, precomputedConvertedPremium = null) {
+  const baseSold = parseNumber(row["Sum of Sold"] ?? row["sum of sold"] ?? row["Sold"] ?? row["sold"] ?? 0);
+  const convertedPremium = precomputedConvertedPremium === null
+    ? parseNumber(
+      row["Sum of Total Converted Monthly Premiums"] ??
+      row["sum of total converted monthly premiums"] ??
+      row["Total Converted Monthly Premiums"] ??
+      row["total converted monthly premiums"] ??
+      0
+    )
+    : precomputedConvertedPremium;
+
+  if (convertedPremium > 0) {
+    return Math.max(baseSold, 1);
+  }
+
+  return baseSold;
 }
 
 function buildGroupedReportRows(reportPayload) {
@@ -1502,7 +1521,6 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     current.mailed += parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
     current.oppCount += parseNumber(row["Opp Count"] ?? row["opp count"] ?? row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
     current.inForce += parseNumber(row["In Force"] ?? row["in force"] ?? row["Sum of In Force"] ?? row["sum of in force"] ?? 0);
-    current.sold += parseNumber(row["Sold"] ?? row.sold ?? row["Sum of Sold"] ?? row["sum of sold"] ?? 0);
     current.totalMonthlyPremium += parseNumber(
       row["Total Monthly Premium"] ??
       row["total monthly premium"] ??
@@ -1524,6 +1542,13 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       row["sum of total converted monthly premiums"] ??
       0
     );
+    current.sold += resolveAnalysisSoldValue(row, parseNumber(
+      row["Total Converted Monthly Premiums"] ??
+      row["total converted monthly premiums"] ??
+      row["Sum of Total Converted Monthly Premiums"] ??
+      row["sum of total converted monthly premiums"] ??
+      0
+    ));
 
     const rowMailed = parseNumber(row["Mailed"] ?? row.mailed ?? row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
     const sourceSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
