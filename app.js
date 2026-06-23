@@ -3896,7 +3896,7 @@ function renderAchReturnTable() {
         includeActions: true,
         actionsHtml: isImportedSession
           ? '<span class="cc-row-note">Read only</span>'
-          : `<button class="secondary-button table-action-button" data-ach-remove-row="${esc(row.id)}">Remove Row</button>`,
+          : `<button class="secondary-button table-action-button" data-ach-remove-row="${esc(row.id)}">Delete Row</button>`,
       })
     )
   );
@@ -4333,6 +4333,9 @@ function bindAchReturnEvents() {
     const rowId = target.getAttribute("data-ach-remove-row");
     const session = getCurrentAchReturnSession();
     if (!rowId || !session?.id) return;
+    if (!confirm("Delete this ACH reversal row from the Export Table?")) {
+      return;
+    }
     try {
       const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`, {
         method: "DELETE",
