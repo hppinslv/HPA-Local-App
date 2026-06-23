@@ -1971,7 +1971,10 @@ function mergeAnalysisPremiumMetrics(baseRow = null, candidateRow = null) {
     return null;
   }
 
-  const mergedRow = { ...(baseRow || {}), ...(candidateRow || {}) };
+  // Preserve the grouped-summary counts/rates as the source of truth when we
+  // merge in detail-derived rows. The detail export is mainly used to recover
+  // premium fields that the grouped payload sometimes drops.
+  const mergedRow = { ...(candidateRow || {}), ...(baseRow || {}) };
   const premiumFields = [
     {
       labels: ["Total Monthly Premium", "Sum of Total Monthly Premium"],
