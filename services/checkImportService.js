@@ -1471,6 +1471,7 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
 }
 
 function applyCheckImportRowUpdates(row, updates = {}) {
+  const previousCorrectedCertificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
   if (Object.prototype.hasOwnProperty.call(updates, "certificate_number")) {
     row.corrected_certificate_number = normalizeCertificateNumber(updates.certificate_number);
     logCheckImportEvent("Manual Cert Number correction saved", {
@@ -1481,6 +1482,13 @@ function applyCheckImportRowUpdates(row, updates = {}) {
   if (Object.prototype.hasOwnProperty.call(updates, "months")) {
     const parsedMonths = Number(String(updates.months || "").trim());
     row.corrected_months = Number.isFinite(parsedMonths) && parsedMonths >= 0 ? String(parsedMonths) : "";
+  } else if (
+    Object.prototype.hasOwnProperty.call(updates, "certificate_number")
+    && row.corrected_certificate_number !== previousCorrectedCertificateNumber
+  ) {
+    // When the certificate changes and months were not manually edited this save,
+    // clear the override so the refreshed policy lookup can recompute months.
+    row.corrected_months = "";
   }
   if (Object.prototype.hasOwnProperty.call(updates, "excluded")) {
     row.excluded = Boolean(updates.excluded);

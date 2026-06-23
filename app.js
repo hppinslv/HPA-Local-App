@@ -3343,6 +3343,23 @@ function collectCheckImportRowEdits(session) {
     .filter(Boolean);
 }
 
+function buildCheckImportRowEdit(row) {
+  const certificateInput = document.querySelector(`[data-check-row-field="certificate_number"][data-check-row-id="${row.id}"]`);
+  const monthsInput = document.querySelector(`[data-check-row-field="months"][data-check-row-id="${row.id}"]`);
+  const nextCertificateNumber = certificateInput instanceof HTMLInputElement ? certificateInput.value || "" : "";
+  const nextMonths = monthsInput instanceof HTMLInputElement ? monthsInput.value || "" : "";
+  const currentCertificateNumber = row.corrected_certificate_number || row.certificate_number || "";
+  const currentMonths = String(row.corrected_months ?? "").trim() !== "" ? String(row.corrected_months) : String(row.months ?? "");
+  const payload = {
+    id: row.id,
+    certificate_number: nextCertificateNumber,
+  };
+  if (String(nextMonths).trim() !== String(currentMonths).trim()) {
+    payload.months = nextMonths;
+  }
+  return payload;
+}
+
 function bindCheckImportEvents() {
   el("check-import-upload-button")?.addEventListener("click", () => {
     el("check-import-upload-input")?.click();
@@ -3543,17 +3560,20 @@ function bindCheckImportEvents() {
 
     const rowId = target.getAttribute("data-check-save-row");
     if (rowId) {
-      const certificateInput = document.querySelector(`[data-check-row-field="certificate_number"][data-check-row-id="${rowId}"]`);
-      const monthsInput = document.querySelector(`[data-check-row-field="months"][data-check-row-id="${rowId}"]`);
+      const row = (session.rows || []).find((entry) => entry.id === rowId);
+      if (!row) {
+        setStatus("check-import-status", "Unable to find that row.");
+        return;
+      }
       setStatus("check-import-status", "Saving row correction...");
       try {
+        const rowEdit = buildCheckImportRowEdit(row);
         const payload = await apiRequest(
           `/api/check-imports/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`,
           {
             method: "PATCH",
             body: {
-              certificate_number: certificateInput?.value || "",
-              months: monthsInput?.value || "",
+              ...rowEdit,
               corrected_by: "Local User",
             },
           }
