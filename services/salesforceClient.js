@@ -1518,7 +1518,11 @@ function buildGroupedReportRows(reportPayload) {
       return;
     }
 
-    const factKey = `${group.key}!T`;
+    const groupingKey = nextPath
+      .map((entry) => String(entry?.key || "").trim())
+      .filter(Boolean)
+      .join("_");
+    const factKey = `${groupingKey}!T`;
     const factEntry = factMap[factKey];
     const factAggregates = Array.isArray(factEntry?.aggregates) ? factEntry.aggregates : [];
     if (!factAggregates.length) {
@@ -1580,7 +1584,11 @@ function buildGroupingPathLookup(groups = [], path = [], lookup = new Map()) {
       buildGroupingPathLookup(children, nextPath, lookup);
       return;
     }
-    lookup.set(String(group.key || ""), nextPath);
+    const groupingKey = nextPath
+      .map((entry) => String(entry?.key || "").trim())
+      .filter(Boolean)
+      .join("_");
+    lookup.set(groupingKey, nextPath);
   });
   return lookup;
 }
