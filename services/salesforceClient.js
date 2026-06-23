@@ -2026,21 +2026,53 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
 
   const tokenRecord = await getConnectedSalesforceToken();
   const describePayload = await fetchReportDescribe(tokenRecord, normalizedReportId);
-  const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
+  const detailRows = await fetchMergedAnalysisRowsForScopedFilters(
+    tokenRecord,
+    normalizedReportId,
+    describePayload,
+    {
+      scf: normalizedScf,
+      keyCodes: filters.keyCodes,
+      dateRange: filters.dateRange,
+    }
+  );
+  const normalizedKeys = Array.isArray(filters.keyCodes)
+    ? filters.keyCodes.map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase()).filter(Boolean)
+    : [];
+  const matchingDetailRows = detailRows.filter((row) => {
+    const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row["scf"] ?? "");
+    if (rowScf !== normalizedScf) {
+      return false;
+    }
+    if (!normalizedKeys.length) {
+      return true;
+    }
+    const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
+    return normalizedKeys.includes(rowKey);
+  });
+  return {
+    reportId: normalizedReportId,
     scf: normalizedScf,
+    row: matchingDetailRows[0] || null,
+    rows: matchingDetailRows,
+  };
+}
+
+async function fetchMergedAnalysisRowsForScopedFilters(tokenRecord, reportId, describePayload, filters = {}) {
+  const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
+    scf: filters.scf,
     keyCodes: filters.keyCodes,
     dateRange: filters.dateRange,
   });
   const executed = await executeReportWithDescribeMetadata(
     tokenRecord,
-    normalizedReportId,
+    reportId,
     reportMetadata,
     describePayload
   );
   const grouped = buildGroupedReportRows(executed.reportPayload);
-  const rows = Array.isArray(grouped?.rows) ? grouped.rows : [];
   const fullDetailExport = await buildFullDetailExportRows(tokenRecord, describePayload, {
-    scf: normalizedScf,
+    scf: filters.scf,
     keyCodes: filters.keyCodes,
     dateRange: filters.dateRange,
   });
@@ -2062,68 +2094,66 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
     detailSummary,
     preferredExportSummary
   );
-  const detailRows = Array.isArray(mergedDataset?.rows) ? mergedDataset.rows : [];
-  const normalizedKeys = Array.isArray(filters.keyCodes)
-    ? filters.keyCodes.map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase()).filter(Boolean)
-    : [];
-  const matchingRows = rows.filter((row) => {
-    const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row["scf"] ?? "");
-    if (rowScf !== normalizedScf) {
-      return false;
-    }
-    if (!normalizedKeys.length) {
-      return true;
-    }
-    const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
-    return normalizedKeys.includes(rowKey);
-  });
-  const matchingDetailRows = detailRows.filter((row) => {
-    const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row["scf"] ?? "");
-    if (rowScf !== normalizedScf) {
-      return false;
-    }
-    if (!normalizedKeys.length) {
-      return true;
-    }
-    const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
-    return normalizedKeys.includes(rowKey);
-  });
-  const mergeMetricRows = (groupedRow, detailRow) => {
-    if (!groupedRow && !detailRow) {
-      return null;
-    }
-    return {
-      ...(detailRow || {}),
-      ...(groupedRow || {}),
-      averageMonthlyPremium: Number.isFinite(detailRow?.averageMonthlyPremium)
-        ? detailRow.averageMonthlyPremium
-        : Number.isFinite(groupedRow?.averageMonthlyPremium)
-          ? groupedRow.averageMonthlyPremium
-          : null,
-      highPremium: Number.isFinite(detailRow?.highPremium)
-        ? detailRow.highPremium
-        : Number.isFinite(groupedRow?.highPremium)
-          ? groupedRow.highPremium
-          : null,
-      lowPremium: Number.isFinite(detailRow?.lowPremium)
-        ? detailRow.lowPremium
-        : Number.isFinite(groupedRow?.lowPremium)
-          ? groupedRow.lowPremium
-          : null,
-    };
-  };
-  const mergedRows = matchingRows.length || matchingDetailRows.length
-    ? Array.from({ length: Math.max(matchingRows.length, matchingDetailRows.length) }, (_, index) =>
-        mergeMetricRows(matchingRows[index] || null, matchingDetailRows[index] || null)
-      ).filter(Boolean)
-    : [];
+  return Array.isArray(mergedDataset?.rows) ? mergedDataset.rows : [];
+}
 
-  return {
-    reportId: normalizedReportId,
-    scf: normalizedScf,
-    row: mergedRows[0] || mergeMetricRows(matchingRows[0] || null, matchingDetailRows[0] || null),
-    rows: mergedRows,
-  };
+function shouldRepairAnalysisRowWithScopedRefetch(row = {}) {
+  const oppCount = parseNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
+  const totalMonthlyPremium = parseNumber(row["Sum of Total Monthly Premium"] ?? row["sum of total monthly premium"] ?? 0);
+  const inForceMonthlyPremium = parseNumber(row["Sum of In Force Monthly Premium"] ?? row["sum of in force monthly premium"] ?? 0);
+  const convertedPremium = parseNumber(
+    row["Sum of Total Converted Monthly Premiums"] ?? row["sum of total converted monthly premiums"] ?? 0
+  );
+  return oppCount > 0 && totalMonthlyPremium === 0 && inForceMonthlyPremium === 0 && convertedPremium === 0;
+}
+
+async function repairSparseAnalysisRowsWithScopedRefetch(
+  tokenRecord,
+  reportId,
+  describePayload,
+  rows = [],
+  filters = {}
+) {
+  const repairedRows = [];
+  const cachedRows = new Map();
+
+  for (const row of rows) {
+    if (!shouldRepairAnalysisRowWithScopedRefetch(row)) {
+      repairedRows.push(row);
+      continue;
+    }
+
+    const scf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row.scf ?? "");
+    const keyCode = String(row["Key"] ?? row.key ?? "").trim();
+    if (!scf) {
+      repairedRows.push(row);
+      continue;
+    }
+
+    const cacheKey = `${scf}::${keyCode.toUpperCase()}`;
+    let repairedRow = cachedRows.get(cacheKey) || null;
+    if (!repairedRow) {
+      const scopedRows = await fetchMergedAnalysisRowsForScopedFilters(
+        tokenRecord,
+        reportId,
+        describePayload,
+        {
+          scf,
+          keyCodes: keyCode ? [keyCode] : filters.keyCodes,
+          dateRange: filters.dateRange,
+        }
+      );
+      repairedRow =
+        scopedRows.find((entry) => getAnalysisSummaryRowKey(entry) === cacheKey) ||
+        scopedRows[0] ||
+        null;
+      cachedRows.set(cacheKey, repairedRow);
+    }
+
+    repairedRows.push(repairedRow || row);
+  }
+
+  return repairedRows;
 }
 
 function resolveAnalysisDateRange(filters = {}) {
@@ -2385,17 +2415,29 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     normalizedDetailSummary,
     preferredExportSummary
   );
+  const repairedRows = await repairSparseAnalysisRowsWithScopedRefetch(
+    tokenRecord,
+    reportId,
+    describePayload,
+    mergedFlattened.rows,
+    filters
+  );
+  const finalizedFlattened = {
+    ...mergedFlattened,
+    rows: repairedRows,
+    summaryValues: buildAnalysisSummaryValuesFromRows(repairedRows),
+  };
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
     flattened,
     fullDetailExport,
     reportPayloadDetailExport,
     normalizedDetailSummary,
     preferredExportSummary,
-    mergedFlattened,
+    mergedFlattened: finalizedFlattened,
   });
   const availableKeyValues = Array.from(
     new Set(
-      mergedFlattened.rows
+      finalizedFlattened.rows
         .map((row) => String(row["Key"] || row.key || "").trim())
         .filter(Boolean)
     )
@@ -2409,13 +2451,13 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     describePayload,
     rawReportPayload: reportPayload,
     groupedReportUnavailableReason,
-    columns: mergedFlattened.columns,
-    summaryValues: mergedFlattened.summaryValues || [],
-    rows: filterAnalysisRows(mergedFlattened.rows, filters),
-    exportColumns: mergedFlattened.columns,
-    exportRows: filterAnalysisRows(mergedFlattened.rows, filters),
-    unfilteredRowCount: mergedFlattened.rows.length,
-    exportRowCount: filterAnalysisRows(mergedFlattened.rows, filters).length,
+    columns: finalizedFlattened.columns,
+    summaryValues: finalizedFlattened.summaryValues || [],
+    rows: filterAnalysisRows(finalizedFlattened.rows, filters),
+    exportColumns: finalizedFlattened.columns,
+    exportRows: filterAnalysisRows(finalizedFlattened.rows, filters),
+    unfilteredRowCount: finalizedFlattened.rows.length,
+    exportRowCount: filterAnalysisRows(finalizedFlattened.rows, filters).length,
     availableKeyValues,
     diagnostics,
   };

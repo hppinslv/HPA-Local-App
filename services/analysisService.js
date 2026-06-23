@@ -2097,6 +2097,9 @@ function serializeAnalysisReport(report) {
     rows: ensureArray(report.rows),
     exportColumns: ensureArray(report.exportColumns),
     exportRows: ensureArray(report.exportRows),
+    warningMessage: report.warning_message || "",
+    warning_message: report.warning_message || "",
+    diagnostics: report.diagnostics || null,
     errorMessage: report.error_message || "",
     error_message: report.error_message || "",
   };
