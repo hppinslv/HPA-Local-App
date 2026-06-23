@@ -1131,30 +1131,71 @@ async function runSoqlQuery(tokenRecord, soql) {
 
 async function fetchAnalysisAggregateRows(tokenRecord, describePayload, filters = {}) {
   const plan = buildAnalysisAggregateSoqlPlan(describePayload, filters);
-  const selectParts = [
-    `${plan.scfField.soqlField} scfGrouping`,
-    `${plan.keyField.soqlField} reportKey`,
-  ];
-  const metricAliases = [];
+  let activeMetrics = plan.metrics.filter((metric) => metric.field?.soqlField);
+  let metricAliases = [];
+  let records = [];
+  let lastError = null;
 
-  plan.metrics.forEach((metric) => {
-    if (!metric.field?.soqlField) {
-      return;
-    }
-    const alias = metric.key;
-    metricAliases.push({ ...metric, alias });
-    selectParts.push(`SUM(${metric.field.soqlField}) ${alias}`);
-  });
+  while (activeMetrics.length >= 0) {
+    const selectParts = [
+      `${plan.scfField.soqlField} scfGrouping`,
+      `${plan.keyField.soqlField} reportKey`,
+    ];
+    metricAliases = [];
 
-  const whereClause = plan.whereClauses.length ? `\nWHERE ${plan.whereClauses.join("\nAND ")}` : "";
-  const soql = `
+    activeMetrics.forEach((metric) => {
+      const alias = metric.key;
+      metricAliases.push({ ...metric, alias });
+      selectParts.push(`SUM(${metric.field.soqlField}) ${alias}`);
+    });
+
+    const whereClause = plan.whereClauses.length ? `\nWHERE ${plan.whereClauses.join("\nAND ")}` : "";
+    const soql = `
 SELECT ${selectParts.join(",\n       ")}
 FROM ${plan.objectName}${whereClause}
 GROUP BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
 ORDER BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
 `.trim();
 
-  const records = await runSoqlQuery(tokenRecord, soql);
+    try {
+      records = await runSoqlQuery(tokenRecord, soql);
+      break;
+    } catch (error) {
+      lastError = error;
+      const invalidField = extractInvalidSoqlField(error);
+      if (!invalidField) {
+        throw error;
+      }
+
+      const nextMetrics = activeMetrics.filter((metric) => {
+        const fieldName = String(metric.field?.soqlField || "").trim();
+        return fieldName !== invalidField && !fieldName.startsWith(`${invalidField}.`);
+      });
+
+      if (nextMetrics.length === activeMetrics.length) {
+        throw error;
+      }
+
+      activeMetrics = nextMetrics;
+      if (activeMetrics.length === 0) {
+        const baseWhereClause = plan.whereClauses.length ? `\nWHERE ${plan.whereClauses.join("\nAND ")}` : "";
+        records = await runSoqlQuery(tokenRecord, `
+SELECT ${plan.scfField.soqlField} scfGrouping,
+       ${plan.keyField.soqlField} reportKey
+FROM ${plan.objectName}${baseWhereClause}
+GROUP BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
+ORDER BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
+`.trim());
+        metricAliases = [];
+        break;
+      }
+    }
+  }
+
+  if (!Array.isArray(records)) {
+    throw lastError || new Error("Unable to query aggregate analysis rows.");
+  }
+
   const rows = records.map((record) => {
     const scf = normalizeScf(record.scfGrouping ?? record[plan.scfField.soqlField] ?? "");
     const key = String(record.reportKey ?? record[plan.keyField.soqlField] ?? "").trim();
@@ -1179,7 +1220,7 @@ ORDER BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
     columns: [
       { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
       { key: "Key", label: "Key", normalized: "key", dataType: "string" },
-      ...plan.metrics.map((metric) => ({
+      ...metricAliases.map((metric) => ({
         key: metric.aggregateLabel,
         label: metric.aggregateLabel,
         normalized: normalizeLabel(metric.aggregateLabel),
@@ -3017,6 +3058,11 @@ function extractInvalidSoqlField(error) {
   const columnMatch = message.match(/No such column '([^']+)'/);
   if (columnMatch) {
     return columnMatch[1];
+  }
+
+  const invalidFieldMatch = message.match(/Invalid field: '([^']+)'/);
+  if (invalidFieldMatch) {
+    return invalidFieldMatch[1];
   }
 
   const relationshipMatch = message.match(/Didn't understand relationship '([^']+)'/);
