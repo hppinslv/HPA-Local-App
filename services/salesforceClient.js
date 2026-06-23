@@ -1931,11 +1931,11 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     reportPayloadDetailExport
   );
   const effectiveFlattened =
-    normalizedDetailSummary.rows.length || normalizedDetailSummary.columns.length
-      ? normalizedDetailSummary
-      : flattened.rows.length || flattened.columns.length
-        ? flattened
-      : buildFlatRowsFromDetailExport(preferredExport.rows);
+    flattened.rows.length || flattened.columns.length
+      ? flattened
+      : normalizedDetailSummary.rows.length || normalizedDetailSummary.columns.length
+        ? normalizedDetailSummary
+        : buildFlatRowsFromDetailExport(preferredExport.rows);
   const availableKeyValues = Array.from(
     new Set(
       effectiveFlattened.rows
