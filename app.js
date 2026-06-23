@@ -5820,12 +5820,38 @@ function getRowMetricValue(row, metricLabel) {
   return fuzzyEntry ? fuzzyEntry[1] : "";
 }
 
+function getMetricLabelAliases(metricLabel) {
+  const normalized = normalizeComparisonMetricKey(metricLabel);
+  const aliasMap = {
+    "opp count": ["Applications Received", "Sum of Opp Count"],
+    "sum of opp count": ["Applications Received", "Opp Count"],
+    "applications received": ["Sum of Opp Count", "Opp Count"],
+    "sold": ["Sum of Converted", "Sum of Sold"],
+    "sum of sold": ["Sum of Converted", "Sold"],
+    "sum of converted": ["Sum of Sold", "Sold"],
+    "in force": ["Inforce (policy currently in effect)", "Sum of In Force"],
+    "sum of in force": ["Inforce (policy currently in effect)", "In Force"],
+    "inforce policy currently in effect": ["Sum of In Force", "In Force"],
+    "total monthly premium": ["Sum of Total Sold", "Sum of Total Monthly Premium"],
+    "sum of total monthly premium": ["Sum of Total Sold", "Total Monthly Premium"],
+    "sum of total sold": ["Sum of Total Monthly Premium", "Total Monthly Premium"],
+    "in force monthly premium": ["Sum of In Force Monthly Premium"],
+    "total converted monthly premiums": ["Sum of Total Converted Monthly Premiums"],
+  };
+
+  return [metricLabel, ...(aliasMap[normalized] || [])];
+}
+
 function getRowMetricRawValueByAliases(row, metricLabels = []) {
   if (!Array.isArray(metricLabels) || !metricLabels.length) {
     return "";
   }
 
-  for (const metricLabel of metricLabels) {
+  const expandedMetricLabels = Array.from(
+    new Set(metricLabels.flatMap((metricLabel) => getMetricLabelAliases(metricLabel)))
+  );
+
+  for (const metricLabel of expandedMetricLabels) {
     const rawValue = getRowMetricValue(row, metricLabel);
     if (rawValue === null || rawValue === undefined) {
       continue;
@@ -5880,7 +5906,7 @@ function getTotalMailedFromRow(row) {
 }
 
 function getRowMetricNumber(row, metricLabel) {
-  const rawValue = getRowMetricValue(row, metricLabel);
+  const rawValue = getRowMetricRawValueByAliases(row, getMetricLabelAliases(metricLabel));
   const numeric = Number(String(rawValue ?? "").replace(/[$,%(),\s]/g, ""));
   return Number.isNaN(numeric) ? 0 : numeric;
 }
