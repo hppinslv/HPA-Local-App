@@ -992,6 +992,39 @@ function buildAnalysisDetailSoqlPlan(describePayload, filters = {}) {
   };
 }
 
+function buildAnalysisAggregateSoqlPlan(describePayload, filters = {}) {
+  const detailPlan = buildAnalysisDetailSoqlPlan(describePayload, filters);
+  const fields = detailPlan.fields || [];
+  const scfField = findFieldByLikelyLabels(fields, ["SCF Grouping", "SCF"]);
+  const keyField = findFieldByLikelyLabels(fields, ["Key", "Key Code", "Report Key"]);
+
+  if (!scfField?.soqlField || !keyField?.soqlField) {
+    throw new Error("Analysis report is missing required SCF or Key fields.");
+  }
+
+  const metricFieldConfigs = [
+    { key: "mailed", labels: ["Mailed", "Sum of Mailed"], aggregateLabel: "Sum of Mailed", dataType: "double" },
+    { key: "oppCount", labels: ["Opp Count", "Sum of Opp Count", "Applications Received", "Application Count"], aggregateLabel: "Sum of Opp Count", dataType: "double" },
+    { key: "inForce", labels: ["In Force", "Sum of In Force"], aggregateLabel: "Sum of In Force", dataType: "double" },
+    { key: "sold", labels: ["Sold", "Sum of Sold"], aggregateLabel: "Sum of Sold", dataType: "double" },
+    { key: "totalMonthlyPremium", labels: ["Total Monthly Premium", "Sum of Total Monthly Premium", "Monthly Premium", "Sold Premium"], aggregateLabel: "Sum of Total Monthly Premium", dataType: "currency" },
+    { key: "inForceMonthlyPremium", labels: ["In Force Monthly Premium", "Sum of In Force Monthly Premium"], aggregateLabel: "Sum of In Force Monthly Premium", dataType: "currency" },
+    { key: "totalConvertedMonthlyPremiums", labels: ["Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premiums", "Converted Monthly Premium"], aggregateLabel: "Sum of Total Converted Monthly Premiums", dataType: "currency" },
+  ];
+
+  const metrics = metricFieldConfigs.map((config) => ({
+    ...config,
+    field: findFieldByLikelyLabels(fields, config.labels),
+  }));
+
+  return {
+    ...detailPlan,
+    scfField,
+    keyField,
+    metrics,
+  };
+}
+
 function buildRawDetailSoqlPlan(describePayload) {
   const reportMetadata = describePayload.reportMetadata || {};
   const fields = mapDescribeFields(describePayload);
@@ -1094,6 +1127,71 @@ async function runSoqlQuery(tokenRecord, soql) {
   }
 
   return records;
+}
+
+async function fetchAnalysisAggregateRows(tokenRecord, describePayload, filters = {}) {
+  const plan = buildAnalysisAggregateSoqlPlan(describePayload, filters);
+  const selectParts = [
+    `${plan.scfField.soqlField} scfGrouping`,
+    `${plan.keyField.soqlField} reportKey`,
+  ];
+  const metricAliases = [];
+
+  plan.metrics.forEach((metric) => {
+    if (!metric.field?.soqlField) {
+      return;
+    }
+    const alias = metric.key;
+    metricAliases.push({ ...metric, alias });
+    selectParts.push(`SUM(${metric.field.soqlField}) ${alias}`);
+  });
+
+  const whereClause = plan.whereClauses.length ? `\nWHERE ${plan.whereClauses.join("\nAND ")}` : "";
+  const soql = `
+SELECT ${selectParts.join(",\n       ")}
+FROM ${plan.objectName}${whereClause}
+GROUP BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
+ORDER BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
+`.trim();
+
+  const records = await runSoqlQuery(tokenRecord, soql);
+  const rows = records.map((record) => {
+    const scf = normalizeScf(record.scfGrouping ?? record[plan.scfField.soqlField] ?? "");
+    const key = String(record.reportKey ?? record[plan.keyField.soqlField] ?? "").trim();
+    const row = {
+      "SCF Grouping": scf,
+      "scf grouping": scf,
+      "Key": key,
+      "key": key,
+    };
+
+    metricAliases.forEach((metric) => {
+      const numericValue = parseNumber(record[metric.alias]);
+      row[metric.aggregateLabel] = numericValue;
+      row[normalizeLabel(metric.aggregateLabel)] = numericValue;
+    });
+
+    fillAnalysisRateFallbacks(row);
+    return row;
+  }).filter((row) => row["SCF Grouping"]);
+
+  return {
+    columns: [
+      { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
+      { key: "Key", label: "Key", normalized: "key", dataType: "string" },
+      ...plan.metrics.map((metric) => ({
+        key: metric.aggregateLabel,
+        label: metric.aggregateLabel,
+        normalized: normalizeLabel(metric.aggregateLabel),
+        dataType: metric.dataType,
+      })),
+      { key: "Sold Rate", label: "Sold Rate", normalized: "sold rate", dataType: "double" },
+      { key: "In Force Rate", label: "In Force Rate", normalized: "in force rate", dataType: "double" },
+      { key: "Converted Rate", label: "Converted Rate", normalized: "converted rate", dataType: "double" },
+    ],
+    rows,
+    summaryValues: buildAnalysisSummaryValuesFromRows(rows),
+  };
 }
 
 async function fetchAggregateReportRows(tokenRecord, reportConfig, reportMonth) {
@@ -2361,16 +2459,25 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
 
   const describePayload = await fetchReportDescribe(tokenRecord, reportId);
   const reportPayload = null;
-  const groupedReportUnavailableReason = "Analysis used the Salesforce detail query path instead of synchronous report execution.";
+  const groupedReportUnavailableReason = "Analysis used the Salesforce aggregate query path instead of synchronous report execution.";
   const flattened = { columns: [], rows: [], summaryValues: [] };
-  const fullDetailExport = await buildFullDetailExportRows(tokenRecord, describePayload, filters);
+  const aggregateDataset = await fetchAnalysisAggregateRows(tokenRecord, describePayload, filters);
+  const fullDetailExport = { columns: [], rows: [] };
   const reportPayloadDetailExport = { columns: [], rows: [] };
-  const normalizedDetailSummary = fullDetailExport.rows.length
-    ? buildFlatRowsFromDetailExport(fullDetailExport.rows)
+  const normalizedDetailSummary = aggregateDataset.rows.length
+    ? {
+        columns: aggregateDataset.columns,
+        rows: aggregateDataset.rows,
+        summaryValues: aggregateDataset.summaryValues,
+      }
     : { columns: [], rows: [], summaryValues: [] };
-  const preferredExport = fullDetailExport;
+  const preferredExport = aggregateDataset;
   const preferredExportSummary = preferredExport.rows.length
-    ? buildFlatRowsFromDetailExport(preferredExport.rows)
+    ? {
+        columns: preferredExport.columns,
+        rows: preferredExport.rows,
+        summaryValues: preferredExport.summaryValues,
+      }
     : { columns: [], rows: [], summaryValues: [] };
   const shouldPreferDetailSummary =
     normalizedDetailSummary.rows.length > flattened.rows.length
@@ -2389,24 +2496,17 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
           ? normalizedDetailSummary
           : preferredExportSummary.rows.length || preferredExportSummary.columns.length
             ? preferredExportSummary
-            : buildFlatRowsFromDetailExport(preferredExport.rows);
+            : preferredExportSummary;
   const mergedFlattened = mergeAnalysisSummaryDatasets(
     effectiveFlattened,
     flattened,
     normalizedDetailSummary,
     preferredExportSummary
   );
-  const repairedRows = await repairSparseAnalysisRowsWithScopedRefetch(
-    tokenRecord,
-    reportId,
-    describePayload,
-    mergedFlattened.rows,
-    filters
-  );
   const finalizedFlattened = {
     ...mergedFlattened,
-    rows: repairedRows,
-    summaryValues: buildAnalysisSummaryValuesFromRows(repairedRows),
+    rows: mergedFlattened.rows,
+    summaryValues: buildAnalysisSummaryValuesFromRows(mergedFlattened.rows),
   };
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
     flattened,
