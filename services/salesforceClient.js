@@ -2043,11 +2043,12 @@ function mergeAnalysisPremiumMetrics(baseRow = null, candidateRow = null) {
 }
 
 function restorePremiumsFromGroupedRows(summaryRows = [], groupedRows = []) {
+  const toArray = (value) => Array.isArray(value) ? value : [];
   const groupedMap = new Map(
-    ensureArray(groupedRows).map((row) => [getAnalysisSummaryRowKey(row), row])
+    toArray(groupedRows).map((row) => [getAnalysisSummaryRowKey(row), row])
   );
 
-  return ensureArray(summaryRows).map((row) => {
+  return toArray(summaryRows).map((row) => {
     const groupedRow = groupedMap.get(getAnalysisSummaryRowKey(row));
     if (!groupedRow) {
       return row;
