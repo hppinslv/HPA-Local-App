@@ -348,15 +348,37 @@ function buildAnalysisReportSummary({ inputRowCount, exportRowCount, zeroReason,
 }
 
 const ANALYSIS_REPORT_LABEL_MAP = {
-  "Sum of Opp Count": "Number of Apps Received",
-  "Sum of Sold": "Converted (at least one payment received)",
+  "Sum of Opp Count": "Sum of Sold",
+  "Sum of Sold": "Sum of Converted",
   "Sum of In Force": "Inforce (policy currently in effect)",
   "Sum of Total Monthly Premium": "Sum of Total Sold",
   "Average Monthly Premium Sold": "Average Monthly Premium Sold",
-  "Sold Rate": "Sold Rate (Apps Received)",
-  "Converted Rate": "Converted Rate (At least one payment received)",
-  "In Force Rate": "In Force Rate (policy currently in effect)",
+  "Sold Rate": "Sold Rate",
+  "Converted Rate": "Converted Rate",
+  "In Force Rate": "In Force Rate",
 };
+
+const ANALYSIS_REPORT_ORDER = [
+  "SCF Grouping",
+  "Key",
+  "Sum of Mailed",
+  "Sum of Opp Count",
+  "Sum of Sold",
+  "Sum of In Force",
+  "Sum of Total Monthly Premium",
+  "Average Monthly Premium Sold",
+  "Sum of In Force Monthly Premium",
+  "Sum of Total Converted Monthly Premiums",
+  "Sold Rate",
+  "Converted Rate",
+  "In Force Rate",
+];
+
+function getAnalysisReportOrderRank(labelOrKey) {
+  const trimmed = String(labelOrKey || "").trim();
+  const index = ANALYSIS_REPORT_ORDER.indexOf(trimmed);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
 
 function renameAnalysisReportLabel(label) {
   const trimmed = String(label || "").trim();
@@ -364,17 +386,35 @@ function renameAnalysisReportLabel(label) {
 }
 
 function relabelAnalysisColumns(columns = []) {
-  return ensureArray(columns).map((column) => ({
-    ...column,
-    label: renameAnalysisReportLabel(column?.label || column?.key || column?.normalized || ""),
-  }));
+  return ensureArray(columns)
+    .map((column) => ({
+      ...column,
+      label: renameAnalysisReportLabel(column?.label || column?.key || column?.normalized || ""),
+    }))
+    .sort((columnA, columnB) => {
+      const rankA = getAnalysisReportOrderRank(columnA?.key || columnA?.label || columnA?.normalized || "");
+      const rankB = getAnalysisReportOrderRank(columnB?.key || columnB?.label || columnB?.normalized || "");
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+      return String(columnA?.label || "").localeCompare(String(columnB?.label || ""));
+    });
 }
 
 function relabelAnalysisSummaryValues(summaryValues = []) {
-  return ensureArray(summaryValues).map((entry) => ({
-    ...entry,
-    label: renameAnalysisReportLabel(entry?.label || entry?.key || ""),
-  }));
+  return ensureArray(summaryValues)
+    .map((entry) => ({
+      ...entry,
+      label: renameAnalysisReportLabel(entry?.label || entry?.key || ""),
+    }))
+    .sort((entryA, entryB) => {
+      const rankA = getAnalysisReportOrderRank(entryA?.key || entryA?.label || "");
+      const rankB = getAnalysisReportOrderRank(entryB?.key || entryB?.label || "");
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+      return String(entryA?.label || "").localeCompare(String(entryB?.label || ""));
+    });
 }
 
 function relabelAnalysisRows(rows = [], columns = []) {

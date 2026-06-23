@@ -1192,6 +1192,10 @@ function fillAnalysisRateFallbacks(row = {}) {
     0
   );
   const sold = resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
+  row["Sum of Sold"] = Math.round(sold).toLocaleString("en-US");
+  row["sum of sold"] = Math.round(sold).toLocaleString("en-US");
+  row.Sold = Math.round(sold).toLocaleString("en-US");
+  row.sold = Math.round(sold).toLocaleString("en-US");
   const nextSoldRate = oppCount > 0 ? (oppCount / mailed) * 100 : 0;
   const nextInForceRate = inForce > 0 ? (inForce / mailed) * 100 : 0;
   const nextConvertedRate = sold > 0 ? (sold / mailed) * 100 : 0;
