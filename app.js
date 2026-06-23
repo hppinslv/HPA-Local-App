@@ -4559,6 +4559,18 @@ function normalizeKeyCodeGroup(value) {
   return ANALYSIS_KEY_CODE_GROUPS.includes(normalized) ? normalized : "NHCL";
 }
 
+function syncAnalysisPullClientTypeWithKeyCodes(pull) {
+  if (!pull || !Array.isArray(pull.keyCodes) || !pull.keyCodes.length) {
+    return;
+  }
+  const normalizedKeyCode = String(pull.keyCodes[0] || "").trim().toUpperCase();
+  if (normalizedKeyCode === "N" || normalizedKeyCode === "NHCL") {
+    pull.clientType = "NHCL";
+  } else if (normalizedKeyCode === "RFC") {
+    pull.clientType = "RFC";
+  }
+}
+
 function getAnalysisReportKeyCodeGroup(report) {
   if (!report || typeof report !== "object") {
     return "";
@@ -8321,6 +8333,7 @@ function renderPullResultCard(pull, options = {}) {
         <p>Report ID: ${esc(options.reportId || pull.reportId || pull.parameters?.report_id || "")}</p>
         ${filterParts.length ? `<p>Filters: ${esc(filterParts.join(" | "))}</p>` : ""}
         ${options.summary ? `<p>${esc(options.summary)}</p>` : ""}
+        ${options.warningMessage || pull.warning_message ? `<p class="inline-status">Warning: ${esc(options.warningMessage || pull.warning_message || "")}</p>` : ""}
         ${options.error ? `<p class="inline-status">Error: ${esc(options.error)}</p>` : ""}
         ${options.downloadUrl ? `<p><a href="${esc(options.downloadUrl)}" download>Download export</a></p>` : ""}
       </div>
@@ -9088,6 +9101,7 @@ function bindAnalysisButtons() {
     const value = target.value;
     if (field === "keyCodes") {
       pull.keyCodes = splitCsvValue(value);
+      syncAnalysisPullClientTypeWithKeyCodes(pull);
     } else if (field === "years") {
       pull.years = splitCsvValue(value)
         .map((entry) => Number.parseInt(entry, 10))
@@ -9118,6 +9132,7 @@ function bindAnalysisButtons() {
           const value = target.value;
           if (field === "keyCodes") {
             pull.keyCodes = splitCsvValue(value);
+            syncAnalysisPullClientTypeWithKeyCodes(pull);
           } else if (field === "clientType") {
             pull.clientType = value;
           } else if (field === "startDate" || field === "endDate") {

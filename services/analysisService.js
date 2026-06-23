@@ -581,6 +581,8 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
     exportColumns,
     exportRows,
     error_message: options.errorMessage || "",
+    warning_message: options.warningMessage || "",
+    diagnostics: options.diagnostics || null,
   };
 }
 
@@ -983,6 +985,10 @@ function normalizePullRequest(rawPull = {}, index = 0) {
     keyCodes,
     dateRange: normalizedDateRange,
   }, index);
+  const normalizedClientTypeFromKeyCodes = resolveClientTypeKeyFilter(keyCodes[0] || "");
+  const normalizedClientType = normalizedClientTypeFromKeyCodes
+    ? normalizedClientTypeFromKeyCodes.toUpperCase() === "N" ? "NHCL" : "RFC"
+    : String(rawPull.clientType || "").trim();
 
   return {
     id: rawPull.id || createPullId(),
@@ -995,7 +1001,7 @@ function normalizePullRequest(rawPull = {}, index = 0) {
     years,
     dateRange: normalizedDateRange,
     scf: normalizeScf(rawPull.scf),
-    clientType: String(rawPull.clientType || "").trim(),
+    clientType: normalizedClientType,
     notes: String(rawPull.notes || "").trim(),
   };
 }
@@ -2538,6 +2544,7 @@ async function executeAnalysisRun(runId) {
           scf: pull.scf,
           clientType: filterValues.clientType,
         });
+        const diagnostics = result.diagnostics || null;
         const inputRows = Number(result.unfilteredRowCount || 0);
         const exportRows = padAnalysisRowsWithReferenceList(
           result.rows,
@@ -2551,6 +2558,13 @@ async function executeAnalysisRun(runId) {
         );
         console.log("Input rows:", inputRows);
         console.log("Export rows:", exportRows.length);
+        if (diagnostics) {
+          console.log("Field names:", diagnostics.availableFieldNames);
+          console.log("Premium samples:", diagnostics.samplePremiumValues);
+          if (diagnostics.suspicious) {
+            console.warn("Dollar warning:", diagnostics.warningMessage);
+          }
+        }
 
         let zeroReason = "";
         if (!pull.analysisLabel && !pull.clientType) {
@@ -2585,6 +2599,8 @@ async function executeAnalysisRun(runId) {
           exportRowCount: savedExportRows.length,
           inputRowCount: inputRows,
           zeroReason,
+          warningMessage: diagnostics?.warningMessage || "",
+          diagnostics,
         });
         savedReports.push(savedReport);
         console.log("Saved report id:", savedReport.id);
@@ -2613,6 +2629,8 @@ async function executeAnalysisRun(runId) {
           reportName: savedReport.report_name,
           resultCount: savedReport.result_count,
           exportFileName: savedReport.export_file_name,
+          warningMessage: savedReport.warning_message || "",
+          diagnostics,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error || "Unknown error");

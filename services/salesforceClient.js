@@ -1847,6 +1847,94 @@ function mergeAnalysisSummaryDatasets(baseDataset = null, ...candidateDatasets) 
   };
 }
 
+function extractAnalysisSummaryMetricValue(summaryValues = [], key) {
+  const entry = (Array.isArray(summaryValues) ? summaryValues : []).find((item) => String(item?.key || "").trim() === key);
+  return parseNumber(entry?.value ?? 0);
+}
+
+function buildAnalysisDollarDiagnostics(reportId, filters, datasets = {}) {
+  const merged = datasets.mergedFlattened || { rows: [], summaryValues: [] };
+  const grouped = datasets.flattened || { columns: [], rows: [] };
+  const fullDetailExport = datasets.fullDetailExport || { columns: [], rows: [] };
+  const payloadDetailExport = datasets.reportPayloadDetailExport || { columns: [], rows: [] };
+  const preferredExportSummary = datasets.preferredExportSummary || { columns: [], rows: [] };
+  const normalizedDetailSummary = datasets.normalizedDetailSummary || { columns: [], rows: [] };
+
+  const availableFieldNames = Array.from(new Set([
+    ...(Array.isArray(fullDetailExport.columns) ? fullDetailExport.columns.map((column) => column.label || column.key || "") : []),
+    ...(Array.isArray(payloadDetailExport.columns) ? payloadDetailExport.columns.map((column) => column.label || column.key || "") : []),
+    ...(Array.isArray(grouped.columns) ? grouped.columns.map((column) => column.label || column.key || "") : []),
+  ].filter(Boolean)));
+
+  const expectedAmountFields = [
+    "Total Monthly Premium",
+    "In Force Monthly Premium",
+    "Total Converted Monthly Premiums",
+  ];
+  const missingExpectedAmountFields = expectedAmountFields.filter((label) =>
+    !availableFieldNames.some((fieldName) => normalizeLabel(fieldName).includes(normalizeLabel(label)))
+  );
+
+  const sampleSourceRows = [
+    ...(Array.isArray(fullDetailExport.rows) ? fullDetailExport.rows.slice(0, 3) : []),
+    ...(Array.isArray(payloadDetailExport.rows) ? payloadDetailExport.rows.slice(0, 3) : []),
+  ].slice(0, 3);
+  const samplePremiumValues = sampleSourceRows.map((row) => ({
+    scf: row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row.scf ?? "",
+    key: row["Key"] ?? row.key ?? "",
+    totalMonthlyPremium: getLikelyColumnValue(row, ["Total Monthly Premium", "Sum of Total Monthly Premium", "Monthly Premium", "Sold Premium"]),
+    inForceMonthlyPremium: getLikelyColumnValue(row, ["In Force Monthly Premium", "Sum of In Force Monthly Premium"]),
+    totalConvertedMonthlyPremiums: getLikelyColumnValue(row, ["Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premiums", "Converted Monthly Premium"]),
+  }));
+
+  const summaryValues = Array.isArray(merged.summaryValues) ? merged.summaryValues : [];
+  const soldCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Opp Count");
+  const convertedCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Sold");
+  const inForceCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of In Force");
+  const totalMonthlyPremium = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Total Monthly Premium");
+  const inForceMonthlyPremium = extractAnalysisSummaryMetricValue(summaryValues, "Sum of In Force Monthly Premium");
+  const totalConvertedMonthlyPremiums = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Total Converted Monthly Premiums");
+  const rowCount = Array.isArray(merged.rows) ? merged.rows.length : 0;
+
+  const suspicious =
+    rowCount > 0 &&
+    (soldCount > 0 || convertedCount > 0 || inForceCount > 0) &&
+    totalMonthlyPremium === 0 &&
+    inForceMonthlyPremium === 0 &&
+    totalConvertedMonthlyPremiums === 0;
+
+  const warningMessage = suspicious
+    ? `Report ${reportId} has ${rowCount} rows and nonzero counts (sold=${soldCount}, converted=${convertedCount}, inForce=${inForceCount}) but all dollar fields aggregated to 0. Missing expected amount fields: ${missingExpectedAmountFields.length ? missingExpectedAmountFields.join(", ") : "none"}.`
+    : "";
+
+  return {
+    reportId,
+    filters,
+    rowCount,
+    sourceRowCounts: {
+      groupedRows: Array.isArray(grouped.rows) ? grouped.rows.length : 0,
+      fullDetailRows: Array.isArray(fullDetailExport.rows) ? fullDetailExport.rows.length : 0,
+      payloadDetailRows: Array.isArray(payloadDetailExport.rows) ? payloadDetailExport.rows.length : 0,
+      normalizedDetailSummaryRows: Array.isArray(normalizedDetailSummary.rows) ? normalizedDetailSummary.rows.length : 0,
+      preferredExportSummaryRows: Array.isArray(preferredExportSummary.rows) ? preferredExportSummary.rows.length : 0,
+    },
+    availableFieldNames,
+    expectedAmountFields,
+    missingExpectedAmountFields,
+    samplePremiumValues,
+    summary: {
+      soldCount,
+      convertedCount,
+      inForceCount,
+      totalMonthlyPremium,
+      inForceMonthlyPremium,
+      totalConvertedMonthlyPremiums,
+    },
+    suspicious,
+    warningMessage,
+  };
+}
+
 function normalizeAnalysisKeyCodeValue(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) {
@@ -2291,6 +2379,14 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     normalizedDetailSummary,
     preferredExportSummary
   );
+  const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
+    flattened,
+    fullDetailExport,
+    reportPayloadDetailExport,
+    normalizedDetailSummary,
+    preferredExportSummary,
+    mergedFlattened,
+  });
   const availableKeyValues = Array.from(
     new Set(
       mergedFlattened.rows
@@ -2315,6 +2411,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     unfilteredRowCount: mergedFlattened.rows.length,
     exportRowCount: filterAnalysisRows(mergedFlattened.rows, filters).length,
     availableKeyValues,
+    diagnostics,
   };
 }
 
