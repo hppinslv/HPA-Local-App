@@ -7389,6 +7389,10 @@ function hydrateComparisonLinksFromDom() {
     return;
   }
 
+  const availableReportIds = new Set(
+    getAvailableAnalysisReports().map((report) => String(report.id || "").trim()).filter(Boolean)
+  );
+
   const comparisonCards = Array.from(
     homePanel.querySelectorAll("[data-comparison-id]")
   );
@@ -7409,7 +7413,15 @@ function hydrateComparisonLinksFromDom() {
       link.comparisonName = String(nameInput.value || "").trim();
     }
 
-    const selectedIds = getComparisonSelectedReportIds(link);
+    const selectedIdsFromDom = Array.from(
+      card.querySelectorAll('[data-report-checkbox="true"]:checked')
+    )
+      .map((input) => (input instanceof HTMLInputElement ? String(input.value || "").trim() : ""))
+      .filter((reportId) => Boolean(reportId) && availableReportIds.has(reportId));
+
+    const selectedIds = selectedIdsFromDom.length
+      ? selectedIdsFromDom
+      : getComparisonSelectedReportIds(link).filter((reportId) => availableReportIds.has(reportId));
     setComparisonSelectedReportIds(link, selectedIds);
     const derivedKeyCodeGroup = deriveComparisonKeyCodeGroupFromReportIds(selectedIds);
     if (derivedKeyCodeGroup && derivedKeyCodeGroup !== "MIXED") {
