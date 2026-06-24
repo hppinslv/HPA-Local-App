@@ -160,6 +160,7 @@ const state = {
     sessions: [],
     currentSessionId: "",
     currentSession: null,
+    selectedRowIds: [],
     filter: "all",
     popup: false,
     launchSessionId: "",
@@ -3064,6 +3065,10 @@ function getCurrentCheckImportSession() {
   return state.checkImports.currentSession || null;
 }
 
+function isCheckImportImportedSession(session) {
+  return ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+}
+
 function getSelectedCheckImportTemplate() {
   const selectedKey = String(state.checkImports.selectedTemplateKey || "").trim();
   return state.checkImports.templates.find((entry) => entry.key === selectedKey) || null;
@@ -3163,10 +3168,90 @@ function renderCheckImportHistory() {
         <td>${esc(session.uploaded_by || "")}</td>
         <td class="table-action-cell">
           <button class="secondary-button table-action-button" data-check-open-session="${esc(session.id)}">Open</button>
+          ${isCheckImportImportedSession(session) ? "" : `<button class="secondary-button table-action-button" data-check-delete-session="${esc(session.id)}">Delete</button>`}
         </td>
       </tr>
     `)
     .join("");
+}
+
+function sanitizeCheckImportSelection() {
+  const session = getCurrentCheckImportSession();
+  const rowIds = new Set(Array.isArray(session?.rows) ? session.rows.map((row) => row.id) : []);
+  state.checkImports.selectedRowIds = ensureArray(state.checkImports.selectedRowIds).filter((rowId) => rowIds.has(rowId));
+  if (isCheckImportImportedSession(session)) {
+    state.checkImports.selectedRowIds = [];
+  }
+}
+
+function getCheckImportSelectedRowIds() {
+  sanitizeCheckImportSelection();
+  return ensureArray(state.checkImports.selectedRowIds);
+}
+
+function getCheckImportSelectableFilteredRows() {
+  const session = getCurrentCheckImportSession();
+  if (!session || isCheckImportImportedSession(session)) {
+    return [];
+  }
+  return getCheckImportFilteredRows();
+}
+
+function toggleCheckImportRowSelection(rowId, selected) {
+  const selectedIds = new Set(getCheckImportSelectedRowIds());
+  if (selected) selectedIds.add(rowId);
+  else selectedIds.delete(rowId);
+  state.checkImports.selectedRowIds = Array.from(selectedIds);
+}
+
+function toggleCheckImportVisibleSelection(selected) {
+  const selectedIds = new Set(getCheckImportSelectedRowIds());
+  getCheckImportSelectableFilteredRows().forEach((row) => {
+    if (selected) selectedIds.add(row.id);
+    else selectedIds.delete(row.id);
+  });
+  state.checkImports.selectedRowIds = Array.from(selectedIds);
+}
+
+function updateCheckImportSelectionUi() {
+  sanitizeCheckImportSelection();
+  const session = getCurrentCheckImportSession();
+  const selectedIds = getCheckImportSelectedRowIds();
+  const filteredRows = getCheckImportSelectableFilteredRows();
+  const selectedVisibleCount = filteredRows.filter((row) => selectedIds.includes(row.id)).length;
+  const selectAll = el("check-import-select-all");
+  const selectVisibleButton = el("check-import-select-visible-button");
+  const clearSelectionButton = el("check-import-clear-selection-button");
+  const deleteSelectedButton = el("check-import-delete-selected-button");
+  const selectionStatus = el("check-import-selection-status");
+  const importedSession = isCheckImportImportedSession(session);
+
+  if (selectAll instanceof HTMLInputElement) {
+    selectAll.checked = Boolean(filteredRows.length) && selectedVisibleCount === filteredRows.length;
+    selectAll.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < filteredRows.length;
+    selectAll.disabled = !filteredRows.length || importedSession;
+  }
+  if (selectVisibleButton) {
+    selectVisibleButton.disabled = !filteredRows.length || importedSession;
+  }
+  if (clearSelectionButton) {
+    clearSelectionButton.disabled = !selectedIds.length;
+  }
+  if (deleteSelectedButton) {
+    deleteSelectedButton.disabled = !selectedIds.length || importedSession;
+    deleteSelectedButton.textContent = selectedIds.length
+      ? `Delete Selected Rows (${selectedIds.length})`
+      : "Delete Selected Rows";
+  }
+  if (selectionStatus) {
+    selectionStatus.textContent = !session
+      ? ""
+      : importedSession
+        ? "Imported sessions are read only."
+        : selectedIds.length
+          ? `${selectedIds.length} row(s) selected.`
+          : "Select rows to delete them in one step.";
+  }
 }
 
 function renderCheckImportReviewTable() {
@@ -3174,19 +3259,24 @@ function renderCheckImportReviewTable() {
   if (!tbody) return;
   const session = getCurrentCheckImportSession();
   if (!session) {
-    tbody.innerHTML = '<tr><td colspan="13" class="empty-cell">No check import session loaded.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="empty-cell">No check import session loaded.</td></tr>';
+    updateCheckImportSelectionUi();
     return;
   }
-  const isImportedSession = ["imported", "imported_with_errors"].includes(String(session.final_status || ""));
+  const isImportedSession = isCheckImportImportedSession(session);
 
   const rows = getCheckImportFilteredRows();
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="13" class="empty-cell">No rows match the selected filter.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="empty-cell">No rows match the selected filter.</td></tr>';
+    updateCheckImportSelectionUi();
     return;
   }
 
   tbody.innerHTML = rows.map((row) => `
     <tr class="cc-import-row is-${esc(row.status || "ready")}">
+      <td class="table-selection-cell">
+        ${isImportedSession ? "" : `<input type="checkbox" data-check-select-row="${esc(row.id)}"${getCheckImportSelectedRowIds().includes(row.id) ? " checked" : ""} aria-label="Select row ${esc(row.row_number || row.id)}" />`}
+      </td>
       <td><span class="cc-status-pill is-${esc(row.status || "ready")}">${esc((row.status || "ready").replaceAll("_", " "))}</span></td>
       <td>${esc(row.deposit_date || "")}</td>
       <td>
@@ -3228,6 +3318,7 @@ function renderCheckImportReviewTable() {
       </td>
     </tr>
   `).join("");
+  updateCheckImportSelectionUi();
 }
 
 function updateCheckImportPolicyStatus() {
@@ -3252,11 +3343,11 @@ function updateCheckImportButtons() {
   const confirmButton = el("check-import-confirm-button");
   const exportButton = el("check-import-export-errors-button");
   if (saveAllButton) {
-    const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+    const alreadyImported = isCheckImportImportedSession(session);
     saveAllButton.disabled = !session || alreadyImported;
   }
   if (confirmButton) {
-    const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+    const alreadyImported = isCheckImportImportedSession(session);
     const readyCount = Number(session?.ready_count || 0);
     confirmButton.disabled = !session || readyCount <= 0 || Boolean(session?.footer_mismatch) || alreadyImported;
     confirmButton.textContent = alreadyImported
@@ -3271,6 +3362,7 @@ function updateCheckImportButtons() {
 }
 
 function renderCheckImportPage() {
+  sanitizeCheckImportSelection();
   renderCheckImportTemplatePicker();
   updateCheckImportFilterButtons();
   renderCheckImportSummary();
@@ -3284,6 +3376,7 @@ async function loadCheckImportSession(sessionId) {
   const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(sessionId)}`);
   state.checkImports.currentSessionId = payload.session?.id || sessionId;
   state.checkImports.currentSession = payload.session || null;
+  state.checkImports.selectedRowIds = [];
   if (payload.session?.template?.key) {
     state.checkImports.selectedTemplateKey = payload.session.template.key;
   }
@@ -3311,8 +3404,56 @@ async function loadCheckImportSessions(preferredSessionId = "") {
   }
   state.checkImports.currentSessionId = "";
   state.checkImports.currentSession = null;
+  state.checkImports.selectedRowIds = [];
   state.checkImports.launchSessionId = "";
   renderCheckImportPage();
+}
+
+async function deleteCheckImportSessionById(sessionId) {
+  const normalizedId = String(sessionId || "").trim();
+  if (!normalizedId) {
+    return;
+  }
+
+  const response = await apiRequest(`/api/check-imports/${encodeURIComponent(normalizedId)}`, {
+    method: "DELETE",
+  });
+  state.checkImports.sessions = Array.isArray(response.sessions) ? response.sessions : [];
+  if (state.checkImports.currentSessionId === normalizedId) {
+    state.checkImports.currentSessionId = "";
+    state.checkImports.currentSession = null;
+    state.checkImports.selectedRowIds = [];
+  }
+  await loadCheckImportSessions("");
+  setStatus("check-import-status", "Import session deleted.");
+}
+
+async function deleteSelectedCheckImportRows() {
+  const session = getCurrentCheckImportSession();
+  if (!session?.id) return;
+  const rowIds = getCheckImportSelectedRowIds();
+  if (!rowIds.length) {
+    setStatus("check-import-status", "Select one or more rows to delete.");
+    return;
+  }
+  const confirmationMessage = rowIds.length === 1
+    ? "Delete the selected row from this unimported batch?"
+    : `Delete ${rowIds.length} selected rows from this unimported batch?`;
+  if (!confirm(confirmationMessage)) {
+    return;
+  }
+
+  const selectedCount = rowIds.length;
+  setStatus("check-import-status", `Deleting ${selectedCount} row(s)...`);
+  const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(session.id)}/rows/bulk-delete`, {
+    method: "POST",
+    body: { rowIds },
+  });
+  state.checkImports.currentSession = payload.session || null;
+  state.checkImports.currentSessionId = payload.session?.id || session.id;
+  state.checkImports.selectedRowIds = [];
+  renderCheckImportPage();
+  setStatus("check-import-status", `${selectedCount} row(s) deleted.`);
 }
 
 function collectCheckImportRowEdits(session) {
@@ -3535,21 +3676,60 @@ function bindCheckImportEvents() {
     });
   });
 
+  el("check-import-select-visible-button")?.addEventListener("click", () => {
+    toggleCheckImportVisibleSelection(true);
+    renderCheckImportReviewTable();
+  });
+
+  el("check-import-clear-selection-button")?.addEventListener("click", () => {
+    state.checkImports.selectedRowIds = [];
+    renderCheckImportReviewTable();
+  });
+
+  el("check-import-delete-selected-button")?.addEventListener("click", async () => {
+    try {
+      await deleteSelectedCheckImportRows();
+    } catch (error) {
+      setStatus("check-import-status", `Unable to delete selected rows: ${error.message}`);
+    }
+  });
+
+  el("check-import-select-all")?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    toggleCheckImportVisibleSelection(target.checked);
+    renderCheckImportReviewTable();
+  });
+
   el("check-import-history-body")?.addEventListener("click", async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const sessionId = target.getAttribute("data-check-open-session");
-    if (!sessionId) return;
-    setStatus("check-import-status", "Opening import session...");
-    try {
-      if (openImportSessionPopup("check-imports", sessionId)) {
-        setStatus("check-import-status", "Import session opened in a new window.");
-        return;
+    if (sessionId) {
+      setStatus("check-import-status", "Opening import session...");
+      try {
+        if (openImportSessionPopup("check-imports", sessionId)) {
+          setStatus("check-import-status", "Import session opened in a new window.");
+          return;
+        }
+        await loadCheckImportSession(sessionId);
+        setStatus("check-import-status", "Popup was blocked, so the import session opened here.");
+      } catch (error) {
+        setStatus("check-import-status", `Unable to load session: ${error.message}`);
       }
-      await loadCheckImportSession(sessionId);
-      setStatus("check-import-status", "Popup was blocked, so the import session opened here.");
+      return;
+    }
+
+    const deleteSessionId = target.getAttribute("data-check-delete-session");
+    if (!deleteSessionId) return;
+    if (!confirm("Delete this unimported batch and remove its rows from import history?")) {
+      return;
+    }
+    setStatus("check-import-status", "Deleting import session...");
+    try {
+      await deleteCheckImportSessionById(deleteSessionId);
     } catch (error) {
-      setStatus("check-import-status", `Unable to load session: ${error.message}`);
+      setStatus("check-import-status", `Unable to delete session: ${error.message}`);
     }
   });
 
@@ -3558,6 +3738,13 @@ function bindCheckImportEvents() {
     if (!(target instanceof HTMLElement)) return;
     const session = getCurrentCheckImportSession();
     if (!session?.id) return;
+
+    const selectedRowId = target.getAttribute("data-check-select-row");
+    if (selectedRowId && target instanceof HTMLInputElement) {
+      toggleCheckImportRowSelection(selectedRowId, target.checked);
+      updateCheckImportSelectionUi();
+      return;
+    }
 
     const rowId = target.getAttribute("data-check-save-row");
     if (rowId) {

@@ -1853,6 +1853,26 @@ textarea {
   line-height: 1.25;
 }
 
+.import-selection-toolbar {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.import-selection-toolbar .inline-status {
+  margin-left: auto;
+}
+
+.import-review-table .table-selection-cell {
+  width: 48px;
+  min-width: 48px;
+  text-align: center;
+}
+
+.import-review-table .table-selection-cell input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
 .import-review-table .table-action-cell {
   position: sticky;
   right: 0;

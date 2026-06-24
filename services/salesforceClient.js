@@ -15,6 +15,7 @@ const SALESFORCE_API_VERSION = "v61.0";
 const DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS = 45000;
 const salesforceDescribeCache = new Map();
 const ANALYSIS_DEBUG_FILE_PREFIX = "debug-analysis-salesforce-report";
+const ANALYSIS_PREMIUM_RATE_BASE = 14.86;
 
 function parseSalesforceRequestTimeoutMs(candidate) {
   const parsed = Number(candidate);
@@ -132,6 +133,28 @@ function hasAnalysisMetricValue(row = {}, labels = []) {
       (normalizedValue !== undefined && normalizedValue !== null && String(normalizedValue).trim() !== "")
     );
   });
+}
+
+function shouldPreferCandidateAnalysisMetric(currentValue, candidateValue) {
+  const hasCurrent =
+    currentValue !== undefined &&
+    currentValue !== null &&
+    String(currentValue).trim() !== "";
+  const hasCandidate =
+    candidateValue !== undefined &&
+    candidateValue !== null &&
+    String(candidateValue).trim() !== "";
+
+  if (!hasCandidate) {
+    return false;
+  }
+  if (!hasCurrent) {
+    return true;
+  }
+
+  const currentNumber = parseNumber(currentValue);
+  const candidateNumber = parseNumber(candidateValue);
+  return currentNumber === 0 && candidateNumber !== 0;
 }
 
 function applyAnalysisMetricAliases(row = {}) {
@@ -1552,6 +1575,66 @@ ORDER BY ${plan.scfField.soqlField}, ${plan.keyField.soqlField}
   };
 }
 
+async function fetchAnalysisOpportunityAggregateRows(tokenRecord, filters = {}) {
+  const dateRange = resolveAnalysisDateRange(filters);
+  const whereClauses = [
+    "HPA_Mailer_Conversion__c != null",
+  ];
+
+  if (dateRange?.startDate) {
+    whereClauses.push(
+      `HPA_Mailer_Conversion__r.HPA_Mail_Date__c >= ${formatSoqlBoundaryValue(dateRange.startDate, "date", "start")}`
+    );
+  }
+  if (dateRange?.endDate) {
+    whereClauses.push(
+      `HPA_Mailer_Conversion__r.HPA_Mail_Date__c <= ${formatSoqlBoundaryValue(dateRange.endDate, "date", "end")}`
+    );
+  }
+
+  const keyFilters = Array.isArray(filters.keyCodes)
+    ? filters.keyCodes.map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase()).filter(Boolean)
+    : [];
+  if (keyFilters.length === 1) {
+    whereClauses.push(`HPA_Key__c = '${escapeSoqlLiteral(keyFilters[0])}'`);
+  } else if (keyFilters.length > 1) {
+    whereClauses.push(
+      `HPA_Key__c IN (${keyFilters
+        .map((value) => `'${escapeSoqlLiteral(value)}'`)
+        .join(", ")})`
+    );
+  }
+
+  const normalizedScf = normalizeScf(filters.scf);
+  if (normalizedScf) {
+    whereClauses.push(`HPA_SCF__c = '${escapeSoqlLiteral(normalizedScf)}'`);
+  }
+
+  const soql = `
+SELECT HPA_SCF__c,
+       HPA_Key__c,
+       HPA_In_Force__c,
+       Monthly_Premium_Formula__c,
+       HPA_In_Force_Monthly_Premium__c,
+       HPATotal_Converted_Monthly_Premiums__c
+FROM Opportunity
+WHERE ${whereClauses.join("\nAND ")}
+ORDER BY HPA_SCF__c, HPA_Key__c
+`.trim();
+
+  const records = await runSoqlQuery(tokenRecord, soql);
+  const detailRows = records.map((record) => ({
+    "SCF Grouping": normalizeScf(record.HPA_SCF__c ?? ""),
+    "Key": String(record.HPA_Key__c ?? "").trim(),
+    "In Force": parseNumber(record.HPA_In_Force__c),
+    "Total Monthly Premium": parseNumber(record.Monthly_Premium_Formula__c),
+    "In Force Monthly Premium": parseNumber(record.HPA_In_Force_Monthly_Premium__c),
+    "Total Converted Monthly Premiums": parseNumber(record.HPATotal_Converted_Monthly_Premiums__c),
+  })).filter((row) => row["SCF Grouping"]);
+
+  return buildFlatRowsFromDetailExport(detailRows);
+}
+
 async function fetchAggregateReportRows(tokenRecord, reportConfig, reportMonth) {
   const describePayload = await fetchReportDescribe(tokenRecord, reportConfig.reportId);
   const { soql, plan } = buildAggregateSoql(describePayload, reportMonth);
@@ -1727,15 +1810,22 @@ function fillAnalysisRateFallbacks(row = {}) {
       Math.round(sold).toLocaleString("en-US")
     );
   }
-  const nextSoldRate = oppCount > 0
-    ? (oppCount / mailed) * 100
-    : 0;
-  const nextInForceRate = inForce > 0
-    ? (inForce / mailed) * 100
-    : 0;
-  const nextConvertedRate = sold > 0
-    ? (sold / mailed) * 100
-    : 0;
+  const premiumRateDivisor = mailed * ANALYSIS_PREMIUM_RATE_BASE;
+  const nextSoldRate = premiumRateDivisor > 0 && totalMonthlyPremium > 0
+    ? (totalMonthlyPremium * 100) / premiumRateDivisor
+    : oppCount > 0
+      ? (oppCount / mailed) * 100
+      : 0;
+  const nextInForceRate = premiumRateDivisor > 0 && inForceMonthlyPremium > 0
+    ? (inForceMonthlyPremium * 100) / premiumRateDivisor
+    : inForce > 0
+      ? (inForce / mailed) * 100
+      : 0;
+  const nextConvertedRate = premiumRateDivisor > 0 && totalConvertedMonthlyPremiums > 0
+    ? (totalConvertedMonthlyPremiums * 100) / premiumRateDivisor
+    : sold > 0
+      ? (sold / mailed) * 100
+      : 0;
 
   if (!hasExplicitSoldRate) {
     row["Sold Rate"] = nextSoldRate.toFixed(10);
@@ -2398,27 +2488,45 @@ function mergeAnalysisPremiumMetrics(baseRow = null, candidateRow = null) {
   applyAnalysisMetricAliases(mergedRow);
   const premiumFields = [
     {
+      labels: ["In Force", "Sum of In Force"],
+      canonical: "Sum of In Force",
+      normalized: "sum of in force",
+      kind: "number",
+    },
+    {
       labels: ["Total Monthly Premium", "Sum of Total Monthly Premium"],
       canonical: "Sum of Total Monthly Premium",
       normalized: "sum of total monthly premium",
+      kind: "currency",
     },
     {
       labels: ["In Force Monthly Premium", "Sum of In Force Monthly Premium"],
       canonical: "Sum of In Force Monthly Premium",
       normalized: "sum of in force monthly premium",
+      kind: "currency",
     },
     {
       labels: ["Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premiums"],
       canonical: "Sum of Total Converted Monthly Premiums",
       normalized: "sum of total converted monthly premiums",
+      kind: "currency",
     },
   ];
 
   premiumFields.forEach((field) => {
-    const baseValue = getAnalysisCurrencyMetricNumber(baseRow || {}, field.labels);
-    const candidateValue = getAnalysisCurrencyMetricNumber(candidateRow || {}, field.labels);
+    const baseValue = field.kind === "currency"
+      ? getAnalysisCurrencyMetricNumber(baseRow || {}, field.labels)
+      : parseNumber(getAnalysisMetricValue(baseRow || {}, field.labels) ?? 0);
+    const candidateValue = field.kind === "currency"
+      ? getAnalysisCurrencyMetricNumber(candidateRow || {}, field.labels)
+      : parseNumber(getAnalysisMetricValue(candidateRow || {}, field.labels) ?? 0);
     const mergedValue = candidateValue > 0 ? candidateValue : baseValue;
-    setAnalysisCurrencyMetric(mergedRow, field.canonical, field.normalized, mergedValue);
+    if (field.kind === "currency") {
+      setAnalysisCurrencyMetric(mergedRow, field.canonical, field.normalized, mergedValue);
+      return;
+    }
+    const displayValue = Math.round(mergedValue).toLocaleString("en-US");
+    setAnalysisMetricAliases(mergedRow, field.labels, displayValue);
   });
 
   mergedRow.averageMonthlyPremium = Number(candidateRow?.averageMonthlyPremium) > 0
@@ -2515,9 +2623,7 @@ function backfillMissingAnalysisMetrics(primaryRows = [], ...candidateRowsCollec
     const rowKey = getAnalysisSummaryRowKey(merged);
 
     fieldGroups.forEach((labels) => {
-      if (hasAnalysisMetricValue(merged, labels)) {
-        return;
-      }
+      const currentValue = getAnalysisMetricValue(merged, labels);
 
       for (const candidateMap of candidateMaps) {
         const candidateRow = candidateMap.get(rowKey);
@@ -2526,6 +2632,9 @@ function backfillMissingAnalysisMetrics(primaryRows = [], ...candidateRowsCollec
         }
 
         const candidateValue = getAnalysisMetricValue(candidateRow, labels);
+        if (!shouldPreferCandidateAnalysisMetric(currentValue, candidateValue)) {
+          continue;
+        }
         setAnalysisMetricAliases(merged, labels, candidateValue);
         break;
       }
@@ -2748,15 +2857,34 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
 }
 
 async function fetchMergedAnalysisRowsForScopedFilters(tokenRecord, reportId, describePayload, filters = {}) {
-  const fullDetailExport = await buildFullDetailExportRows(tokenRecord, describePayload, {
+  const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
     scf: filters.scf,
     keyCodes: filters.keyCodes,
     dateRange: filters.dateRange,
   });
-  const mergedDataset = Array.isArray(fullDetailExport?.rows) && fullDetailExport.rows.length
-    ? buildFlatRowsFromDetailExport(fullDetailExport.rows)
+  const executed = await executeReportWithDescribeMetadata(
+    tokenRecord,
+    reportId,
+    reportMetadata,
+    describePayload
+  );
+  const groupedDataset = buildGroupedReportRows(executed.reportPayload) || { columns: [], rows: [], summaryValues: [] };
+  const detailDataset = buildDetailExportRows(executed.reportPayload);
+  const detailSummary = Array.isArray(detailDataset?.rows) && detailDataset.rows.length
+    ? buildFlatRowsFromDetailExport(detailDataset.rows)
     : { columns: [], rows: [], summaryValues: [] };
-  return Array.isArray(mergedDataset?.rows) ? mergedDataset.rows : [];
+  const mergedDataset = mergeAnalysisSummaryDatasets(
+    groupedDataset.rows.length || groupedDataset.columns.length ? groupedDataset : detailSummary,
+    detailSummary
+  );
+  const mergedRows = backfillMissingAnalysisMetrics(
+    groupedDataset.rows.length
+      ? restorePremiumsFromGroupedRows(mergedDataset.rows, groupedDataset.rows)
+      : mergedDataset.rows,
+    groupedDataset.rows,
+    detailSummary.rows
+  );
+  return Array.isArray(mergedRows) ? mergedRows : [];
 }
 
 function shouldRepairAnalysisRowWithScopedRefetch(row = {}) {
@@ -3031,6 +3159,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   let normalizedDetailSummary = { columns: [], rows: [], summaryValues: [] };
   let preferredExportSummary = { columns: [], rows: [], summaryValues: [] };
   let payloadDetailSummary = { columns: [], rows: [], summaryValues: [] };
+  let opportunityAggregateSummary = { columns: [], rows: [], summaryValues: [] };
 
   try {
     const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
@@ -3067,7 +3196,12 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     preferredExportSummary = preferredExport.rows.length
       ? buildFlatRowsFromDetailExport(preferredExport.rows)
       : { columns: [], rows: [], summaryValues: [] };
-    normalizedDetailSummary = preferredExportSummary;
+    opportunityAggregateSummary = await fetchAnalysisOpportunityAggregateRows(tokenRecord, normalizedFilters);
+    normalizedDetailSummary = mergeAnalysisSummaryDatasets(
+      preferredExportSummary,
+      opportunityAggregateSummary
+    );
+    preferredExportSummary = normalizedDetailSummary;
     flattened.debugPayloadPath = debugPayloadPath;
   } catch (error) {
     groupedReportUnavailableReason = `Analysis fell back to the Salesforce query path because synchronous report execution was unavailable: ${error instanceof Error ? error.message : String(error || "")}`.trim();
@@ -3086,7 +3220,8 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     flattened.rows.length || flattened.columns.length ? flattened : normalizedDetailSummary,
     normalizedDetailSummary,
     preferredExportSummary,
-    payloadDetailSummary
+    payloadDetailSummary,
+    opportunityAggregateSummary
   );
   const finalizedRows = backfillMissingAnalysisMetrics(
     flattened.rows.length
@@ -3096,6 +3231,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
         )
       : mergedFlattened.rows,
     flattened.rows,
+    opportunityAggregateSummary.rows,
     preferredExportSummary.rows,
     payloadDetailSummary.rows,
     normalizedDetailSummary.rows
@@ -3115,6 +3251,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     reportPayloadDetailExport,
     normalizedDetailSummary,
     preferredExportSummary,
+    opportunityAggregateSummary,
     mergedFlattened: finalizedFlattened,
   });
   diagnostics.sourcePath = reportPayload

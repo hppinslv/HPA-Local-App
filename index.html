@@ -1089,10 +1089,19 @@
               <h3>Review Table</h3>
               <p>Correct certificate numbers, review discrepancies, exclude rows when needed, and then confirm import.</p>
             </div>
+            <div class="action-row import-selection-toolbar">
+              <button id="check-import-select-visible-button" class="secondary-button" disabled>Select Visible Rows</button>
+              <button id="check-import-clear-selection-button" class="secondary-button" disabled>Clear Selection</button>
+              <button id="check-import-delete-selected-button" class="secondary-button" disabled>Delete Selected Rows</button>
+              <span id="check-import-selection-status" class="inline-status"></span>
+            </div>
             <div class="table-wrap import-review-table-wrap">
               <table class="import-review-table import-review-table-check">
                 <thead>
                   <tr>
+                    <th class="table-selection-cell">
+                      <input id="check-import-select-all" type="checkbox" aria-label="Select all visible check import rows" />
+                    </th>
                     <th>Status</th>
                     <th>Deposit Date</th>
                     <th>Cert Number</th>
@@ -1110,7 +1119,7 @@
                 </thead>
                 <tbody id="check-import-review-body">
                   <tr>
-                    <td colspan="13" class="empty-cell">No check import session loaded.</td>
+                    <td colspan="14" class="empty-cell">No check import session loaded.</td>
                   </tr>
                 </tbody>
               </table>

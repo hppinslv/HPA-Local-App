@@ -75,6 +75,8 @@ const {
   createCheckImportSession,
   exportCheckImportErrors,
   confirmCheckImport,
+  deleteCheckImportRows,
+  deleteCheckImportSession,
   getCheckImportSession,
   initializeCheckImportPersistence,
   listCheckImportSessions,
@@ -1218,6 +1220,24 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  const checkImportBulkDeleteMatch = requestUrl.pathname.match(
+    /^\/api\/check-imports\/([^/]+)\/rows\/bulk-delete$/
+  );
+  if (checkImportBulkDeleteMatch && request.method === "POST") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await deleteCheckImportRows(
+          checkImportBulkDeleteMatch[1],
+          Array.isArray(body?.rowIds) ? body.rowIds : []
+        );
+        sendJson(response, 200, { session });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to delete check import rows." });
+      });
+    return;
+  }
+
   const checkImportBulkRowMatch = requestUrl.pathname.match(
     /^\/api\/check-imports\/([^/]+)\/rows\/bulk$/
   );
@@ -1234,6 +1254,17 @@ const server = http.createServer((request, response) => {
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to update check import rows." });
       });
+    return;
+  }
+
+  const deleteCheckImportSessionMatch = requestUrl.pathname.match(/^\/api\/check-imports\/([^/]+)$/);
+  if (deleteCheckImportSessionMatch && request.method === "DELETE") {
+    try {
+      const result = deleteCheckImportSession(deleteCheckImportSessionMatch[1]);
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to delete check import session." });
+    }
     return;
   }
 

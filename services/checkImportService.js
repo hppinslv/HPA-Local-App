@@ -79,6 +79,9 @@ const IMPORT_TEMPLATES = [
 let sessionCache = null;
 let rowCache = null;
 let policyCache = null;
+let sessionDiskWritable = true;
+let rowDiskWritable = true;
+let policyCacheDiskWritable = true;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -396,8 +399,17 @@ function readSessions() {
 
 function writeSessions(nextSessions) {
   sessionCache = clone(nextSessions);
-  writeJson(SESSION_PATH, sessionCache);
-  queueStateSync(SESSION_SUPABASE_KEY, sessionCache);
+  try {
+    if (sessionDiskWritable) {
+      writeJson(SESSION_PATH, sessionCache);
+    }
+    queueStateSync(SESSION_SUPABASE_KEY, sessionCache);
+  } catch (error) {
+    if (sessionDiskWritable) {
+      console.warn("Unable to persist check import sessions to disk, switching to in-memory mode:", error.message);
+    }
+    sessionDiskWritable = false;
+  }
 }
 
 function readRows() {
@@ -410,8 +422,17 @@ function readRows() {
 
 function writeRows(nextRows) {
   rowCache = clone(nextRows);
-  writeJson(ROW_PATH, rowCache);
-  queueStateSync(ROW_SUPABASE_KEY, rowCache);
+  try {
+    if (rowDiskWritable) {
+      writeJson(ROW_PATH, rowCache);
+    }
+    queueStateSync(ROW_SUPABASE_KEY, rowCache);
+  } catch (error) {
+    if (rowDiskWritable) {
+      console.warn("Unable to persist check import rows to disk, switching to in-memory mode:", error.message);
+    }
+    rowDiskWritable = false;
+  }
 }
 
 function readPolicyCache() {
@@ -424,8 +445,17 @@ function readPolicyCache() {
 
 function writePolicyCache(nextCache) {
   policyCache = clone(nextCache);
-  writeJson(POLICY_CACHE_PATH, policyCache);
-  queueStateSync(POLICY_CACHE_SUPABASE_KEY, policyCache);
+  try {
+    if (policyCacheDiskWritable) {
+      writeJson(POLICY_CACHE_PATH, policyCache);
+    }
+    queueStateSync(POLICY_CACHE_SUPABASE_KEY, policyCache);
+  } catch (error) {
+    if (policyCacheDiskWritable) {
+      console.warn("Unable to persist check import policy cache to disk, switching to in-memory mode:", error.message);
+    }
+    policyCacheDiskWritable = false;
+  }
 }
 
 async function initializeCheckImportPersistence() {
@@ -444,6 +474,19 @@ async function initializeCheckImportPersistence() {
   writeSessions(sessionCache);
   writeRows(rowCache);
   writePolicyCache(policyCache);
+}
+
+function __setCheckImportStateForTests({ sessions = [], rows = [], policyCache: nextPolicyCache = null } = {}) {
+  sessionCache = clone(Array.isArray(sessions) ? sessions : []);
+  rowCache = clone(Array.isArray(rows) ? rows : []);
+  policyCache = clone(
+    nextPolicyCache && typeof nextPolicyCache === "object"
+      ? nextPolicyCache
+      : buildPolicyLookupDefault()
+  );
+  sessionDiskWritable = false;
+  rowDiskWritable = false;
+  policyCacheDiskWritable = false;
 }
 
 function buildPolicyLookupEntriesFromRows(rows) {
@@ -1256,6 +1299,40 @@ function getCheckImportSession(sessionId) {
   return serializeSession(session, true);
 }
 
+function isCheckImportSessionImported(session) {
+  if (!session || typeof session !== "object") {
+    return false;
+  }
+  const importedRowCount = Number(session.imported_row_count || session.successful_import_count || 0);
+  return importedRowCount > 0 || ["imported", "imported_with_errors"].includes(String(session.final_status || ""));
+}
+
+function deleteCheckImportSession(sessionId) {
+  const normalizedSessionId = normalizeText(sessionId);
+  if (!normalizedSessionId) {
+    throw new Error("Check import session not found.");
+  }
+
+  const sessions = readSessions();
+  const session = sessions.find((entry) => entry.id === normalizedSessionId);
+  if (!session) {
+    throw new Error("Check import session not found.");
+  }
+  if (isCheckImportSessionImported(session)) {
+    throw new Error("Imported sessions cannot be deleted from history.");
+  }
+
+  const remainingSessions = sessions.filter((entry) => entry.id !== normalizedSessionId);
+  const remainingRows = readRows().filter((entry) => entry.session_id !== normalizedSessionId);
+  writeRows(remainingRows);
+  writeSessions(remainingSessions);
+
+  return {
+    deletedSessionId: normalizedSessionId,
+    sessions: listCheckImportSessions(),
+  };
+}
+
 async function createCheckImportSession({ fileName, base64Content, uploadedBy = DEFAULT_ACTOR, templateKey = IMPORT_TEMPLATE_KEY }) {
   if (!fileName || !base64Content) {
     throw new Error("Upload a CashPro ZIP first.");
@@ -1580,6 +1657,46 @@ async function updateCheckImportRow(sessionId, rowId, updates = {}) {
   );
 }
 
+async function deleteCheckImportRows(sessionId, rowIds = []) {
+  const normalizedSessionId = normalizeText(sessionId);
+  const normalizedRowIds = Array.from(
+    new Set((Array.isArray(rowIds) ? rowIds : []).map((entry) => normalizeText(entry)).filter(Boolean))
+  );
+  if (!normalizedSessionId) {
+    throw new Error("Check import session not found.");
+  }
+  if (!normalizedRowIds.length) {
+    throw new Error("Select at least one row to delete.");
+  }
+
+  const sessions = readSessions();
+  const session = sessions.find((entry) => entry.id === normalizedSessionId);
+  if (!session) {
+    throw new Error("Check import session not found.");
+  }
+  if (isCheckImportSessionImported(session)) {
+    throw new Error("Imported rows cannot be deleted from history.");
+  }
+
+  const rows = readRows();
+  const sessionRowIds = new Set(
+    rows
+      .filter((entry) => entry.session_id === normalizedSessionId)
+      .map((entry) => entry.id)
+  );
+  const missingRowId = normalizedRowIds.find((entry) => !sessionRowIds.has(entry));
+  if (missingRowId) {
+    throw new Error("Check import row not found.");
+  }
+
+  const remainingRows = rows.filter((entry) => {
+    return !(entry.session_id === normalizedSessionId && normalizedRowIds.includes(entry.id));
+  });
+  writeRows(remainingRows);
+
+  return revalidateSession(normalizedSessionId);
+}
+
 function buildCheckSalesforceRecord(row, template) {
   const salesforceRecord = {
     attributes: { type: template.salesforceObjectApiName },
@@ -1773,10 +1890,13 @@ function exportCheckImportErrors(sessionId) {
 }
 
 module.exports = {
+  __setCheckImportStateForTests,
   POLICY_REPORT_ID,
   PREMIUM_REPORT_ID,
   confirmCheckImport,
   createCheckImportSession,
+  deleteCheckImportRows,
+  deleteCheckImportSession,
   exportCheckImportErrors,
   getCheckImportSession,
   initializeCheckImportPersistence,
