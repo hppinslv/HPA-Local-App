@@ -2518,8 +2518,20 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
 
   const rows = Array.from(aggregateMap.values())
     .sort((entryA, entryB) => {
-      const soldRateA = entryA.mailed > 0 ? (entryA.oppCount / entryA.mailed) * 100 : 0;
-      const soldRateB = entryB.mailed > 0 ? (entryB.oppCount / entryB.mailed) * 100 : 0;
+      const soldRateA = entryA.mailed > 0
+        ? (
+            entryA.totalMonthlyPremium > 0
+              ? (entryA.totalMonthlyPremium * 100) / (entryA.mailed * ANALYSIS_PREMIUM_RATE_BASE)
+              : (entryA.oppCount / entryA.mailed) * 100
+          )
+        : 0;
+      const soldRateB = entryB.mailed > 0
+        ? (
+            entryB.totalMonthlyPremium > 0
+              ? (entryB.totalMonthlyPremium * 100) / (entryB.mailed * ANALYSIS_PREMIUM_RATE_BASE)
+              : (entryB.oppCount / entryB.mailed) * 100
+          )
+        : 0;
       if (soldRateB !== soldRateA) {
         return soldRateB - soldRateA;
       }
@@ -2529,9 +2541,22 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       return entryA.keyCode.localeCompare(entryB.keyCode, undefined, { numeric: true });
     })
     .map((entry) => {
-      const soldRate = entry.mailed > 0 ? (entry.oppCount / entry.mailed) * 100 : 0;
-      const inForceRate = entry.mailed > 0 ? (entry.inForce / entry.mailed) * 100 : 0;
-      const convertedRate = entry.mailed > 0 ? (entry.sold / entry.mailed) * 100 : 0;
+      const premiumRateDivisor = entry.mailed > 0 ? entry.mailed * ANALYSIS_PREMIUM_RATE_BASE : 0;
+      const soldRate = premiumRateDivisor > 0 && entry.totalMonthlyPremium > 0
+        ? (entry.totalMonthlyPremium * 100) / premiumRateDivisor
+        : entry.mailed > 0
+          ? (entry.oppCount / entry.mailed) * 100
+          : 0;
+      const inForceRate = premiumRateDivisor > 0 && entry.inForceMonthlyPremium > 0
+        ? (entry.inForceMonthlyPremium * 100) / premiumRateDivisor
+        : entry.mailed > 0
+          ? (entry.inForce / entry.mailed) * 100
+          : 0;
+      const convertedRate = premiumRateDivisor > 0 && entry.totalConvertedMonthlyPremiums > 0
+        ? (entry.totalConvertedMonthlyPremiums * 100) / premiumRateDivisor
+        : entry.mailed > 0
+          ? (entry.sold / entry.mailed) * 100
+          : 0;
       const averageSoldPremium = entry.oppCount > 0 ? entry.applicationPremiumTotal / entry.oppCount : 0;
 
       return {
