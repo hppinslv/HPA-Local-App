@@ -3,6 +3,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const {
+  buildFlatRowsFromDetailExport,
   fetchAnalysisReportScfMetrics,
   fetchFlexibleSalesforceReportData,
   normalizeLabel,
@@ -658,7 +659,75 @@ function readAnalysisReports() {
     analysisReportsInitialized = true;
   }
 
+  const normalizedReports = normalizePersistedAnalysisReports(analysisReportsCache || []);
+  if (normalizedReports.changed) {
+    writeAnalysisReports(normalizedReports.reports);
+  } else {
+    analysisReportsCache = normalizedReports.reports;
+  }
+
   return analysisReportsCache || [];
+}
+
+function normalizePersistedAnalysisReports(reports = []) {
+  let changed = false;
+  const normalizedReports = ensureArray(reports).map((report) => {
+    const normalized = normalizePersistedAnalysisReport(report);
+    if (normalized.changed) {
+      changed = true;
+    }
+    return normalized.report;
+  });
+
+  return {
+    changed,
+    reports: normalizedReports,
+  };
+}
+
+function normalizePersistedAnalysisReport(report = {}) {
+  const exportRows = ensureArray(report.exportRows);
+  if (!exportRows.length || typeof buildFlatRowsFromDetailExport !== "function") {
+    return { changed: false, report };
+  }
+
+  const parameters = report.parameters || {};
+  const effectiveClientType =
+    parameters.client_type ||
+    report.parameters?.clientType ||
+    "";
+  const rebuiltSummary = buildFlatRowsFromDetailExport(exportRows);
+  const rebuiltRows = padAnalysisRowsWithReferenceList(
+    rebuiltSummary.rows,
+    rebuiltSummary.columns,
+    effectiveClientType
+  );
+  const normalizedExistingRows = JSON.stringify(ensureArray(report.rows));
+  const normalizedNextRows = JSON.stringify(rebuiltRows);
+  const normalizedExistingColumns = JSON.stringify(ensureArray(report.columns));
+  const normalizedNextColumns = JSON.stringify(ensureArray(rebuiltSummary.columns));
+  const normalizedExistingSummary = JSON.stringify(ensureArray(report.summaryValues));
+  const normalizedNextSummary = JSON.stringify(ensureArray(rebuiltSummary.summaryValues));
+
+  if (
+    normalizedExistingRows === normalizedNextRows &&
+    normalizedExistingColumns === normalizedNextColumns &&
+    normalizedExistingSummary === normalizedNextSummary
+  ) {
+    return { changed: false, report };
+  }
+
+  return {
+    changed: true,
+    report: {
+      ...report,
+      columns: rebuiltSummary.columns,
+      rows: rebuiltRows,
+      summaryValues: rebuiltSummary.summaryValues,
+      result_count: rebuiltRows.length,
+      updated_at: new Date().toISOString(),
+    },
+  };
 }
 
 function writeAnalysisReports(reports) {

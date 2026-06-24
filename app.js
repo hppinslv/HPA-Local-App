@@ -5989,6 +5989,26 @@ function getUnifiedReportScfEntries(report) {
 
   return combinedScfs.map((scf) => {
     const summaryEntry = summaryMap.get(scf);
+    const aggregateEntry = exportAggregateMap.get(scf) || null;
+    if (aggregateEntry) {
+      return {
+        scf,
+        row: buildSyntheticNavigatorRow({
+          ...aggregateEntry,
+          soldRate: aggregateEntry.soldRateWeight > 0
+            ? aggregateEntry.soldRateWeightedTotal / aggregateEntry.soldRateWeight
+            : null,
+          inForceRate: aggregateEntry.inForceRateWeight > 0
+            ? aggregateEntry.inForceRateWeightedTotal / aggregateEntry.inForceRateWeight
+            : null,
+          convertedRate: aggregateEntry.convertedRateWeight > 0
+            ? aggregateEntry.convertedRateWeightedTotal / aggregateEntry.convertedRateWeight
+            : null,
+        }),
+        source: "export-aggregate",
+      };
+    }
+
     if (summaryEntry) {
       return {
         scf,
@@ -5997,22 +6017,10 @@ function getUnifiedReportScfEntries(report) {
       };
     }
 
-    const aggregateEntry = exportAggregateMap.get(scf) || { scf };
     return {
       scf,
-      row: buildSyntheticNavigatorRow({
-        ...aggregateEntry,
-        soldRate: aggregateEntry.soldRateWeight > 0
-          ? aggregateEntry.soldRateWeightedTotal / aggregateEntry.soldRateWeight
-          : null,
-        inForceRate: aggregateEntry.inForceRateWeight > 0
-          ? aggregateEntry.inForceRateWeightedTotal / aggregateEntry.inForceRateWeight
-          : null,
-        convertedRate: aggregateEntry.convertedRateWeight > 0
-          ? aggregateEntry.convertedRateWeightedTotal / aggregateEntry.convertedRateWeight
-          : null,
-      }),
-      source: "export-aggregate",
+      row: buildSyntheticNavigatorRow({ scf }),
+      source: "synthetic-empty",
     };
   });
 }
@@ -6021,6 +6029,14 @@ function findReportScfMatch(report, scf) {
   const normalizedScf = normalizeScf(scf);
   if (!normalizedScf) {
     return null;
+  }
+
+  const aggregateMatch = getUnifiedReportScfEntries(report).find((entry) => entry.scf === normalizedScf);
+  if (aggregateMatch) {
+    return {
+      ...aggregateMatch,
+      source: aggregateMatch.source || "export-aggregate",
+    };
   }
 
   const summaryEntries = filterScfEntriesByReportKeyCodeGroup(
@@ -6032,14 +6048,6 @@ function findReportScfMatch(report, scf) {
     return {
       ...summaryMatch,
       source: "summary",
-    };
-  }
-
-  const aggregateMatch = getUnifiedReportScfEntries(report).find((entry) => entry.scf === normalizedScf);
-  if (aggregateMatch) {
-    return {
-      ...aggregateMatch,
-      source: aggregateMatch.source || "export-aggregate",
     };
   }
 
