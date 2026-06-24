@@ -1709,11 +1709,18 @@ function fillAnalysisRateFallbacks(row = {}) {
   const totalMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
   const inForceMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium) ?? 0);
   const totalConvertedMonthlyPremiums = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0);
-  const sold = hasExplicitSold
-    ? parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0)
-    : resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
+  const explicitSoldValue = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
+  const shouldOverrideExplicitSoldWithConvertedPremium =
+    hasExplicitSold &&
+    explicitSoldValue <= 0 &&
+    totalConvertedMonthlyPremiums > 0;
+  const sold = shouldOverrideExplicitSoldWithConvertedPremium
+    ? resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums)
+    : hasExplicitSold
+      ? explicitSoldValue
+      : resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
 
-  if (!hasExplicitSold) {
+  if (!hasExplicitSold || shouldOverrideExplicitSoldWithConvertedPremium) {
     setAnalysisMetricAliases(
       row,
       ANALYSIS_METRIC_LABELS.sold,
