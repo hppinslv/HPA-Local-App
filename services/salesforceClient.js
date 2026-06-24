@@ -76,6 +76,51 @@ function normalizeLabel(value) {
     .replace(/[^a-z0-9]+/g, " ");
 }
 
+const ANALYSIS_METRIC_LABELS = {
+  mailed: ["Sum of Mailed", "Mailed"],
+  oppCount: ["Sum of Opp Count", "Applications Received", "Opp Count", "Application Count"],
+  inForce: ["Sum of In Force", "Inforce (policy currently in effect)", "In Force"],
+  sold: ["Sum of Sold", "Sum of Converted", "Sold", "Converted"],
+  totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
+  inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
+  totalConvertedMonthlyPremiums: ["Sum of Total Converted Monthly Premiums", "Total Converted Monthly Premiums"],
+};
+
+function getAnalysisMetricValue(row = {}, labels = []) {
+  for (const label of labels) {
+    const normalized = normalizeLabel(label);
+    if (Object.prototype.hasOwnProperty.call(row, label)) {
+      return row[label];
+    }
+    if (normalized && Object.prototype.hasOwnProperty.call(row, normalized)) {
+      return row[normalized];
+    }
+  }
+
+  return undefined;
+}
+
+function setAnalysisMetricAliases(row = {}, labels = [], value) {
+  labels.forEach((label) => {
+    row[label] = value;
+    const normalized = normalizeLabel(label);
+    if (normalized) {
+      row[normalized] = value;
+    }
+  });
+}
+
+function applyAnalysisMetricAliases(row = {}) {
+  const metricGroups = Object.values(ANALYSIS_METRIC_LABELS);
+  metricGroups.forEach((labels) => {
+    const value = getAnalysisMetricValue(row, labels);
+    if (value !== undefined) {
+      setAnalysisMetricAliases(row, labels, value);
+    }
+  });
+  return row;
+}
+
 function looksLikeDateLabel(label) {
   return (
     label.includes("date received") ||
@@ -844,7 +889,7 @@ function buildRowObjectFromSoqlRecord(record, fields) {
     }
   });
 
-  return rowObject;
+  return applyAnalysisMetricAliases(rowObject);
 }
 
 function isNumericColumn(column) {
@@ -1525,7 +1570,7 @@ function buildRowObject(row, columnMap) {
     }
   });
 
-  return result;
+  return applyAnalysisMetricAliases(result);
 }
 
 function buildDisplayRowObject(row, columnMap) {
@@ -1543,7 +1588,7 @@ function buildDisplayRowObject(row, columnMap) {
     result[column.normalized] = displayValue ?? "";
   });
 
-  return result;
+  return applyAnalysisMetricAliases(result);
 }
 
 function getGroupingColumns(reportPayload) {
@@ -1591,25 +1636,13 @@ function buildSummaryAggregateValues(reportPayload, aggregateColumns) {
 function buildAnalysisSummaryValuesFromRows(rows = []) {
   const safeRows = Array.isArray(rows) ? rows : [];
   const totals = safeRows.reduce((acc, row) => {
-    acc.mailed += parseNumber(row["Sum of Mailed"] ?? row["sum of mailed"] ?? 0);
-    acc.oppCount += parseNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
-    acc.inForce += parseNumber(row["Sum of In Force"] ?? row["sum of in force"] ?? 0);
-    acc.sold += parseNumber(row["Sum of Sold"] ?? row["sum of sold"] ?? 0);
-    acc.totalMonthlyPremium += parseNumber(
-      row["Sum of Total Monthly Premium"] ??
-      row["sum of total monthly premium"] ??
-      0
-    );
-    acc.inForceMonthlyPremium += parseNumber(
-      row["Sum of In Force Monthly Premium"] ??
-      row["sum of in force monthly premium"] ??
-      0
-    );
-    acc.totalConvertedMonthlyPremiums += parseNumber(
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      0
-    );
+    acc.mailed += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.mailed) ?? 0);
+    acc.oppCount += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.oppCount) ?? 0);
+    acc.inForce += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
+    acc.sold += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
+    acc.totalMonthlyPremium += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
+    acc.inForceMonthlyPremium += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium) ?? 0);
+    acc.totalConvertedMonthlyPremiums += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0);
     return acc;
   }, {
     mailed: 0,
@@ -1637,34 +1670,17 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
 }
 
 function fillAnalysisRateFallbacks(row = {}) {
-  const mailed = parseNumber(row["Sum of Mailed"] ?? row["sum of mailed"] ?? row["Mailed"] ?? row["mailed"] ?? 0);
+  applyAnalysisMetricAliases(row);
+  const mailed = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.mailed) ?? 0);
   if (!(mailed > 0)) {
     return row;
   }
 
-  const inForce = parseNumber(row["Sum of In Force"] ?? row["sum of in force"] ?? row["In Force"] ?? row["in force"] ?? 0);
-  const oppCount = parseNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? row["Opp Count"] ?? row["opp count"] ?? 0);
-  const totalMonthlyPremium = parseNumber(
-    row["Sum of Total Monthly Premium"] ??
-    row["sum of total monthly premium"] ??
-    row["Total Monthly Premium"] ??
-    row["total monthly premium"] ??
-    0
-  );
-  const inForceMonthlyPremium = parseNumber(
-    row["Sum of In Force Monthly Premium"] ??
-    row["sum of in force monthly premium"] ??
-    row["In Force Monthly Premium"] ??
-    row["in force monthly premium"] ??
-    0
-  );
-  const totalConvertedMonthlyPremiums = parseNumber(
-    row["Sum of Total Converted Monthly Premiums"] ??
-    row["sum of total converted monthly premiums"] ??
-    row["Total Converted Monthly Premiums"] ??
-    row["total converted monthly premiums"] ??
-    0
-  );
+  const inForce = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
+  const oppCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.oppCount) ?? 0);
+  const totalMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
+  const inForceMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium) ?? 0);
+  const totalConvertedMonthlyPremiums = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0);
   const sold = resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
   row["Sum of Sold"] = Math.round(sold).toLocaleString("en-US");
   row["sum of sold"] = Math.round(sold).toLocaleString("en-US");
@@ -1692,48 +1708,35 @@ function fillAnalysisRateFallbacks(row = {}) {
 }
 
 function resolveAnalysisSoldValue(row = {}, precomputedConvertedPremium = null) {
-  const baseSold = parseNumber(row["Sum of Sold"] ?? row["sum of sold"] ?? row["Sold"] ?? row["sold"] ?? 0);
-  const inForce = parseNumber(
-    row["Sum of In Force"] ??
-    row["sum of in force"] ??
-    row["In Force"] ??
-    row["in force"] ??
-    0
-  );
+  applyAnalysisMetricAliases(row);
+  const baseSold = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
+  const inForce = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
   const convertedPremium = precomputedConvertedPremium === null
-    ? parseNumber(
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      row["Total Converted Monthly Premiums"] ??
-      row["total converted monthly premiums"] ??
-      0
-    )
+    ? parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0)
     : precomputedConvertedPremium;
 
-  if (convertedPremium > 0) {
-    return Math.max(baseSold, inForce, 1);
+  if (baseSold > 0) {
+    return baseSold;
   }
 
-  return Math.max(baseSold, inForce);
+  if (convertedPremium > 0) {
+    return Math.max(inForce, 1);
+  }
+
+  return inForce;
 }
 
 function resolveAnalysisSoldCountFromDetailRow(row = {}, precomputedConvertedPremium = null) {
-  const inForce = parseNumber(
-    row["Sum of In Force"] ??
-    row["sum of in force"] ??
-    row["In Force"] ??
-    row["in force"] ??
-    0
-  );
+  applyAnalysisMetricAliases(row);
+  const baseSold = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
+  const inForce = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
   const convertedPremium = precomputedConvertedPremium === null
-    ? parseNumber(
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      row["Total Converted Monthly Premiums"] ??
-      row["total converted monthly premiums"] ??
-      0
-    )
+    ? parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0)
     : precomputedConvertedPremium;
+
+  if (baseSold > 0) {
+    return baseSold;
+  }
 
   return convertedPremium > 0 ? Math.max(inForce, 1) : inForce;
 }
@@ -2204,7 +2207,7 @@ function getAnalysisSummaryRowKey(row = {}) {
 }
 
 function getAnalysisCurrencyMetricNumber(row = {}, labels = []) {
-  return parseNumber(getLikelyColumnValue(row, labels) ?? 0);
+  return parseNumber(getAnalysisMetricValue(row, labels) ?? getLikelyColumnValue(row, labels) ?? 0);
 }
 
 function setAnalysisCurrencyMetric(row = {}, canonicalLabel, normalizedLabel, numericValue) {
@@ -2225,6 +2228,7 @@ function mergeAnalysisPremiumMetrics(baseRow = null, candidateRow = null) {
   // merge in detail-derived rows. The detail export is mainly used to recover
   // premium fields that the grouped payload sometimes drops.
   const mergedRow = { ...(candidateRow || {}), ...(baseRow || {}) };
+  applyAnalysisMetricAliases(mergedRow);
   const premiumFields = [
     {
       labels: ["Total Monthly Premium", "Sum of Total Monthly Premium"],
