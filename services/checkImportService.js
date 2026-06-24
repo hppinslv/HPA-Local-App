@@ -1657,11 +1657,6 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
   const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates(sessionCertificateNumbers);
   const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
-  const knownCertificatePolicyKeys = new Set(
-    (baseLookupCache.items || []).map((entry) =>
-      `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-    )
-  );
   const certificateIdEntries = sessionCertificateNumbers.map((certificateNumber) => ({
     certificate_number: certificateNumber,
     certificate_record_id: normalizeText(certificateRecordIdMap.get(certificateNumber.toLowerCase()) || ""),
@@ -1678,11 +1673,7 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     items: mergeLookupEntries(
       baseLookupCache.items,
       premiumEntries,
-      targetedLookupEntries.filter((entry) =>
-        knownCertificatePolicyKeys.has(
-          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-        )
-      ),
+      targetedLookupEntries,
       targetedPolicyEntries,
       certificateIdEntries
     ),
@@ -1747,32 +1738,15 @@ async function refreshManualCertificateLookup(certificateNumbers = []) {
     source_report_id: POLICY_REPORT_ID,
   }));
   const currentCache = readPolicyCache();
-  const knownCertificatePolicyKeys = new Set(
-    (currentCache.items || []).map((entry) =>
-      `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-    )
-  );
   const nextCache = {
     ...currentCache,
     refreshedAt: new Date().toISOString(),
     source: "manual-certificate-refresh",
     items: mergeLookupEntries(
       currentCache.items,
-      premiumEntries.filter((entry) =>
-        knownCertificatePolicyKeys.has(
-          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-        )
-      ),
-      targetedLookupEntries.filter((entry) =>
-        knownCertificatePolicyKeys.has(
-          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-        )
-      ),
-      targetedPolicyEntries.filter((entry) =>
-        knownCertificatePolicyKeys.has(
-          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-        )
-      ),
+      premiumEntries,
+      targetedLookupEntries,
+      targetedPolicyEntries,
       certificateIdEntries
     ),
   };
