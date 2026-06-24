@@ -6328,7 +6328,18 @@ function getComparisonReviewComparisonById(comparisonId) {
 function getComparisonReviewReports(comparison) {
   if (!comparison) return [];
   const reportMap = new Map((state.analysis.savedReports || []).map((report) => [report.id, report]));
-  return (comparison.reportIds || [])
+  const selectedReportIds = Array.isArray(comparison.selectedReportIds) && comparison.selectedReportIds.length
+    ? comparison.selectedReportIds
+    : Array.isArray(comparison.reportIds) && comparison.reportIds.length
+      ? comparison.reportIds
+      : [comparison.reportAId, comparison.reportBId];
+  return Array.from(
+    new Set(
+      selectedReportIds
+        .map((reportId) => String(reportId || "").trim())
+        .filter(Boolean)
+    )
+  )
     .map((reportId) => reportMap.get(reportId))
     .filter(Boolean);
 }

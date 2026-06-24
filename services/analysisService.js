@@ -1050,6 +1050,7 @@ function normalizeAnalysisRequest(body = {}) {
           ? "RFC"
           : "NHCL",
         reportIds: Array.from(new Set(reportIds)).slice(0, 5),
+        selectedReportIds: Array.from(new Set(reportIds)).slice(0, 5),
         reportAId: String(reportIds[0] || entry.reportAId || "").trim(),
         reportBId: String(reportIds[1] || entry.reportBId || "").trim(),
         createdAt: entry.createdAt || entry.created_at || null,
