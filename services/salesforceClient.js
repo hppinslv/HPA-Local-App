@@ -2296,6 +2296,13 @@ async function buildFullDetailExportRows(tokenRecord, describePayload, filters =
   };
 }
 
+function shouldFallbackToSoqlForReportPayload(reportPayload) {
+  return (
+    reportPayload?.allData === false &&
+    reportPayload?.hasExceededTabularRowLimit === true
+  );
+}
+
 function countRowsWithScfValue(rows = []) {
   return rows.filter((row) =>
     Object.entries(row || {}).some(([key, rawValue]) => {
@@ -3326,7 +3333,10 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
       keyCodes: filters.keyCodes,
       dateRange: effectiveDateRange,
     });
-    reportPayloadDetailExport = reportPayload ? buildDetailExportRows(reportPayload) : { columns: [], rows: [] };
+    reportPayloadDetailExport =
+      reportPayload && !shouldFallbackToSoqlForReportPayload(reportPayload)
+        ? buildDetailExportRows(reportPayload)
+        : { columns: [], rows: [] };
     if (Array.isArray(reportPayloadDetailExport.rows) && reportPayloadDetailExport.rows.length) {
       reportPayloadDetailExport = {
         ...reportPayloadDetailExport,
@@ -3447,9 +3457,7 @@ async function fetchRawSalesforceReportRows(reportId) {
     normalizedReportId
   );
   const reportName = describePayload?.reportMetadata?.name || normalizedReportId;
-  const shouldFallbackToSoql =
-    reportPayload?.allData === false &&
-    reportPayload?.hasExceededTabularRowLimit === true;
+  const shouldFallbackToSoql = shouldFallbackToSoqlForReportPayload(reportPayload);
 
   if (shouldFallbackToSoql) {
     const plan = buildRawDetailSoqlPlan(describePayload);
@@ -4121,4 +4129,5 @@ module.exports = {
   resolveAnalysisDateRange,
   runSoqlQuery,
   salesforceRequest,
+  shouldFallbackToSoqlForReportPayload,
 };
