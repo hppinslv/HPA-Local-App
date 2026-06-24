@@ -6995,7 +6995,6 @@ function setComparisonSetupNextButtonsDisabled(disabled) {
 }
 
 function validateAnalysisComparisonSetup() {
-  hydrateComparisonLinksFromDom();
   const errorsById = {};
   const summaryErrors = [];
   const reports = getAvailableAnalysisReports();
