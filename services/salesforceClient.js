@@ -1781,6 +1781,19 @@ function resolveAnalysisSoldCountFromDetailRow(row = {}, precomputedConvertedPre
   return convertedPremium > 0 ? Math.max(inForce, 1) : inForce;
 }
 
+function resolveFactMapGroupingKey(path = []) {
+  const segments = (Array.isArray(path) ? path : [])
+    .map((entry) => String(entry?.key || "").trim())
+    .filter(Boolean);
+
+  if (!segments.length) {
+    return "";
+  }
+
+  const leafKey = segments[segments.length - 1];
+  return leafKey || segments.join("_");
+}
+
 function buildGroupedReportRows(reportPayload) {
   const groupingColumns = getGroupingColumns(reportPayload);
   const aggregateColumns = getAggregateColumns(reportPayload);
@@ -1800,10 +1813,7 @@ function buildGroupedReportRows(reportPayload) {
       return;
     }
 
-    const groupingKey = nextPath
-      .map((entry) => String(entry?.key || "").trim())
-      .filter(Boolean)
-      .join("_");
+    const groupingKey = resolveFactMapGroupingKey(nextPath);
     const factKey = `${groupingKey}!T`;
     const factEntry = factMap[factKey];
     const factAggregates = Array.isArray(factEntry?.aggregates) ? factEntry.aggregates : [];
@@ -1866,10 +1876,7 @@ function buildGroupingPathLookup(groups = [], path = [], lookup = new Map()) {
       buildGroupingPathLookup(children, nextPath, lookup);
       return;
     }
-    const groupingKey = nextPath
-      .map((entry) => String(entry?.key || "").trim())
-      .filter(Boolean)
-      .join("_");
+    const groupingKey = resolveFactMapGroupingKey(nextPath);
     lookup.set(groupingKey, nextPath);
   });
   return lookup;
