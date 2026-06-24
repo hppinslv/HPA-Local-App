@@ -26,6 +26,7 @@ const IMPORT_BATCH_SIZE = 200;
 const ACTIVE_POLICY_STATUSES = new Set(["in force", "payment issues", "follow up"]);
 const ACTIVE_POLICY_STATUS_LABEL = "In Force, Payment Issues, or Follow Up";
 const DEFAULT_ACTIVE_POLICY_STATUS = "In Force";
+const SALESFORCE_API_VERSION = "v61.0";
 const CHECK_HEADER_ROW = [
   "Transaction Type",
   "Deposit Date",
@@ -82,6 +83,7 @@ let policyCache = null;
 let sessionDiskWritable = true;
 let rowDiskWritable = true;
 let policyCacheDiskWritable = true;
+let policyStatusFieldApiNameCache = null;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -255,6 +257,13 @@ function escapeSoqlString(value) {
   return String(value || "")
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'");
+}
+
+function normalizeFieldToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
 }
 
 function isSameAmount(a, b) {
@@ -597,6 +606,52 @@ async function fetchPremiumLookupFromSalesforce() {
   return buildPolicyLookupEntriesFromRows(reportRows);
 }
 
+async function getPolicyStatusFieldApiName(tokenRecord) {
+  if (policyStatusFieldApiNameCache !== null) {
+    return policyStatusFieldApiNameCache;
+  }
+
+  const response = await salesforceRequest(
+    tokenRecord,
+    `/services/data/${SALESFORCE_API_VERSION}/sobjects/Policy__c/describe`,
+    { method: "GET" }
+  );
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload[0]?.message || payload.message || "Unable to describe Policy__c.");
+  }
+
+  const fields = Array.isArray(payload?.fields) ? payload.fields : [];
+  const preferredCandidates = [
+    "Policy_Status__c",
+    "PolicyStatus__c",
+    "Status__c",
+  ];
+  const preferredMap = new Map(
+    preferredCandidates.map((entry) => [normalizeFieldToken(entry), entry])
+  );
+
+  const matchedPreferredField = fields.find((field) => {
+    return preferredMap.has(normalizeFieldToken(field?.name));
+  });
+  if (matchedPreferredField?.name) {
+    policyStatusFieldApiNameCache = matchedPreferredField.name;
+    return policyStatusFieldApiNameCache;
+  }
+
+  const matchedLabelField = fields.find((field) => {
+    const normalizedName = normalizeFieldToken(field?.name);
+    const normalizedLabel = normalizeFieldToken(field?.label);
+    return normalizedName.includes("policystatus")
+      || normalizedLabel.includes("policystatus")
+      || (normalizedName === "statusc" && normalizedLabel === "status")
+      || (normalizedName.endsWith("statusc") && normalizedLabel.includes("status"));
+  });
+
+  policyStatusFieldApiNameCache = matchedLabelField?.name || "";
+  return policyStatusFieldApiNameCache;
+}
+
 async function fetchPolicyDetailEntriesForCertificates(certificateNumbers = []) {
   const uniqueCertificates = Array.from(
     new Set((certificateNumbers || []).map((entry) => normalizeCertificateNumber(entry)).filter(Boolean))
@@ -605,8 +660,10 @@ async function fetchPolicyDetailEntriesForCertificates(certificateNumbers = []) 
   if (!uniqueCertificates.length) return [];
 
   const tokenRecord = await getConnectedSalesforceToken();
+  const policyStatusFieldApiName = await getPolicyStatusFieldApiName(tokenRecord);
+  const policyStatusSelect = policyStatusFieldApiName ? `, ${policyStatusFieldApiName}` : "";
   const soql = `
-SELECT Id, Account__c, Account__r.Name, Member_1_Name__c, Member_2_Name__c, Member_1_Contact_Id__r.Name, Member_2_Contact_Id__r.Name, P1__c, P2__c, P3__c, P6__c, P12__c
+SELECT Id, Account__c, Account__r.Name, Member_1_Name__c, Member_2_Name__c, Member_1_Contact_Id__r.Name, Member_2_Contact_Id__r.Name, P1__c, P2__c, P3__c, P6__c, P12__c${policyStatusSelect}
 FROM Policy__c
 WHERE Account__r.Name IN (${uniqueCertificates.map((entry) => `'${escapeSoqlString(entry)}'`).join(", ")})
 `.trim();
@@ -622,9 +679,9 @@ WHERE Account__r.Name IN (${uniqueCertificates.map((entry) => `'${escapeSoqlStri
     p12: normalizeAmount(record.P12__c),
     member_1_name: normalizeText(record.Member_1_Name__c || record.Member_1_Contact_Id__r?.Name),
     member_2_name: normalizeText(record.Member_2_Name__c || record.Member_2_Contact_Id__r?.Name),
-    policy_status: "",
+    policy_status: normalizePolicyStatus(record[policyStatusFieldApiName] || ""),
     refreshed_at: new Date().toISOString(),
-    source_report_id: PREMIUM_REPORT_ID,
+    source_report_id: policyStatusFieldApiName ? `Policy__c.${policyStatusFieldApiName}` : "Policy__c",
   }));
 }
 
@@ -1504,38 +1561,31 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     throw new Error("Check import session not found.");
   }
 
-  const baseLookupCache = await refreshPolicyLookupFromSalesforce();
-  const premiumEntries = await fetchPremiumLookupFromSalesforce();
   const sessionCertificateNumbers = readRows()
     .filter((entry) => entry.session_id === sessionId)
     .map((entry) => normalizeCertificateNumber(entry.corrected_certificate_number || entry.certificate_number))
     .filter(Boolean);
+  if (!sessionCertificateNumbers.length) {
+    throw new Error("No certificate numbers were found in this check import session.");
+  }
+
   const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
-  const knownCertificatePolicyKeys = new Set(
-    (baseLookupCache.items || []).map((entry) =>
-      `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-    )
-  );
   const certificateIdEntries = sessionCertificateNumbers.map((certificateNumber) => ({
     certificate_number: certificateNumber,
     certificate_record_id: normalizeText(certificateRecordIdMap.get(certificateNumber.toLowerCase()) || ""),
     refreshed_at: new Date().toISOString(),
-    source_report_id: POLICY_REPORT_ID,
+    source_report_id: "Account.Name",
   }));
+  const existingCache = readPolicyCache();
 
   const nextCache = {
     reportId: POLICY_REPORT_ID,
     refreshedAt: new Date().toISOString(),
-    source: "salesforce-report+premium-report+policy-soql+certificate-soql",
+    source: "policy-soql+certificate-soql",
     items: mergeLookupEntries(
-      baseLookupCache.items,
-      premiumEntries,
-      targetedPolicyEntries.filter((entry) =>
-        knownCertificatePolicyKeys.has(
-          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-        )
-      ),
+      existingCache.items,
+      targetedPolicyEntries,
       certificateIdEntries
     ),
   };
