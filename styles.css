@@ -790,6 +790,47 @@ textarea {
   margin-top: 20px;
 }
 
+.analysis-review-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.analysis-review-summary-list-rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: flex-start;
+}
+
+.analysis-review-summary-row-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0;
+  white-space: nowrap;
+}
+
+.analysis-review-summary-reason {
+  white-space: normal;
+}
+
+@media print {
+  .analysis-review-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .analysis-review-summary-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .analysis-review-summary-list-rows {
+    gap: 6px 12px;
+  }
+}
+
 .analysis-reports-heading {
   display: flex;
   justify-content: space-between;

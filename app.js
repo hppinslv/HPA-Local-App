@@ -6163,6 +6163,48 @@ function getReviewMetricDisplayName(metricKey) {
   return "Sold Rate";
 }
 
+function inferReviewMetricScale(rows = [], metricKey) {
+  const normalizedMetricKey = String(metricKey || "soldRate").trim();
+  const numericValues = rows
+    .map((entry) => Number(entry?.[normalizedMetricKey]))
+    .filter((value) => Number.isFinite(value));
+  if (!numericValues.length) {
+    return "percent";
+  }
+  const maxValue = Math.max(...numericValues);
+  return maxValue <= 1 ? "decimal" : "percent";
+}
+
+function parseReviewRateThreshold(thresholdValue, rows = [], metricKey = "soldRate") {
+  const rawValue = String(thresholdValue ?? "").trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  const numericValue = Number(rawValue);
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return null;
+  }
+
+  const metricScale = inferReviewMetricScale(rows, metricKey);
+  let compareValue = numericValue;
+  if (metricScale === "percent" && numericValue > 0 && numericValue <= 1) {
+    compareValue = numericValue * 100;
+  } else if (metricScale === "decimal" && numericValue > 1) {
+    compareValue = numericValue / 100;
+  }
+
+  const displayPercent = metricScale === "decimal" ? compareValue * 100 : compareValue;
+  return {
+    rawValue,
+    inputValue: numericValue,
+    compareValue,
+    displayPercent,
+    displayLabel: `${displayPercent.toFixed(2)}%`,
+    metricScale,
+  };
+}
+
 function buildPrimaryNavigatorRows(report) {
   return getUnifiedReportScfEntries(report).map((entry) => ({
     scf: entry.scf,
@@ -6177,12 +6219,12 @@ function buildPrimaryNavigatorRows(report) {
 function getSortedFilteredPrimaryRows(rows = []) {
   const thresholdMetric = String(state.analysis.reviewThresholdMetric || "soldRate").trim();
   const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
-  const thresholdNumber = thresholdValue === "" ? null : Number(thresholdValue);
+  const parsedThreshold = parseReviewRateThreshold(thresholdValue, rows, thresholdMetric);
   const filteredRows = rows.filter((entry) => {
-    if (thresholdNumber === null || Number.isNaN(thresholdNumber)) {
+    if (!parsedThreshold) {
       return true;
     }
-    return Number(entry?.[thresholdMetric] || 0) >= thresholdNumber;
+    return Number(entry?.[thresholdMetric] || 0) >= parsedThreshold.compareValue;
   });
 
   const sortKey = String(state.analysis.reviewTableSort?.key || "soldRate").trim();
@@ -6199,8 +6241,8 @@ function getSortedFilteredPrimaryRows(rows = []) {
 function removeWorkingListEntriesBelowRate(listType, rows = [], metricKey, thresholdValue) {
   const normalizedListType = String(listType || "").trim().toLowerCase();
   const normalizedMetricKey = String(metricKey || "soldRate").trim();
-  const thresholdNumber = Number(thresholdValue);
-  if (!Number.isFinite(thresholdNumber)) {
+  const parsedThreshold = parseReviewRateThreshold(thresholdValue, rows, normalizedMetricKey);
+  if (!parsedThreshold) {
     return { removedCount: 0, affectedScfs: [] };
   }
 
@@ -6212,7 +6254,13 @@ function removeWorkingListEntriesBelowRate(listType, rows = [], metricKey, thres
 
   const scfsToRemove = new Set(
     rows
-      .filter((entry) => Number(entry?.[normalizedMetricKey] || 0) < thresholdNumber)
+      .filter((entry) => {
+        const metricValue = Number(entry?.[normalizedMetricKey] || 0);
+        if (parsedThreshold.compareValue === 0) {
+          return metricValue <= 0;
+        }
+        return metricValue < parsedThreshold.compareValue;
+      })
       .map((entry) => normalizeScf(entry?.scf))
       .filter(Boolean)
   );
@@ -6233,6 +6281,25 @@ function removeWorkingListEntriesBelowRate(listType, rows = [], metricKey, thres
     removedCount,
     affectedScfs: Array.from(scfsToRemove),
   };
+}
+
+function appendAnalysisReviewNote(note) {
+  const normalizedNote = String(note || "").trim();
+  if (!normalizedNote) return;
+  const currentNotes = String(state.analysis.reviewSummaryNotes || "").trim();
+  state.analysis.reviewSummaryNotes = currentNotes
+    ? `${currentNotes}\n${normalizedNote}`
+    : normalizedNote;
+}
+
+function stripAutoAnalysisReviewNotes() {
+  const noteLines = String(state.analysis.reviewSummaryNotes || "")
+    .split(/\r?\n/)
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean);
+  state.analysis.reviewSummaryNotes = noteLines
+    .filter((entry) => !/^Bulk removal decision:|^Review decision:|^Review reset:/i.test(entry))
+    .join("\n");
 }
 
 function getComparisonReviewComparisonById(comparisonId) {
@@ -7368,13 +7435,11 @@ function renderReviewSummaryRows(title, rows) {
   return `
     <article class="panel analysis-review-summary-card">
       <h4>${esc(title)} (${rows.length})</h4>
-      <div class="analysis-review-summary-list">
+      <div class="analysis-review-summary-list analysis-review-summary-list-rows">
         ${rows
           .map((entry) => `
-            <div class="analysis-review-summary-line">
-              <strong>${esc(entry.scf)}</strong>
-              ${entry.state ? `<span>${esc(entry.state)}</span>` : ""}
-              ${entry.reason ? `<span class="analysis-review-summary-reason">${esc(entry.reason)}</span>` : ""}
+            <div class="analysis-review-summary-row-item">
+              <strong>${esc(entry.scf)}</strong>${entry.state ? ` <span>${esc(entry.state)}</span>` : ""}${entry.reason ? ` <span class="analysis-review-summary-reason">${esc(entry.reason)}</span>` : ""}
             </div>
           `)
           .join("")}
@@ -7701,19 +7766,25 @@ function renderAnalysisComparisonReviewPanel() {
         ? `SCF ${effectiveSelectedScf} is already on ${listType}.`
         : `SCF ${effectiveSelectedScf} is not on ${listType}.`;
 
+  const detachedActionButtons = effectiveTargetListEntry
+    ? `
+            <button id="analysis-review-remove-button" class="primary-button">Remove from ${esc(listType)}</button>
+          `
+    : `
+            <button id="analysis-review-add-button" class="primary-button">Add to ${esc(listType)}</button>
+          `;
+
   const actionButtons = effectiveDnmStatus.isDoNotMail
     ? `
           <p>SCF ${esc(effectiveSelectedScf)} is on Do Not Mail${effectiveDnmStatus.label ? ` (${esc(effectiveDnmStatus.label)})` : ""} and cannot be added to ${esc(listType)}.</p>
           <p>No actions are available for Do Not Mail SCFs.</p>
         `
-  : `
-          ${effectiveTargetListEntry ? `
-            <button id="analysis-review-remove-button" class="primary-button">Remove from ${esc(listType)}</button>
-          ` : `
-            <button id="analysis-review-add-button" class="primary-button">Add to ${esc(listType)}</button>
-          `}
+  : detachedWindow
+    ? detachedActionButtons
+    : `
+          ${detachedActionButtons}
           <button id="analysis-review-export-button" class="secondary-button">Export Working ${esc(listType)}</button>
-          <button id="analysis-review-restore-button" class="secondary-button">Restore to Start Point</button>
+          <button id="analysis-review-restore-button" class="secondary-button">Reset Decisions</button>
         `
         ;
 
@@ -7727,10 +7798,12 @@ function renderAnalysisComparisonReviewPanel() {
             ? "This review is detached in its own browser window. Move the whole window anywhere you want."
             : "Drag this SCF review panel anywhere on the screen."}</strong>
         </div>
+        ${detachedWindow ? "" : `
         <div class="action-row">
-          <button id="analysis-review-open-window-button" class="secondary-button"${detachedWindow ? " disabled" : ""}>${detachedWindow ? "Opened In New Window" : "Open In New Window"}</button>
-          <button id="analysis-review-floating-reset" class="secondary-button"${detachedWindow ? " disabled" : ""}>Reset Position</button>
+          <button id="analysis-review-open-window-button" class="secondary-button">Open In New Window</button>
+          <button id="analysis-review-floating-reset" class="secondary-button">Reset Position</button>
         </div>
+        `}
       </div>
       <section class="analysis-review-sticky-panel">
       <article class="panel analysis-review-toolbar-panel">
@@ -7779,7 +7852,7 @@ function renderAnalysisComparisonReviewPanel() {
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-bulk-threshold">Percent</label>
-            <input id="analysis-review-bulk-threshold" class="field-input" type="number" min="0" step="0.01" value="${esc(bulkThresholdValue)}" placeholder="ex: 1.50" />
+            <input id="analysis-review-bulk-threshold" class="field-input" type="number" min="0" step="0.001" value="${esc(bulkThresholdValue)}" placeholder="ex: 2.50 or .025" />
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-bulk-remove-button">Working copy cleanup</label>
@@ -7870,7 +7943,7 @@ function renderAnalysisComparisonReviewPanel() {
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-threshold-value">Percent</label>
-            <input id="analysis-review-threshold-value" class="field-input" type="number" min="0" step="0.01" value="${esc(thresholdValue)}" placeholder="ex: 2.50" />
+            <input id="analysis-review-threshold-value" class="field-input" type="number" min="0" step="0.001" value="${esc(thresholdValue)}" placeholder="ex: 2.50 or .025" />
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-threshold-clear">Reset Filter</label>
@@ -8152,8 +8225,12 @@ function renderAnalysisComparisonReviewPanel() {
 
   el("analysis-review-bulk-remove-button")?.addEventListener("click", () => {
     const thresholdRaw = String(state.analysis.reviewBulkThresholdValue || "").trim();
-    const thresholdNumber = Number(thresholdRaw);
-    if (!thresholdRaw || !Number.isFinite(thresholdNumber) || thresholdNumber < 0) {
+    const parsedThreshold = parseReviewRateThreshold(
+      thresholdRaw,
+      primaryNavigatorRows,
+      state.analysis.reviewBulkMetric
+    );
+    if (!parsedThreshold) {
       setStatus(
         "analysis-comparison-selection-status",
         `Enter a valid percent to remove SCFs from the working ${listType} list.`
@@ -8165,7 +8242,14 @@ function renderAnalysisComparisonReviewPanel() {
       targetListType,
       primaryNavigatorRows,
       state.analysis.reviewBulkMetric,
-      thresholdNumber
+      thresholdRaw
+    );
+    const metricLabel = getReviewMetricDisplayName(state.analysis.reviewBulkMetric);
+    const thresholdLabel = parsedThreshold.displayLabel;
+    appendAnalysisReviewNote(
+      removalResult.removedCount
+        ? `Bulk removal decision: removed ${removalResult.removedCount} ${listType} SCF(s) below ${thresholdLabel} ${metricLabel}.`
+        : `Bulk removal decision: reviewed ${listType} SCFs below ${thresholdLabel} ${metricLabel}; no items were removed.`
     );
     invalidateComparisonReviewSummary();
 
@@ -8174,8 +8258,8 @@ function renderAnalysisComparisonReviewPanel() {
     setStatus(
       "analysis-comparison-selection-status",
       removalResult.removedCount
-        ? `${removalResult.removedCount} SCF(s) were removed from the working ${listType} list for falling below ${thresholdNumber.toFixed(2)}% ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in the primary report. Live lists were not changed.`
-        : `No SCFs were removed from the working ${listType} list below ${thresholdNumber.toFixed(2)}% ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in the primary report.`
+        ? `${removalResult.removedCount} SCF(s) were removed from the working ${listType} list for falling below ${parsedThreshold.displayLabel} ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in the primary report. Live lists were not changed.`
+        : `No SCFs were removed from the working ${listType} list below ${parsedThreshold.displayLabel} ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in the primary report.`
     );
   });
 
@@ -8194,6 +8278,7 @@ function renderAnalysisComparisonReviewPanel() {
       true,
       effectiveSelectedStateValue
     );
+    appendAnalysisReviewNote(`Review decision: added SCF ${effectiveSelectedScf} to the working ${listType} list.`);
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("manual-add");
     setStatus(
@@ -8219,6 +8304,7 @@ function renderAnalysisComparisonReviewPanel() {
       return;
     }
     updateWorkingReferenceListEntry(targetListType, effectiveSelectedScf, false);
+    appendAnalysisReviewNote(`Review decision: removed SCF ${effectiveSelectedScf} from the working ${listType} list.`);
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("manual-remove");
     setStatus(
@@ -8247,6 +8333,8 @@ function renderAnalysisComparisonReviewPanel() {
       return;
     }
     state.analysis.reviewWorkingLists = cloneData(state.analysis.reviewBaselineLists || []);
+    stripAutoAnalysisReviewNotes();
+    appendAnalysisReviewNote("Review reset: restored working lists to the live start point.");
     invalidateComparisonReviewSummary();
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("restore-working-lists");
