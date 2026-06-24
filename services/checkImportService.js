@@ -1083,7 +1083,25 @@ function selectPolicyEntryForCertificate({ certificateNumber, entries = [] } = {
         .map((entry) => [normalizePolicyId(entry.policy_id).toLowerCase(), entry])
     ).values()
   );
+  const reportBackedEntries = uniqueEntries.filter(
+    (entry) => normalizeText(entry?.source_report_id || "") === POLICY_REPORT_ID
+  );
   const activeEntries = uniqueEntries.filter((entry) => isActivePolicyStatus(entry.policy_status));
+
+  if (reportBackedEntries.length === 1) {
+    return { entry: reportBackedEntries[0], issue: null };
+  }
+
+  if (reportBackedEntries.length > 1) {
+    return {
+      entry: null,
+      issue: {
+        severity: "error",
+        code: "multiple_active_policies",
+        message: `Certificate ${normalizedCertificate} has multiple policies on report ${POLICY_REPORT_ID}. Resolve the active policy in Salesforce before importing.`,
+      },
+    };
+  }
 
   if (activeEntries.length === 1) {
     return { entry: activeEntries[0], issue: null };
