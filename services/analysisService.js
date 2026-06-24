@@ -414,19 +414,19 @@ function ensureAnalysisReportExportDir() {
 }
 
 function writeAnalysisReportExport(reportName, columns, rows, reportId, options = {}) {
-  const screenColumns = ensureArray(columns).length
-    ? ensureArray(columns)
-    : ensureArray(options.exportColumns || []);
-  const screenRows = ensureArray(rows).length
-    ? ensureArray(rows)
-    : ensureArray(options.exportRows || []);
-  const outputColumns = screenColumns.length
-    ? screenColumns.map((column) => column.label || column.key || column.normalized || "Value")
-    : Object.keys(screenRows[0] || {});
-  const exportRows = screenRows.map((row) => {
+  const worksheetColumns = ensureArray(options.exportColumns).length
+    ? ensureArray(options.exportColumns)
+    : ensureArray(columns);
+  const worksheetRows = ensureArray(options.exportRows).length
+    ? ensureArray(options.exportRows)
+    : ensureArray(rows);
+  const outputColumns = worksheetColumns.length
+    ? worksheetColumns.map((column) => column.label || column.key || column.normalized || "Value")
+    : Object.keys(worksheetRows[0] || {});
+  const exportRows = worksheetRows.map((row) => {
     const output = {};
     outputColumns.forEach((columnName, index) => {
-      const column = screenColumns[index];
+      const column = worksheetColumns[index];
       const normalizedKey = column?.normalized || "";
       const rawValue =
         row?.[columnName] ??
@@ -473,7 +473,7 @@ function writeAnalysisReportExport(reportName, columns, rows, reportId, options 
     fs.writeFileSync(path.join(xlDir, "styles.xml"), buildAnalysisReportStylesXml(), "utf8");
     fs.writeFileSync(
       path.join(worksheetsDir, "sheet1.xml"),
-      buildAnalysisReportWorksheetXml(reportName, screenColumns, screenRows, options.parameters || {}),
+      buildAnalysisReportWorksheetXml(reportName, worksheetColumns, worksheetRows, options.parameters || {}),
       "utf8"
     );
     fs.writeFileSync(
