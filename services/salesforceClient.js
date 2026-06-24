@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const { getSalesforceConfig } = require("./config");
 const {
   getAuthStatus,
