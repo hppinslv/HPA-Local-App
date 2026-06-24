@@ -1871,7 +1871,7 @@ function buildGroupedReportRows(reportPayload) {
       ...aggregateColumns,
     ],
     rows,
-    summaryValues: buildAnalysisSummaryValuesFromRows(rows),
+    summaryValues: buildSummaryAggregateValues(reportPayload, aggregateColumns),
   };
 }
 
@@ -3099,10 +3099,13 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
         mergedFlattened.rows,
         flattened.rows
       );
+  const preferredSummaryValues = Array.isArray(flattened.summaryValues) && flattened.summaryValues.length
+    ? flattened.summaryValues
+    : buildAnalysisSummaryValuesFromRows(finalizedRows);
   const finalizedFlattened = {
     ...mergedFlattened,
     rows: finalizedRows,
-    summaryValues: buildAnalysisSummaryValuesFromRows(finalizedRows),
+    summaryValues: preferredSummaryValues,
   };
   const rowDebugTrace = buildAnalysisRowDebugTrace(flattened.rows, finalizedFlattened.rows, "047");
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {

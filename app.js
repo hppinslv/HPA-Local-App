@@ -8253,11 +8253,11 @@ function renderPullResultCard(pull, options = {}) {
       : [];
   const analysisLabelHints = {
     "Applications Received": "application received",
-    "Sold Rate": "application received",
+    "Sold Rate": "salesforce premium formula",
     "Inforce (policy currently in effect)": "currently in force",
-    "In Force Rate": "currently in force",
+    "In Force Rate": "salesforce in-force premium formula",
     "Sum of Converted": "received at least one payment",
-    "Converted Rate": "received at least one payment",
+    "Converted Rate": "salesforce converted premium formula",
   };
   const renderAnalysisLabelHtml = (label, suffix = "") => {
     const safeLabel = esc(label || "");
