@@ -11,6 +11,7 @@ const {
 
 const SALESFORCE_API_VERSION = "v61.0";
 const DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS = 45000;
+const salesforceDescribeCache = new Map();
 
 function parseSalesforceRequestTimeoutMs(candidate) {
   const parsed = Number(candidate);
@@ -268,6 +269,201 @@ async function fetchReportDescribe(tokenRecord, reportId) {
   }
 
   return payload;
+}
+
+async function fetchSObjectDescribe(tokenRecord, objectName) {
+  const cacheKey = String(objectName || "").trim();
+  if (!cacheKey) {
+    throw new Error("Salesforce object name is required for describe.");
+  }
+
+  if (salesforceDescribeCache.has(cacheKey)) {
+    return salesforceDescribeCache.get(cacheKey);
+  }
+
+  const response = await salesforceRequest(
+    tokenRecord,
+    `/services/data/${SALESFORCE_API_VERSION}/sobjects/${encodeURIComponent(cacheKey)}/describe`
+  );
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      payload[0]?.message ||
+      payload.message ||
+      `Unable to describe Salesforce object ${cacheKey}.`
+    );
+  }
+
+  salesforceDescribeCache.set(cacheKey, payload);
+  return payload;
+}
+
+function replaceLeadingRelationshipToken(path, fromToken, toToken) {
+  const candidate = String(path || "").trim();
+  if (!candidate || !fromToken || !toToken) {
+    return candidate;
+  }
+
+  if (candidate === fromToken) {
+    return toToken;
+  }
+
+  const prefix = `${fromToken}.`;
+  if (candidate.startsWith(prefix)) {
+    return `${toToken}.${candidate.slice(prefix.length)}`;
+  }
+
+  return candidate;
+}
+
+async function resolveRelationshipNameForObjectReference(tokenRecord, objectName, referenceObjectName) {
+  const baseObjectName = String(objectName || "").trim();
+  const targetObjectName = String(referenceObjectName || "").trim();
+
+  if (!baseObjectName || !targetObjectName || baseObjectName === targetObjectName) {
+    return "";
+  }
+
+  const describePayload = await fetchSObjectDescribe(tokenRecord, baseObjectName);
+  const fields = Array.isArray(describePayload?.fields) ? describePayload.fields : [];
+  const candidates = fields.filter((field) =>
+    Array.isArray(field?.referenceTo) &&
+    field.referenceTo.includes(targetObjectName) &&
+    String(field?.relationshipName || "").trim()
+  );
+
+  if (!candidates.length) {
+    return "";
+  }
+
+  if (candidates.length === 1) {
+    return String(candidates[0].relationshipName || "").trim();
+  }
+
+  const normalizedTarget = normalizeLabel(targetObjectName);
+  const preferred =
+    candidates.find((field) => normalizeLabel(field.relationshipName).includes(normalizedTarget)) ||
+    candidates.find((field) => normalizeLabel(field.name).includes(normalizedTarget)) ||
+    candidates[0];
+
+  return String(preferred?.relationshipName || "").trim();
+}
+
+async function normalizeSoqlRelationshipPath(tokenRecord, objectName, soqlField) {
+  const fieldPath = String(soqlField || "").trim();
+  if (!fieldPath || !fieldPath.includes(".")) {
+    return fieldPath;
+  }
+
+  const [leadingSegment] = fieldPath.split(".");
+  if (!leadingSegment || leadingSegment.endsWith("__r")) {
+    return fieldPath;
+  }
+
+  const resolvedRelationshipName = await resolveRelationshipNameForObjectReference(
+    tokenRecord,
+    objectName,
+    leadingSegment
+  );
+
+  if (!resolvedRelationshipName || resolvedRelationshipName === leadingSegment) {
+    return fieldPath;
+  }
+
+  return replaceLeadingRelationshipToken(fieldPath, leadingSegment, resolvedRelationshipName);
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replaceFieldReferenceInClause(clause, fromField, toField) {
+  const sourceClause = String(clause || "");
+  if (!sourceClause || !fromField || !toField || fromField === toField) {
+    return sourceClause;
+  }
+
+  return sourceClause.replace(
+    new RegExp(`\\b${escapeRegExp(fromField)}\\b`, "g"),
+    toField
+  );
+}
+
+async function normalizeSoqlPlanRelationships(tokenRecord, plan) {
+  const objectName = String(plan?.objectName || "").trim();
+  const inputFields = Array.isArray(plan?.fields) ? plan.fields : [];
+
+  if (!objectName || !inputFields.length) {
+    return plan;
+  }
+
+  const replacements = [];
+  const normalizedFields = [];
+
+  for (const field of inputFields) {
+    const originalField = String(field?.soqlField || "").trim();
+    const normalizedField = await normalizeSoqlRelationshipPath(
+      tokenRecord,
+      objectName,
+      originalField
+    );
+    if (originalField && normalizedField && originalField !== normalizedField) {
+      replacements.push({ from: originalField, to: normalizedField });
+    }
+    normalizedFields.push({
+      ...field,
+      soqlField: normalizedField || originalField,
+    });
+  }
+
+  if (!replacements.length) {
+    return plan;
+  }
+
+  const normalizedWhereClauses = (Array.isArray(plan.whereClauses) ? plan.whereClauses : []).map((clause) =>
+    replacements.reduce(
+      (updatedClause, replacement) =>
+        replaceFieldReferenceInClause(updatedClause, replacement.from, replacement.to),
+      clause
+    )
+  );
+
+  const normalizedDateField = replacements.reduce(
+    (updatedField, replacement) =>
+      replaceFieldReferenceInClause(updatedField, replacement.from, replacement.to),
+    String(plan.dateField || "").trim()
+  );
+
+  const normalizedFieldLookup = new Map(normalizedFields.map((field) => [String(field?.soqlField || "").trim(), field]));
+  const normalizePlanFieldRef = (fieldRef) => {
+    const originalSoqlField = String(fieldRef?.soqlField || "").trim();
+    const updatedField = normalizedFields.find((field) => String(field?.key || "") === String(fieldRef?.key || ""));
+    if (updatedField) {
+      return updatedField;
+    }
+    return normalizedFieldLookup.get(originalSoqlField) || fieldRef;
+  };
+
+  const normalizeMetricRef = (metric) => {
+    if (!metric?.field) {
+      return metric;
+    }
+    return {
+      ...metric,
+      field: normalizePlanFieldRef(metric.field),
+    };
+  };
+
+  return {
+    ...plan,
+    dateField: normalizedDateField,
+    whereClauses: normalizedWhereClauses,
+    fields: normalizedFields,
+    scfField: plan.scfField ? normalizePlanFieldRef(plan.scfField) : plan.scfField,
+    keyField: plan.keyField ? normalizePlanFieldRef(plan.keyField) : plan.keyField,
+    metrics: Array.isArray(plan.metrics) ? plan.metrics.map(normalizeMetricRef) : plan.metrics,
+  };
 }
 
 function buildReportMetadataAttempts(reportMetadata, dateRange) {
@@ -1156,7 +1352,10 @@ async function runSoqlQuery(tokenRecord, soql) {
 }
 
 async function fetchAnalysisAggregateRows(tokenRecord, describePayload, filters = {}) {
-  const plan = buildAnalysisAggregateSoqlPlan(describePayload, filters);
+  const plan = await normalizeSoqlPlanRelationships(
+    tokenRecord,
+    buildAnalysisAggregateSoqlPlan(describePayload, filters)
+  );
   let activeMetrics = plan.metrics.filter((metric) => metric.field?.soqlField);
   let metricAliases = [];
   let records = [];
@@ -1678,7 +1877,10 @@ function buildDetailExportRows(reportPayload) {
 }
 
 async function buildFullDetailExportRows(tokenRecord, describePayload, filters = {}) {
-  const plan = buildAnalysisDetailSoqlPlan(describePayload, filters);
+  const plan = await normalizeSoqlPlanRelationships(
+    tokenRecord,
+    buildAnalysisDetailSoqlPlan(describePayload, filters)
+  );
   const { records, fields } = await runDetailSoqlWithFallback(tokenRecord, plan);
   const rows = records.map((record) => buildRowObjectFromSoqlRecord(record, fields));
 
