@@ -12,6 +12,7 @@ const {
 const SALESFORCE_API_VERSION = "v61.0";
 const DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS = 45000;
 const salesforceDescribeCache = new Map();
+const ANALYSIS_DEBUG_FILE_PREFIX = "debug-analysis-salesforce-report";
 
 function parseSalesforceRequestTimeoutMs(candidate) {
   const parsed = Number(candidate);
@@ -74,6 +75,13 @@ function normalizeLabel(value) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ");
+}
+
+function sanitizeDebugToken(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "unknown";
 }
 
 const ANALYSIS_METRIC_LABELS = {
@@ -1909,6 +1917,119 @@ function buildDetailExportRows(reportPayload) {
   };
 }
 
+function getAnalysisDebugLabel(filters = {}) {
+  const keyCode = Array.isArray(filters.keyCodes) && filters.keyCodes.length
+    ? String(filters.keyCodes[0] || "").trim().toUpperCase()
+    : "";
+  if (keyCode === "N" || keyCode === "NHCL") {
+    return "NHCL";
+  }
+  if (keyCode === "RFC") {
+    return "RFC";
+  }
+  return sanitizeDebugToken(keyCode || "UNKNOWN");
+}
+
+function buildAnalysisDebugFilePath(label) {
+  return path.join(__dirname, "..", `${ANALYSIS_DEBUG_FILE_PREFIX}-${sanitizeDebugToken(label)}.json`);
+}
+
+function getAnalysisDebugFilePath(label) {
+  return buildAnalysisDebugFilePath(label);
+}
+
+function writeAnalysisDebugJson(filePath, payload) {
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return filePath;
+}
+
+function buildAnalysisReportPayloadDebugSnapshot(reportId, filters, describePayload, reportPayload) {
+  const firstTenRows = getDetailRows(reportPayload)
+    .slice(0, 10)
+    .map((row, index) => ({
+      index,
+      dataCells: Array.isArray(row?.dataCells)
+        ? row.dataCells.map((cell, cellIndex) => ({
+            index: cellIndex,
+            label: cell?.label ?? null,
+            value: cell?.value ?? null,
+          }))
+        : [],
+    }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    reportId,
+    filters,
+    reportMetadata: reportPayload?.reportMetadata || null,
+    describeReportMetadata: describePayload?.reportMetadata || null,
+    detailColumns: reportPayload?.reportMetadata?.detailColumns || [],
+    detailColumnInfo: reportPayload?.reportExtendedMetadata?.detailColumnInfo || {},
+    aggregateColumns: reportPayload?.reportMetadata?.aggregates || [],
+    aggregateColumnInfo: reportPayload?.reportExtendedMetadata?.aggregateColumnInfo || {},
+    groupingColumnInfo: reportPayload?.reportExtendedMetadata?.groupingColumnInfo || {},
+    groupingsDown: reportPayload?.groupingsDown || null,
+    groupingsAcross: reportPayload?.groupingsAcross || null,
+    factMap: reportPayload?.factMap || {},
+    firstTenRows,
+  };
+}
+
+function findAnalysisRowByScf(rows = [], targetScf = "") {
+  const normalizedTargetScf = normalizeScf(targetScf);
+  if (normalizedTargetScf) {
+    const exact = rows.find((row) => normalizeScf(row?.["SCF Grouping"] ?? row?.["scf grouping"] ?? "") === normalizedTargetScf);
+    if (exact) {
+      return exact;
+    }
+  }
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+function buildAnalysisRowDebugTrace(groupedRows = [], finalRows = [], targetScf = "047") {
+  const groupedRow = findAnalysisRowByScf(groupedRows, targetScf);
+  const finalRow = findAnalysisRowByScf(finalRows, targetScf);
+  const selectedScf = normalizeScf(
+    groupedRow?.["SCF Grouping"] ??
+    groupedRow?.["scf grouping"] ??
+    finalRow?.["SCF Grouping"] ??
+    finalRow?.["scf grouping"] ??
+    targetScf
+  );
+
+  const fieldMap = [
+    { key: "scfGrouping", labels: ["SCF Grouping"] },
+    { key: "key", labels: ["Key"] },
+    { key: "mailed", labels: ANALYSIS_METRIC_LABELS.mailed },
+    { key: "applicationsReceived", labels: ANALYSIS_METRIC_LABELS.oppCount },
+    { key: "inForce", labels: ANALYSIS_METRIC_LABELS.inForce },
+    { key: "converted", labels: ANALYSIS_METRIC_LABELS.sold },
+    { key: "totalSold", labels: ANALYSIS_METRIC_LABELS.totalMonthlyPremium },
+    { key: "inForceMonthlyPremium", labels: ANALYSIS_METRIC_LABELS.inForceMonthlyPremium },
+    { key: "totalConvertedMonthlyPremiums", labels: ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums },
+    { key: "soldRate", labels: ["Sold Rate"] },
+    { key: "inForceRate", labels: ["In Force Rate"] },
+    { key: "convertedRate", labels: ["Converted Rate"] },
+  ];
+
+  const fields = {};
+  fieldMap.forEach(({ key, labels }) => {
+    fields[key] = {
+      salesforceRaw: groupedRow ? getAnalysisMetricValue(groupedRow, labels) : undefined,
+      parsedGroupedValue: groupedRow ? getAnalysisMetricValue(applyAnalysisMetricAliases({ ...groupedRow }), labels) : undefined,
+      finalDisplayedValue: finalRow ? getAnalysisMetricValue(finalRow, labels) : undefined,
+    };
+  });
+
+  return {
+    targetScfRequested: targetScf,
+    selectedScf,
+    groupedRowRaw: groupedRow,
+    finalRowRaw: finalRow,
+    fields,
+  };
+}
+
 async function buildFullDetailExportRows(tokenRecord, describePayload, filters = {}) {
   const plan = await normalizeSoqlPlanRelationships(
     tokenRecord,
@@ -2348,6 +2469,55 @@ function mergeAnalysisSummaryDatasets(baseDataset = null, ...candidateDatasets) 
     rows: mergedRows,
     summaryValues: buildAnalysisSummaryValuesFromRows(mergedRows),
   };
+}
+
+function backfillMissingAnalysisMetrics(primaryRows = [], ...candidateRowsCollections) {
+  const primaryList = Array.isArray(primaryRows) ? primaryRows.map((row) => ({ ...row })) : [];
+  if (!primaryList.length) {
+    return primaryList;
+  }
+
+  const candidateMaps = candidateRowsCollections
+    .filter((rows) => Array.isArray(rows) && rows.length > 0)
+    .map((rows) => new Map(rows.map((row) => [getAnalysisSummaryRowKey(row), row])));
+
+  const fieldGroups = [
+    ANALYSIS_METRIC_LABELS.mailed,
+    ANALYSIS_METRIC_LABELS.oppCount,
+    ANALYSIS_METRIC_LABELS.inForce,
+    ANALYSIS_METRIC_LABELS.sold,
+    ANALYSIS_METRIC_LABELS.totalMonthlyPremium,
+    ANALYSIS_METRIC_LABELS.inForceMonthlyPremium,
+    ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums,
+    ["Sold Rate"],
+    ["In Force Rate"],
+    ["Converted Rate"],
+  ];
+
+  return primaryList.map((row) => {
+    const merged = applyAnalysisMetricAliases({ ...row });
+    const rowKey = getAnalysisSummaryRowKey(merged);
+
+    fieldGroups.forEach((labels) => {
+      if (hasAnalysisMetricValue(merged, labels)) {
+        return;
+      }
+
+      for (const candidateMap of candidateMaps) {
+        const candidateRow = candidateMap.get(rowKey);
+        if (!candidateRow || !hasAnalysisMetricValue(candidateRow, labels)) {
+          continue;
+        }
+
+        const candidateValue = getAnalysisMetricValue(candidateRow, labels);
+        setAnalysisMetricAliases(merged, labels, candidateValue);
+        break;
+      }
+    });
+
+    fillAnalysisRateFallbacks(merged);
+    return merged;
+  });
 }
 
 function extractAnalysisSummaryMetricValue(summaryValues = [], key) {
@@ -2831,6 +3001,10 @@ async function getConnectedSalesforceToken() {
 async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   const tokenRecord = await getConnectedSalesforceToken();
   const effectiveDateRange = resolveAnalysisDateRange(filters);
+  const normalizedFilters = {
+    ...filters,
+    dateRange: effectiveDateRange || filters.dateRange || null,
+  };
 
   const describePayload = await fetchReportDescribe(tokenRecord, reportId);
   let reportPayload = null;
@@ -2856,6 +3030,11 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     );
     reportPayload = executed.reportPayload;
     flattened = buildGroupedReportRows(reportPayload) || { columns: [], rows: [], summaryValues: [] };
+    const debugLabel = getAnalysisDebugLabel(filters);
+    const debugPayloadPath = writeAnalysisDebugJson(
+      buildAnalysisDebugFilePath(debugLabel),
+      buildAnalysisReportPayloadDebugSnapshot(reportId, normalizedFilters, describePayload, reportPayload)
+    );
     fullDetailExport = await buildFullDetailExportRows(tokenRecord, describePayload, {
       scf: filters.scf,
       keyCodes: filters.keyCodes,
@@ -2873,6 +3052,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
       ? buildFlatRowsFromDetailExport(preferredExport.rows)
       : { columns: [], rows: [], summaryValues: [] };
     normalizedDetailSummary = preferredExportSummary;
+    flattened.debugPayloadPath = debugPayloadPath;
   } catch (error) {
     groupedReportUnavailableReason = `Analysis fell back to the Salesforce query path because synchronous report execution was unavailable: ${error instanceof Error ? error.message : String(error || "")}`.trim();
     const aggregateDataset = await fetchAnalysisAggregateRows(tokenRecord, describePayload, filters);
@@ -2892,15 +3072,23 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     preferredExportSummary,
     payloadDetailSummary
   );
-  const mergedRowsWithGroupedPremiumRescue = restorePremiumsFromGroupedRows(
-    mergedFlattened.rows,
-    flattened.rows
-  );
+  const finalizedRows = flattened.rows.length
+    ? backfillMissingAnalysisMetrics(
+        flattened.rows,
+        preferredExportSummary.rows,
+        payloadDetailSummary.rows,
+        normalizedDetailSummary.rows
+      )
+    : restorePremiumsFromGroupedRows(
+        mergedFlattened.rows,
+        flattened.rows
+      );
   const finalizedFlattened = {
     ...mergedFlattened,
-    rows: mergedRowsWithGroupedPremiumRescue,
-    summaryValues: buildAnalysisSummaryValuesFromRows(mergedRowsWithGroupedPremiumRescue),
+    rows: finalizedRows,
+    summaryValues: buildAnalysisSummaryValuesFromRows(finalizedRows),
   };
+  const rowDebugTrace = buildAnalysisRowDebugTrace(flattened.rows, finalizedFlattened.rows, "047");
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
     flattened,
     fullDetailExport,
@@ -2909,6 +3097,15 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     preferredExportSummary,
     mergedFlattened: finalizedFlattened,
   });
+  diagnostics.sourcePath = reportPayload
+    ? "salesforce-analytics-report-payload-primary"
+    : "salesforce-soql-fallback";
+  diagnostics.groupedReportUnavailableReason = groupedReportUnavailableReason;
+  diagnostics.debugPayloadPath = flattened.debugPayloadPath || null;
+  diagnostics.rowDebugTrace = rowDebugTrace;
+  if (reportPayload) {
+    console.log("Analysis row debug:", JSON.stringify(rowDebugTrace, null, 2));
+  }
   const availableKeyValues = Array.from(
     new Set(
       finalizedFlattened.rows
@@ -2918,10 +3115,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   ).sort();
   return {
     reportId,
-    filters: {
-      ...filters,
-      dateRange: effectiveDateRange || filters.dateRange || null,
-    },
+    filters: normalizedFilters,
     describePayload,
     rawReportPayload: reportPayload,
     groupedReportUnavailableReason,
@@ -3612,6 +3806,7 @@ module.exports = {
   fetchMonthlySalesforceReportData,
   fetchRawSalesforceReportRows,
   fetchReportDescribe,
+  getAnalysisDebugFilePath,
   getConnectedSalesforceToken,
   getMonthDateRange,
   mapColumnLabels,

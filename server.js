@@ -17,6 +17,7 @@ const {
   exchangeCodeForToken,
   getAuthStatus,
 } = require("./services/salesforceAuthService");
+const { getAnalysisDebugFilePath } = require("./services/salesforceClient");
 const {
   addDnmStateGroup,
   addScfAction,
@@ -680,6 +681,27 @@ const server = http.createServer((request, response) => {
 
   if (requestUrl.pathname === "/api/salesforce/auth-status" && request.method === "GET") {
     sendJson(response, 200, { auth: getAuthStatus() });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/analysis/debug-salesforce-report" && request.method === "GET") {
+    try {
+      const label = String(requestUrl.searchParams.get("label") || "").trim() || "NHCL";
+      const filePath = getAnalysisDebugFilePath(label);
+      if (!fs.existsSync(filePath)) {
+        sendJson(response, 404, { error: `Debug report for ${label} was not found.`, filePath });
+        return;
+      }
+
+      const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      sendJson(response, 200, {
+        label,
+        filePath,
+        payload,
+      });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to read Salesforce analysis debug report." });
+    }
     return;
   }
 
