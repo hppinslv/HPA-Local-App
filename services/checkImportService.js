@@ -11,6 +11,12 @@ const {
   salesforceRequest,
 } = require("./salesforceClient");
 const { loadStateObject, queueStateSync } = require("./supabasePersistence");
+const {
+  getCertificateLookupCache,
+  refreshCertificateLookupCacheForCertificates,
+  refreshCertificateLookupCacheFromSalesforce,
+  setCertificateLookupCache,
+} = require("./certificateLookupCacheService");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const SESSION_PATH = path.join(DATA_DIR, "check-import-sessions.json");
@@ -451,6 +457,13 @@ function writeRows(nextRows) {
 }
 
 function readPolicyCache() {
+  if (policyCacheDiskWritable) {
+    const sharedCache = getCertificateLookupCache();
+    if (sharedCache && typeof sharedCache === "object") {
+      policyCache = clone(sharedCache);
+      return policyCache;
+    }
+  }
   ensureStorage();
   if (!policyCache || typeof policyCache !== "object") {
     policyCache = safeParseJson(POLICY_CACHE_PATH, buildPolicyLookupDefault());
@@ -463,8 +476,9 @@ function writePolicyCache(nextCache) {
   try {
     if (policyCacheDiskWritable) {
       writeJson(POLICY_CACHE_PATH, policyCache);
+      queueStateSync(POLICY_CACHE_SUPABASE_KEY, policyCache);
+      setCertificateLookupCache(policyCache);
     }
-    queueStateSync(POLICY_CACHE_SUPABASE_KEY, policyCache);
   } catch (error) {
     if (policyCacheDiskWritable) {
       console.warn("Unable to persist check import policy cache to disk, switching to in-memory mode:", error.message);
@@ -482,9 +496,12 @@ async function initializeCheckImportPersistence() {
 
   sessionCache = Array.isArray(loadedSessions) ? loadedSessions : [];
   rowCache = Array.isArray(loadedRows) ? loadedRows : [];
-  policyCache = loadedPolicyCache && typeof loadedPolicyCache === "object"
-    ? loadedPolicyCache
-    : buildPolicyLookupDefault();
+  const sharedCache = getCertificateLookupCache();
+  policyCache = sharedCache && typeof sharedCache === "object" && Array.isArray(sharedCache.items)
+    ? sharedCache
+    : loadedPolicyCache && typeof loadedPolicyCache === "object"
+      ? loadedPolicyCache
+      : buildPolicyLookupDefault();
 
   writeSessions(sessionCache);
   writeRows(rowCache);
@@ -1648,53 +1665,7 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     throw new Error("No certificate numbers were found in this check import session.");
   }
 
-  let baseLookupCache = null;
-  let baseLookupSourceLabel = "salesforce report";
-  try {
-    baseLookupCache = await refreshPolicyLookupFromSalesforce();
-  } catch (error) {
-    const cachedLookup = readPolicyCache();
-    const cachedItems = Array.isArray(cachedLookup?.items) ? cachedLookup.items : [];
-    baseLookupCache = {
-      reportId: POLICY_REPORT_ID,
-      refreshedAt: cachedLookup?.refreshedAt || new Date().toISOString(),
-      source: cachedLookup?.source || "cached-salesforce-report",
-      items: cachedItems,
-    };
-    baseLookupSourceLabel = cachedItems.length
-      ? "cached salesforce report fallback"
-      : "targeted Salesforce queries only";
-    logCheckImportEvent("Policy lookup report refresh fell back to cached data", {
-      sessionId,
-      error: error?.message || String(error),
-      cachedItemCount: cachedItems.length,
-    });
-  }
-
-  const premiumEntries = await fetchPremiumLookupFromSalesforce();
-  const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
-  const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
-  const certificateIdEntries = sessionCertificateNumbers.map((certificateNumber) => ({
-    certificate_number: certificateNumber,
-    certificate_record_id: normalizeText(certificateRecordIdMap.get(certificateNumber.toLowerCase()) || ""),
-    refreshed_at: new Date().toISOString(),
-    source_report_id: "Account.Name",
-  }));
-
-  const nextCache = {
-    reportId: POLICY_REPORT_ID,
-    refreshedAt: new Date().toISOString(),
-    source: baseLookupSourceLabel === "salesforce report"
-      ? "salesforce-report+premium-report+policy-soql+certificate-soql"
-      : `${baseLookupSourceLabel} + targeted Salesforce queries`,
-    items: mergeLookupEntries(
-      baseLookupCache.items,
-      premiumEntries,
-      targetedPolicyEntries,
-      certificateIdEntries
-    ),
-  };
-
+  const nextCache = await refreshCertificateLookupCacheFromSalesforce();
   writePolicyCache(nextCache);
   session.policy_lookup_refreshed_at = nextCache.refreshedAt;
   writeSessions(readSessions());
@@ -1742,28 +1713,7 @@ async function refreshManualCertificateLookup(certificateNumbers = []) {
   if (!normalizedCertificateNumbers.length) {
     return;
   }
-
-  const premiumEntries = await fetchPremiumLookupFromSalesforce();
-  const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(normalizedCertificateNumbers);
-  const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(normalizedCertificateNumbers);
-  const certificateIdEntries = normalizedCertificateNumbers.map((certificateNumber) => ({
-    certificate_number: certificateNumber,
-    certificate_record_id: normalizeText(certificateRecordIdMap.get(certificateNumber.toLowerCase()) || ""),
-    refreshed_at: new Date().toISOString(),
-    source_report_id: POLICY_REPORT_ID,
-  }));
-  const currentCache = readPolicyCache();
-  const nextCache = {
-    ...currentCache,
-    refreshedAt: new Date().toISOString(),
-    source: "manual-certificate-refresh",
-    items: mergeLookupEntries(
-      currentCache.items,
-      premiumEntries,
-      targetedPolicyEntries,
-      certificateIdEntries
-    ),
-  };
+  const nextCache = await refreshCertificateLookupCacheForCertificates(normalizedCertificateNumbers);
   writePolicyCache(nextCache);
 }
 

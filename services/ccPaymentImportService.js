@@ -12,6 +12,12 @@ const {
   salesforceRequest,
 } = require("./salesforceClient");
 const { loadStateObject, queueStateSync } = require("./supabasePersistence");
+const {
+  getCertificateLookupCache,
+  refreshCertificateLookupCacheForCertificates,
+  refreshCertificateLookupCacheFromSalesforce,
+  setCertificateLookupCache,
+} = require("./certificateLookupCacheService");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const SESSION_PATH = path.join(DATA_DIR, "cc-payment-import-sessions.json");
@@ -691,6 +697,13 @@ function writeRows(nextRows) {
 }
 
 function readPolicyCache() {
+  if (policyCacheDiskWritable) {
+    const sharedCache = getCertificateLookupCache();
+    if (sharedCache && typeof sharedCache === "object") {
+      policyCache = clone(sharedCache);
+      return policyCache;
+    }
+  }
   ensureStorage();
   if (!policyCache || typeof policyCache !== "object") {
     policyCache = safeParseJson(POLICY_CACHE_PATH, buildPolicyLookupDefault());
@@ -703,8 +716,9 @@ function writePolicyCache(nextCache) {
   try {
     if (policyCacheDiskWritable) {
       writeJson(POLICY_CACHE_PATH, policyCache);
+      queueStateSync(POLICY_CACHE_SUPABASE_KEY, policyCache);
+      setCertificateLookupCache(policyCache);
     }
-    queueStateSync(POLICY_CACHE_SUPABASE_KEY, policyCache);
   } catch (error) {
     if (policyCacheDiskWritable) {
       console.warn("Unable to persist CC payment policy cache to disk, switching to in-memory mode:", error.message);
@@ -722,9 +736,12 @@ async function initializeCcPaymentImportPersistence() {
 
   sessionCache = Array.isArray(loadedSessions) ? loadedSessions : [];
   rowCache = Array.isArray(loadedRows) ? loadedRows : [];
-  policyCache = loadedPolicyCache && typeof loadedPolicyCache === "object"
-    ? loadedPolicyCache
-    : buildPolicyLookupDefault();
+  const sharedCache = getCertificateLookupCache();
+  policyCache = sharedCache && typeof sharedCache === "object" && Array.isArray(sharedCache.items)
+    ? sharedCache
+    : loadedPolicyCache && typeof loadedPolicyCache === "object"
+      ? loadedPolicyCache
+      : buildPolicyLookupDefault();
 
   writeSessions(sessionCache);
   writeRows(rowCache);
@@ -1707,39 +1724,8 @@ async function updateCcPaymentImportRow(sessionId, rowId, updates = {}) {
 
   const correctedCertificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
   if (correctedCertificateNumber) {
-    const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates([correctedCertificateNumber]);
-    const targetedPolicyDetailEntries = await fetchPolicyDetailEntriesForCertificates([correctedCertificateNumber]);
+    const nextCache = await refreshCertificateLookupCacheForCertificates([correctedCertificateNumber]);
     const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates([correctedCertificateNumber]);
-    const knownCertificatePolicyKeys = new Set(
-      (readPolicyCache().items || []).map((entry) =>
-        `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-      )
-    );
-    const certificateIdEntries = [{
-      certificate_number: correctedCertificateNumber,
-      certificate_record_id: normalizeText(certificateRecordIdMap.get(correctedCertificateNumber.toLowerCase()) || ""),
-      refreshed_at: new Date().toISOString(),
-      source_report_id: POLICY_REPORT_ID,
-    }];
-    const nextCache = {
-      ...readPolicyCache(),
-      refreshedAt: new Date().toISOString(),
-      source: "manual-certificate-refresh",
-      items: mergeLookupEntries(
-        readPolicyCache().items,
-        targetedLookupEntries.filter((entry) =>
-          knownCertificatePolicyKeys.has(
-            `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-          )
-        ),
-        targetedPolicyDetailEntries.filter((entry) =>
-          knownCertificatePolicyKeys.has(
-            `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-          )
-        ),
-        certificateIdEntries
-      ),
-    };
     writePolicyCache(nextCache);
     await enrichSessionRowsForPremiumReview(sessionId, nextCache, certificateRecordIdMap);
   }
@@ -1771,40 +1757,12 @@ async function refreshCcPaymentImportPolicyLookupFromSalesforce(sessionId) {
     throw new Error("Credit card payment import session not found.");
   }
 
-  const baseLookupCache = await refreshPolicyLookupFromSalesforce();
-  const premiumEntries = await fetchPremiumLookupFromSalesforce();
   const sessionCertificateNumbers = readRows()
     .filter((entry) => entry.session_id === sessionId)
     .map((entry) => normalizeCertificateNumber(entry.certificate_number))
     .filter(Boolean);
-  const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates(sessionCertificateNumbers);
-  const targetedPolicyDetailEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
+  const nextCache = await refreshCertificateLookupCacheFromSalesforce();
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
-  const knownCertificatePolicyKeys = new Set(
-    (baseLookupCache.items || []).map((entry) =>
-      `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-    )
-  );
-
-  const nextCache = {
-    reportId: POLICY_REPORT_ID,
-    refreshedAt: new Date().toISOString(),
-    source: "salesforce-report+premium-report+targeted-certificate-lookups",
-    items: mergeLookupEntries(
-      baseLookupCache.items,
-      premiumEntries,
-      targetedLookupEntries.filter((entry) =>
-        knownCertificatePolicyKeys.has(
-          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-        )
-      ),
-      targetedPolicyDetailEntries.filter((entry) =>
-        knownCertificatePolicyKeys.has(
-          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
-        )
-      )
-    ),
-  };
 
   writePolicyCache(nextCache);
   await enrichSessionRowsForPremiumReview(sessionId, nextCache, certificateRecordIdMap);

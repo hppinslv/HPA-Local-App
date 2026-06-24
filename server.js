@@ -113,6 +113,11 @@ const {
   getMonthlyReportTypes,
 } = require("./services/reportCatalog");
 const {
+  initializeCertificateLookupPersistence,
+  maybeRunStartupCertificateLookupRefresh,
+  scheduleNextCertificateLookupRefresh,
+} = require("./services/certificateLookupCacheService");
+const {
   buildTrendRows,
   captureScoreDashboardSnapshot,
   debugScoreDashboardSnapshotReports,
@@ -1534,21 +1539,25 @@ server.listen(port, () => {
   console.log(`HPA Automations is running at http://localhost:${port}`);
 });
 
-Promise.all([
-  initializeApplicationPersistence(),
-  initializeAnalysisStatePersistence(),
-  initializeReportRunPersistence(),
-  initializeScoreDashboardSnapshotPersistence(),
-  initializeCcPaymentImportPersistence(),
-  initializeCheckImportPersistence(),
-  initializeAchReturnPersistence(),
-  initializeMailingDataPersistence(),
-])
+initializeCertificateLookupPersistence()
+  .then(() => Promise.all([
+    initializeApplicationPersistence(),
+    initializeAnalysisStatePersistence(),
+    initializeReportRunPersistence(),
+    initializeScoreDashboardSnapshotPersistence(),
+    initializeCcPaymentImportPersistence(),
+    initializeCheckImportPersistence(),
+    initializeAchReturnPersistence(),
+    initializeMailingDataPersistence(),
+  ]))
   .then(async () => {
     await maybeRunStartupScoreDashboardSnapshot(console);
+    await maybeRunStartupCertificateLookupRefresh(console);
     scheduleNextScoreDashboardSnapshot(console);
+    scheduleNextCertificateLookupRefresh(console);
   })
   .catch((error) => {
     console.warn("Could not initialize persistence from Supabase:", error.message);
     scheduleNextScoreDashboardSnapshot(console);
+    scheduleNextCertificateLookupRefresh(console);
   });
