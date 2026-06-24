@@ -1561,13 +1561,35 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     throw new Error("Check import session not found.");
   }
 
-  const baseLookupCache = await refreshPolicyLookupFromSalesforce();
   const sessionCertificateNumbers = readRows()
     .filter((entry) => entry.session_id === sessionId)
     .map((entry) => normalizeCertificateNumber(entry.corrected_certificate_number || entry.certificate_number))
     .filter(Boolean);
   if (!sessionCertificateNumbers.length) {
     throw new Error("No certificate numbers were found in this check import session.");
+  }
+
+  let baseLookupCache = null;
+  let baseLookupSourceLabel = "salesforce report";
+  try {
+    baseLookupCache = await refreshPolicyLookupFromSalesforce();
+  } catch (error) {
+    const cachedLookup = readPolicyCache();
+    const cachedItems = Array.isArray(cachedLookup?.items) ? cachedLookup.items : [];
+    baseLookupCache = {
+      reportId: POLICY_REPORT_ID,
+      refreshedAt: cachedLookup?.refreshedAt || new Date().toISOString(),
+      source: cachedLookup?.source || "cached-salesforce-report",
+      items: cachedItems,
+    };
+    baseLookupSourceLabel = cachedItems.length
+      ? "cached salesforce report fallback"
+      : "targeted Salesforce queries only";
+    logCheckImportEvent("Policy lookup report refresh fell back to cached data", {
+      sessionId,
+      error: error?.message || String(error),
+      cachedItemCount: cachedItems.length,
+    });
   }
 
   const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
@@ -1582,7 +1604,7 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
   const nextCache = {
     reportId: POLICY_REPORT_ID,
     refreshedAt: new Date().toISOString(),
-    source: "salesforce-report+policy-soql+certificate-soql",
+    source: `${baseLookupSourceLabel} + targeted Salesforce queries`,
     items: mergeLookupEntries(
       baseLookupCache.items,
       targetedPolicyEntries,

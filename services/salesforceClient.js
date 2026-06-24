@@ -777,6 +777,73 @@ async function executeReportWithDescribeMetadata(tokenRecord, reportId, reportMe
   };
 }
 
+async function executeAsyncReportWithDescribeMetadata(tokenRecord, reportId, reportMetadata, describePayload = null) {
+  const resolvedDescribePayload = describePayload || await fetchReportDescribe(tokenRecord, reportId);
+  const createResponse = await salesforceRequest(
+    tokenRecord,
+    `/services/data/${SALESFORCE_API_VERSION}/analytics/reports/${reportId}/instances`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        reportMetadata: reportMetadata || {},
+      }),
+    }
+  );
+  const createPayload = await createResponse.json();
+
+  if (!createResponse.ok) {
+    throw new Error(
+      createPayload[0]?.message ||
+        createPayload.message ||
+        `Unable to start Salesforce async report ${reportId}.`
+    );
+  }
+
+  const instancePath = String(createPayload.url || "").trim();
+  if (!instancePath) {
+    throw new Error(`Salesforce async report ${reportId} did not return an instance URL.`);
+  }
+
+  let lastPayload = createPayload;
+  const maxAttempts = 20;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const statusValue = String(
+      lastPayload?.attributes?.status ||
+      lastPayload?.status ||
+      ""
+    ).trim().toLowerCase();
+    if (statusValue === "success") {
+      return {
+        describePayload: resolvedDescribePayload,
+        reportPayload: lastPayload,
+      };
+    }
+    if (statusValue === "error" || statusValue === "failure") {
+      throw new Error(
+        lastPayload?.attributes?.errorMessage ||
+        lastPayload?.errorMessage ||
+        `Salesforce async report ${reportId} failed.`
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const pollResponse = await salesforceRequest(tokenRecord, instancePath, {
+      method: "GET",
+    });
+    lastPayload = await pollResponse.json();
+
+    if (!pollResponse.ok) {
+      throw new Error(
+        lastPayload?.[0]?.message ||
+        lastPayload?.message ||
+        `Unable to poll Salesforce async report ${reportId}.`
+      );
+    }
+  }
+
+  throw new Error(`Salesforce async report ${reportId} did not complete in time.`);
+}
+
 function getDetailRows(reportPayload) {
   const factMap = reportPayload.factMap || {};
   const primaryRows = factMap["T!T"]?.rows || factMap["0!T"]?.rows || [];
@@ -3241,7 +3308,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
       keyCodes: filters.keyCodes,
       dateRange: effectiveDateRange,
     });
-    const executed = await executeReportWithDescribeMetadata(
+    const executed = await executeAsyncReportWithDescribeMetadata(
       tokenRecord,
       reportId,
       reportMetadata,
@@ -4031,6 +4098,7 @@ module.exports = {
   buildFlatReportRows,
   buildDetailSoql,
   executeReport,
+  executeAsyncReportWithDescribeMetadata,
   executeReportForDateRange,
   executeReportWithDescribeMetadata,
   executeSavedReport,
