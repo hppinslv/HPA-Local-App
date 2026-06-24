@@ -3374,11 +3374,22 @@ function renderCheckImportPage() {
 
 async function loadCheckImportSession(sessionId) {
   const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(sessionId)}`);
-  state.checkImports.currentSessionId = payload.session?.id || sessionId;
-  state.checkImports.currentSession = payload.session || null;
+  const resolvedSession = payload.session || null;
+  const resolvedRows = Array.isArray(resolvedSession?.rows) ? resolvedSession.rows : [];
+  if (!resolvedSession || !resolvedSession.id || !resolvedRows.length) {
+    state.checkImports.currentSessionId = "";
+    state.checkImports.currentSession = null;
+    state.checkImports.selectedRowIds = [];
+    renderCheckImportPage();
+    setStatus("check-import-status", "That check import session is no longer available. Showing current server state.");
+    return;
+  }
+
+  state.checkImports.currentSessionId = resolvedSession.id;
+  state.checkImports.currentSession = resolvedSession;
   state.checkImports.selectedRowIds = [];
-  if (payload.session?.template?.key) {
-    state.checkImports.selectedTemplateKey = payload.session.template.key;
+  if (resolvedSession.template?.key) {
+    state.checkImports.selectedTemplateKey = resolvedSession.template.key;
   }
   renderCheckImportPage();
 }
