@@ -1672,7 +1672,6 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
   }
 
   const premiumEntries = await fetchPremiumLookupFromSalesforce();
-  const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates(sessionCertificateNumbers);
   const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
   const certificateIdEntries = sessionCertificateNumbers.map((certificateNumber) => ({
@@ -1691,7 +1690,6 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     items: mergeLookupEntries(
       baseLookupCache.items,
       premiumEntries,
-      targetedLookupEntries,
       targetedPolicyEntries,
       certificateIdEntries
     ),
@@ -1745,7 +1743,6 @@ async function refreshManualCertificateLookup(certificateNumbers = []) {
     return;
   }
 
-  const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates(normalizedCertificateNumbers);
   const premiumEntries = await fetchPremiumLookupFromSalesforce();
   const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(normalizedCertificateNumbers);
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(normalizedCertificateNumbers);
@@ -1763,7 +1760,6 @@ async function refreshManualCertificateLookup(certificateNumbers = []) {
     items: mergeLookupEntries(
       currentCache.items,
       premiumEntries,
-      targetedLookupEntries,
       targetedPolicyEntries,
       certificateIdEntries
     ),
