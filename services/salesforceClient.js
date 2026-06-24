@@ -110,6 +110,20 @@ function setAnalysisMetricAliases(row = {}, labels = [], value) {
   });
 }
 
+function hasAnalysisMetricValue(row = {}, labels = []) {
+  return labels.some((label) => {
+    const normalized = normalizeLabel(label);
+    const directValue = Object.prototype.hasOwnProperty.call(row, label) ? row[label] : undefined;
+    const normalizedValue =
+      normalized && Object.prototype.hasOwnProperty.call(row, normalized) ? row[normalized] : undefined;
+
+    return (
+      (directValue !== undefined && directValue !== null && String(directValue).trim() !== "") ||
+      (normalizedValue !== undefined && normalizedValue !== null && String(normalizedValue).trim() !== "")
+    );
+  });
+}
+
 function applyAnalysisMetricAliases(row = {}) {
   const metricGroups = Object.values(ANALYSIS_METRIC_LABELS);
   metricGroups.forEach((labels) => {
@@ -1670,6 +1684,10 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
 }
 
 function fillAnalysisRateFallbacks(row = {}) {
+  const hasExplicitSold = hasAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold);
+  const hasExplicitSoldRate = hasAnalysisMetricValue(row, ["Sold Rate"]);
+  const hasExplicitInForceRate = hasAnalysisMetricValue(row, ["In Force Rate"]);
+  const hasExplicitConvertedRate = hasAnalysisMetricValue(row, ["Converted Rate"]);
   applyAnalysisMetricAliases(row);
   const mailed = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.mailed) ?? 0);
   if (!(mailed > 0)) {
@@ -1681,11 +1699,17 @@ function fillAnalysisRateFallbacks(row = {}) {
   const totalMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
   const inForceMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium) ?? 0);
   const totalConvertedMonthlyPremiums = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0);
-  const sold = resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
-  row["Sum of Sold"] = Math.round(sold).toLocaleString("en-US");
-  row["sum of sold"] = Math.round(sold).toLocaleString("en-US");
-  row.Sold = Math.round(sold).toLocaleString("en-US");
-  row.sold = Math.round(sold).toLocaleString("en-US");
+  const sold = hasExplicitSold
+    ? parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0)
+    : resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
+
+  if (!hasExplicitSold) {
+    setAnalysisMetricAliases(
+      row,
+      ANALYSIS_METRIC_LABELS.sold,
+      Math.round(sold).toLocaleString("en-US")
+    );
+  }
   const nextSoldRate = oppCount > 0
     ? (oppCount / mailed) * 100
     : 0;
@@ -1696,12 +1720,18 @@ function fillAnalysisRateFallbacks(row = {}) {
     ? (sold / mailed) * 100
     : 0;
 
-  row["Sold Rate"] = nextSoldRate.toFixed(10);
-  row["sold rate"] = nextSoldRate.toFixed(10);
-  row["In Force Rate"] = nextInForceRate.toFixed(10);
-  row["in force rate"] = nextInForceRate.toFixed(10);
-  row["Converted Rate"] = nextConvertedRate.toFixed(10);
-  row["converted rate"] = nextConvertedRate.toFixed(10);
+  if (!hasExplicitSoldRate) {
+    row["Sold Rate"] = nextSoldRate.toFixed(10);
+    row["sold rate"] = nextSoldRate.toFixed(10);
+  }
+  if (!hasExplicitInForceRate) {
+    row["In Force Rate"] = nextInForceRate.toFixed(10);
+    row["in force rate"] = nextInForceRate.toFixed(10);
+  }
+  if (!hasExplicitConvertedRate) {
+    row["Converted Rate"] = nextConvertedRate.toFixed(10);
+    row["converted rate"] = nextConvertedRate.toFixed(10);
+  }
   const averageMonthlyPremium = oppCount > 0 ? totalMonthlyPremium / oppCount : 0;
   row.averageMonthlyPremium = averageMonthlyPremium;
   return row;
