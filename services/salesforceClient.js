@@ -3088,17 +3088,18 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     preferredExportSummary,
     payloadDetailSummary
   );
-  const finalizedRows = flattened.rows.length
-    ? backfillMissingAnalysisMetrics(
-        flattened.rows,
-        preferredExportSummary.rows,
-        payloadDetailSummary.rows,
-        normalizedDetailSummary.rows
-      )
-    : restorePremiumsFromGroupedRows(
-        mergedFlattened.rows,
-        flattened.rows
-      );
+  const finalizedRows = backfillMissingAnalysisMetrics(
+    flattened.rows.length
+      ? restorePremiumsFromGroupedRows(
+          mergedFlattened.rows,
+          flattened.rows
+        )
+      : mergedFlattened.rows,
+    flattened.rows,
+    preferredExportSummary.rows,
+    payloadDetailSummary.rows,
+    normalizedDetailSummary.rows
+  );
   const preferredSummaryValues = Array.isArray(flattened.summaryValues) && flattened.summaryValues.length
     ? flattened.summaryValues
     : buildAnalysisSummaryValuesFromRows(finalizedRows);
