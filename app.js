@@ -5865,6 +5865,22 @@ function getComparisonSelectedReportIds(link) {
   ).slice(0, 5);
 }
 
+function pruneComparisonSelectedReportIds(link, availableReportIds = null) {
+  const currentIds = getComparisonSelectedReportIds(link);
+  const allowedIds = availableReportIds instanceof Set
+    ? availableReportIds
+    : new Set(
+        getAvailableAnalysisReports()
+          .map((report) => String(report.id || "").trim())
+          .filter(Boolean)
+      );
+  const prunedIds = currentIds.filter((reportId) => allowedIds.has(reportId));
+  if (prunedIds.length !== currentIds.length) {
+    setComparisonSelectedReportIds(link, prunedIds);
+  }
+  return prunedIds;
+}
+
 function setComparisonSelectedReportIds(link, nextIds) {
   const selectedReportIds = Array.from(
     new Set(
@@ -6999,6 +7015,7 @@ function validateAnalysisComparisonSetup() {
   const summaryErrors = [];
   const reports = getAvailableAnalysisReports();
   const reportMap = new Map(reports.map((report) => [report.id, report]));
+  const availableReportIds = new Set(reports.map((report) => String(report.id || "").trim()).filter(Boolean));
   const readyReports = reports.filter((report) => report.status === "ready");
   const links = Array.isArray(state.analysis.comparisonLinks) ? state.analysis.comparisonLinks : [];
 
@@ -7012,7 +7029,7 @@ function validateAnalysisComparisonSetup() {
 
   links.forEach((link, index) => {
     const errors = [];
-    const selectedIds = getComparisonSelectedReportIds(link);
+    const selectedIds = pruneComparisonSelectedReportIds(link, availableReportIds);
 
     if (selectedIds.length < 2) {
       errors.push("Select 2 to 5 reports for this comparison.");
@@ -7115,7 +7132,7 @@ function renderAnalysisSetupHome() {
   container.innerHTML = state.analysis.comparisonLinks
     .map((link, index) => {
       const errors = validation.errorsById[link.id] || [];
-      const selectedIds = getComparisonSelectedReportIds(link);
+      const selectedIds = pruneComparisonSelectedReportIds(link);
       logComparisonDebug("render comparison picker", link.id, selectedIds);
       const comparisonName = resolveComparisonName(link.comparisonName || "", index);
       const reportCards = validation.reports.length
