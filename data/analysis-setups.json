@@ -4,28 +4,12 @@
     "runName": "June 2026",
     "status": "draft",
     "createdAt": "2026-06-17T16:20:39.276Z",
-    "updatedAt": "2026-06-18T20:52:13.280Z",
+    "updatedAt": "2026-06-24T13:49:29.200Z",
     "completedAt": null,
     "archived": false,
     "reportPulls": [
       {
-        "id": "pull_1781713174163_7xiaz0",
-        "analysisLabel": "NHCL - Jan 2013 - Dec 2025",
-        "reportId": "00OQm000003PIxhMAG",
-        "keyCodes": [
-          "NHCL"
-        ],
-        "years": [],
-        "dateRange": {
-          "startDate": "2013-01-01",
-          "endDate": "2025-12-31"
-        },
-        "scf": "",
-        "clientType": "NHCL",
-        "notes": ""
-      },
-      {
-        "id": "pull_1781713191017_phxqsy",
+        "id": "pull_1782229543830_uze8kb",
         "analysisLabel": "NHCL - Jan 2026 - May 2026",
         "reportId": "00OQm000003PIxhMAG",
         "keyCodes": [
@@ -41,23 +25,23 @@
         "notes": ""
       },
       {
-        "id": "pull_1781713193929_4ixvi1",
-        "analysisLabel": "RFC - Jan 2013 - Dec 2025",
+        "id": "pull_1782229592245_piuucs",
+        "analysisLabel": "NHCL - Jan 2013 - Dec 2025",
         "reportId": "00OQm000003PIxhMAG",
         "keyCodes": [
-          "RFC"
+          "NHCL"
         ],
         "years": [],
         "dateRange": {
           "startDate": "2013-01-01",
-          "endDate": "2025-12-31"
+          "endDate": "2025-12-23"
         },
         "scf": "",
         "clientType": "NHCL",
         "notes": ""
       },
       {
-        "id": "pull_1781713194253_794m1h",
+        "id": "pull_1782229621032_ds8gv9",
         "analysisLabel": "RFC - Jan 2026 - May 2026",
         "reportId": "00OQm000003PIxhMAG",
         "keyCodes": [
@@ -69,57 +53,28 @@
           "endDate": "2026-05-31"
         },
         "scf": "",
-        "clientType": "NHCL",
+        "clientType": "RFC",
+        "notes": ""
+      },
+      {
+        "id": "pull_1782229645603_23vdh9",
+        "analysisLabel": "RFC - Jan 2013 - Dec 2025",
+        "reportId": "00OQm000003PIxhMAG",
+        "keyCodes": [
+          "RFC"
+        ],
+        "years": [],
+        "dateRange": {
+          "startDate": "2013-01-01",
+          "endDate": "2025-12-31"
+        },
+        "scf": "",
+        "clientType": "RFC",
         "notes": ""
       }
     ],
-    "comparisonRequests": [
-      {
-        "id": "comparison_1781726386128_3pikxx",
-        "name": "Refinance",
-        "comparisonName": "Refinance",
-        "keyCodeGroup": "RFC",
-        "reportIds": [
-          "analysis_report_1781713292554_dith17",
-          "analysis_report_1781713287505_y7f5hm"
-        ],
-        "reportAId": "analysis_report_1781713292554_dith17",
-        "reportBId": "analysis_report_1781713287505_y7f5hm",
-        "createdAt": "2026-06-17T19:59:46.128Z",
-        "updatedAt": "2026-06-18T20:52:13.276Z",
-        "matchField": "SCF Grouping",
-        "metricColumns": [
-          "Sum of Mailed",
-          "Sum of Opp Count",
-          "Sum of In Force",
-          "Sum of Sold",
-          "Sold Rate"
-        ]
-      },
-      {
-        "id": "comparison_1781726400151_nu7fvo",
-        "name": "New Home",
-        "comparisonName": "New Home",
-        "keyCodeGroup": "NHCL",
-        "reportIds": [
-          "analysis_report_1781713262693_qhyirq",
-          "analysis_report_1781713258269_4qe19r"
-        ],
-        "reportAId": "analysis_report_1781713262693_qhyirq",
-        "reportBId": "analysis_report_1781713258269_4qe19r",
-        "createdAt": "2026-06-17T20:00:00.151Z",
-        "updatedAt": "2026-06-18T20:52:13.276Z",
-        "matchField": "SCF Grouping",
-        "metricColumns": [
-          "Sum of Mailed",
-          "Sum of Opp Count",
-          "Sum of In Force",
-          "Sum of Sold",
-          "Sold Rate"
-        ]
-      }
-    ],
-    "notes": "2 reports for each...  1/1 - 5/31 for current year and then all the other prevoius years",
+    "comparisonRequests": [],
+    "notes": "",
     "results": null,
     "referenceListsSnapshot": null
   },
