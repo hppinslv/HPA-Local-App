@@ -1174,12 +1174,6 @@ function setRoute(route) {
 function setAnalysisSubtab(tabName) {
   const normalizedTab = tabName === "mailing-lists" ? "mailing-lists" : "runs";
   const workspaceVisible = state.analysis.panel === "workspace";
-  all("[data-analysis-subtab]").forEach((button) => {
-    button.classList.toggle(
-      "is-active",
-      workspaceVisible && button.getAttribute("data-analysis-subtab") === normalizedTab
-    );
-  });
   all("[data-analysis-subtab-panel]").forEach((panel) => {
     panel.classList.toggle(
       "is-active",
@@ -1188,7 +1182,31 @@ function setAnalysisSubtab(tabName) {
   });
   state.analysis.subtab = normalizedTab;
   persistUiState();
+  updateAnalysisWorkflowButtons();
   updateAnalysisLeftSubmenuActiveState();
+}
+
+function getActiveAnalysisWorkflow() {
+  if (state.analysis.panel === "compare-review") {
+    return "run-analysis";
+  }
+  if (state.analysis.panel === "compare" || state.analysis.panel === "home") {
+    return "set-up-comparisons";
+  }
+  if (state.analysis.panel === "workspace" && state.analysis.subtab === "runs") {
+    return "run-reports";
+  }
+  return "";
+}
+
+function updateAnalysisWorkflowButtons() {
+  const activeWorkflow = getActiveAnalysisWorkflow();
+  all("[data-analysis-workflow]").forEach((button) => {
+    button.classList.toggle(
+      "is-active",
+      button.getAttribute("data-analysis-workflow") === activeWorkflow
+    );
+  });
 }
 
 function setMailingListTab(tabName) {
@@ -4692,6 +4710,7 @@ function showAnalysisPanel(panelName) {
   show(workspacePanel, workspaceVisible);
   show(comparePanel, panelName === "compare");
   show(compareReviewPanel, panelName === "compare-review");
+  updateAnalysisWorkflowButtons();
 
   if (workspaceVisible) {
     setAnalysisSubtab(state.analysis.subtab || "runs");
@@ -9020,20 +9039,57 @@ function validateAnalysisPulls() {
 }
 
 function bindAnalysisSubtabs() {
-  all("[data-analysis-subtab]").forEach((button) => {
+  all("[data-analysis-workflow]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
-      const target = button.getAttribute("data-analysis-subtab");
-      if (target === "mailing-lists" && state.analysis.panel === "compare-review") {
-        openMailingListsPopup(getComparisonReviewMailingListType());
+      const target = button.getAttribute("data-analysis-workflow");
+      if (target === "run-reports") {
+        state.analysis.reviewSummaryMode = "review";
+        showAnalysisPanel("workspace");
+        setAnalysisSubtab("runs");
+        loadAnalysisReports().catch((error) => {
+          setStatus("analysis-status-detail", `Unable to load analysis reports: ${error.message}`);
+        });
         return;
       }
-      setAnalysisSubtab(target);
-      if (target === "mailing-lists") {
-        loadAndRenderMailingList(state.analysis.mailingListType || "dnm");
+      if (target === "set-up-comparisons") {
+        state.analysis.reviewSummaryMode = "review";
+        loadAnalysisSetupView()
+          .then(() => {
+            showAnalysisPanel("home");
+            setStatus("analysis-comparison-status", "Choose the reports and key code list for each comparison.");
+          })
+          .catch((error) => {
+            setStatus("analysis-comparison-status", `Unable to load reports: ${error.message}`);
+          });
         return;
       }
-      loadAnalysisReports();
+      if (target === "run-analysis") {
+        state.analysis.reviewSummaryMode = "review";
+        state.analysis.reviewSummaryApproved = false;
+        Promise.all([loadAnalysisSetupView(), loadReferenceLists()])
+          .then(() => {
+            if (!Array.isArray(state.analysis.comparisonRequests) || !state.analysis.comparisonRequests.length) {
+              showAnalysisPanel("home");
+              setStatus("analysis-comparison-status", "Set up at least one comparison before running analysis.");
+              return;
+            }
+            if (!Array.isArray(state.analysis.reviewBaselineLists) || !state.analysis.reviewBaselineLists.length) {
+              state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
+            }
+            if (!Array.isArray(state.analysis.reviewWorkingLists) || !state.analysis.reviewWorkingLists.length) {
+              state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
+            }
+            if (!state.analysis.selectedComparisonId) {
+              state.analysis.selectedComparisonId = getPreferredComparisonId(state.analysis.comparisonRequests || []);
+            }
+            showAnalysisPanel("compare-review");
+            setStatus("analysis-comparison-selection-status", "Review the comparison and work from the testing copy of the lists.");
+          })
+          .catch((error) => {
+            setStatus("analysis-comparison-selection-status", `Unable to open comparison review: ${error.message}`);
+          });
+      }
     });
   });
 }
