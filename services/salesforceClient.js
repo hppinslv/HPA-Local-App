@@ -1693,6 +1693,11 @@ function buildDisplayRowObject(row, columnMap) {
       cell?.label !== undefined && cell?.label !== null ? cell.label : getCellValue(cell);
     result[column.label] = displayValue ?? "";
     result[column.normalized] = displayValue ?? "";
+    const rawValue = getCellValue(cell);
+    if (rawValue !== undefined && rawValue !== null && String(rawValue).trim() !== "") {
+      result[`${column.label}__value`] = rawValue;
+      result[`${column.normalized} value`] = rawValue;
+    }
   });
 
   return applyAnalysisMetricAliases(result);
@@ -2021,6 +2026,75 @@ function buildDetailExportRows(reportPayload) {
     ],
     rows,
   };
+}
+
+async function enrichAnalysisDetailRowsWithMailerGrouping(tokenRecord, rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    return list;
+  }
+
+  const ids = Array.from(new Set(
+    list
+      .filter((row) => !normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? ""))
+      .map((row) =>
+        String(
+          row["Mailer Conversion Name__value"] ??
+          row["mailer conversion name value"] ??
+          row["Mailer Conversion Name"] ??
+          row["mailer conversion name"] ??
+          ""
+        ).trim()
+      )
+      .filter((value) => /^a1f/i.test(value))
+  ));
+
+  if (!ids.length) {
+    return list;
+  }
+
+  const lookup = new Map();
+  const chunkSize = 200;
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    const chunk = ids.slice(index, index + chunkSize);
+    const soql = `
+SELECT Id, HPA_SCF_Grouping__c, HPA_Report_Key__c
+FROM HPA_Mailer_Conversion__c
+WHERE Id IN (${chunk.map((value) => `'${escapeSoqlLiteral(value)}'`).join(", ")})
+`.trim();
+    const records = await runSoqlQuery(tokenRecord, soql);
+    records.forEach((record) => {
+      lookup.set(String(record.Id || "").trim(), {
+        scf: normalizeScf(record.HPA_SCF_Grouping__c ?? ""),
+        key: String(record.HPA_Report_Key__c ?? "").trim(),
+      });
+    });
+  }
+
+  return list.map((row) => {
+    const currentScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? "");
+    if (currentScf) {
+      return row;
+    }
+    const mailerId = String(
+      row["Mailer Conversion Name__value"] ??
+      row["mailer conversion name value"] ??
+      ""
+    ).trim();
+    const match = lookup.get(mailerId);
+    if (!match?.scf) {
+      return row;
+    }
+
+    const enriched = { ...row };
+    enriched["SCF Grouping"] = match.scf;
+    enriched["scf grouping"] = match.scf;
+    if (match.key) {
+      enriched["Key"] = match.key;
+      enriched["key"] = match.key;
+    }
+    return enriched;
+  });
 }
 
 function getAnalysisDebugLabel(filters = {}) {
@@ -3186,6 +3260,12 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
       dateRange: effectiveDateRange,
     });
     reportPayloadDetailExport = reportPayload ? buildDetailExportRows(reportPayload) : { columns: [], rows: [] };
+    if (Array.isArray(reportPayloadDetailExport.rows) && reportPayloadDetailExport.rows.length) {
+      reportPayloadDetailExport = {
+        ...reportPayloadDetailExport,
+        rows: await enrichAnalysisDetailRowsWithMailerGrouping(tokenRecord, reportPayloadDetailExport.rows),
+      };
+    }
     payloadDetailSummary = reportPayloadDetailExport.rows.length
       ? buildFlatRowsFromDetailExport(reportPayloadDetailExport.rows)
       : { columns: [], rows: [], summaryValues: [] };

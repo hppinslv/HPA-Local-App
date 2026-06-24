@@ -1561,6 +1561,7 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     throw new Error("Check import session not found.");
   }
 
+  const baseLookupCache = await refreshPolicyLookupFromSalesforce();
   const sessionCertificateNumbers = readRows()
     .filter((entry) => entry.session_id === sessionId)
     .map((entry) => normalizeCertificateNumber(entry.corrected_certificate_number || entry.certificate_number))
@@ -1577,14 +1578,13 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     refreshed_at: new Date().toISOString(),
     source_report_id: "Account.Name",
   }));
-  const existingCache = readPolicyCache();
 
   const nextCache = {
     reportId: POLICY_REPORT_ID,
     refreshedAt: new Date().toISOString(),
-    source: "policy-soql+certificate-soql",
+    source: "salesforce-report+policy-soql+certificate-soql",
     items: mergeLookupEntries(
-      existingCache.items,
+      baseLookupCache.items,
       targetedPolicyEntries,
       certificateIdEntries
     ),
