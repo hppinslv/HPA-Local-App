@@ -606,6 +606,64 @@ async function fetchPremiumLookupFromSalesforce() {
   return buildPolicyLookupEntriesFromRows(reportRows);
 }
 
+async function fetchPolicyLookupEntriesForCertificates(certificateNumbers = []) {
+  const uniqueCertificates = Array.from(
+    new Set((certificateNumbers || []).map((entry) => normalizeCertificateNumber(entry)).filter(Boolean))
+  );
+
+  if (!uniqueCertificates.length) {
+    return [];
+  }
+
+  const tokenRecord = await getConnectedSalesforceToken();
+  const describePayload = await fetchReportDescribe(tokenRecord, POLICY_REPORT_ID);
+  const baseMetadata = describePayload.reportMetadata || {};
+  const entries = [];
+  const seen = new Set();
+
+  for (const certificateNumber of uniqueCertificates) {
+    const metadata = {
+      ...baseMetadata,
+      reportFilters: [
+        ...(Array.isArray(baseMetadata.reportFilters) ? baseMetadata.reportFilters : []),
+        {
+          column: "Policy__c.Account__c.Name",
+          operator: "equals",
+          value: certificateNumber,
+          isRunPageEditable: true,
+        },
+      ],
+    };
+
+    const { reportPayload } = await executeReportWithDescribeMetadata(
+      tokenRecord,
+      POLICY_REPORT_ID,
+      metadata,
+      describePayload
+    );
+    const reportRows = Array.isArray(reportPayload?.factMap?.["T!T"]?.rows)
+      ? reportPayload.factMap["T!T"].rows
+      : [];
+    const normalizedRows = reportRows.map((row) => ({
+      "Certificate: Certificate Name": row.dataCells?.[0]?.value ?? "",
+      "Certificate: Certificate Name__label": row.dataCells?.[0]?.label ?? "",
+      "Policy ID": row.dataCells?.[1]?.value ?? "",
+      "Policy ID__label": row.dataCells?.[1]?.label ?? "",
+    }));
+
+    buildPolicyLookupEntriesFromRows(normalizedRows).forEach((entry) => {
+      const key = `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`;
+      if (!key || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      entries.push(entry);
+    });
+  }
+
+  return entries;
+}
+
 async function getPolicyStatusFieldApiName(tokenRecord) {
   if (policyStatusFieldApiNameCache !== null) {
     return policyStatusFieldApiNameCache;
@@ -1465,7 +1523,7 @@ async function hydrateCheckImportSession(sessionId) {
       entries: certificateNumber ? (byCertificate.get(certificateNumber.toLowerCase()) || []) : [],
     });
     const directPolicyEntry = directSelection.entry;
-    if (directPolicyEntry?.certificate_record_id) {
+    if (directPolicyEntry?.policy_id) {
       row.inferred_certificate_number = "";
       row.inferred_policy_id = "";
       row.inferred_policy_status = "";
@@ -1504,7 +1562,7 @@ async function hydrateCheckImportSession(sessionId) {
     }
 
     const fallbackMatch = await findNameAmountMatchForRow(row);
-    if (!fallbackMatch?.certificate_record_id) {
+    if (!fallbackMatch?.policy_id) {
       row.inferred_certificate_number = "";
       row.inferred_policy_id = "";
       row.inferred_policy_status = "";
@@ -1593,8 +1651,15 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
     });
   }
 
+  const premiumEntries = await fetchPremiumLookupFromSalesforce();
+  const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates(sessionCertificateNumbers);
   const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(sessionCertificateNumbers);
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(sessionCertificateNumbers);
+  const knownCertificatePolicyKeys = new Set(
+    (baseLookupCache.items || []).map((entry) =>
+      `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+    )
+  );
   const certificateIdEntries = sessionCertificateNumbers.map((certificateNumber) => ({
     certificate_number: certificateNumber,
     certificate_record_id: normalizeText(certificateRecordIdMap.get(certificateNumber.toLowerCase()) || ""),
@@ -1605,9 +1670,17 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
   const nextCache = {
     reportId: POLICY_REPORT_ID,
     refreshedAt: new Date().toISOString(),
-    source: `${baseLookupSourceLabel} + targeted Salesforce queries`,
+    source: baseLookupSourceLabel === "salesforce report"
+      ? "salesforce-report+premium-report+policy-soql+certificate-soql"
+      : `${baseLookupSourceLabel} + targeted Salesforce queries`,
     items: mergeLookupEntries(
       baseLookupCache.items,
+      premiumEntries,
+      targetedLookupEntries.filter((entry) =>
+        knownCertificatePolicyKeys.has(
+          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+        )
+      ),
       targetedPolicyEntries,
       certificateIdEntries
     ),
@@ -1661,6 +1734,8 @@ async function refreshManualCertificateLookup(certificateNumbers = []) {
     return;
   }
 
+  const targetedLookupEntries = await fetchPolicyLookupEntriesForCertificates(normalizedCertificateNumbers);
+  const premiumEntries = await fetchPremiumLookupFromSalesforce();
   const targetedPolicyEntries = await fetchPolicyDetailEntriesForCertificates(normalizedCertificateNumbers);
   const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(normalizedCertificateNumbers);
   const certificateIdEntries = normalizedCertificateNumbers.map((certificateNumber) => ({
@@ -1681,6 +1756,16 @@ async function refreshManualCertificateLookup(certificateNumbers = []) {
     source: "manual-certificate-refresh",
     items: mergeLookupEntries(
       currentCache.items,
+      premiumEntries.filter((entry) =>
+        knownCertificatePolicyKeys.has(
+          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+        )
+      ),
+      targetedLookupEntries.filter((entry) =>
+        knownCertificatePolicyKeys.has(
+          `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
+        )
+      ),
       targetedPolicyEntries.filter((entry) =>
         knownCertificatePolicyKeys.has(
           `${normalizeCertificateNumber(entry.certificate_number).toLowerCase()}::${normalizePolicyId(entry.policy_id).toLowerCase()}`
