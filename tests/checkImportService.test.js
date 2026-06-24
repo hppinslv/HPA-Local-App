@@ -6,6 +6,7 @@ const {
   deleteCheckImportRows,
   deleteCheckImportSession,
   getCheckImportSession,
+  revalidateSession,
 } = require("../services/checkImportService");
 
 function buildSession(overrides = {}) {
@@ -154,4 +155,78 @@ test("selected unimported check import rows can be deleted in bulk", async () =>
   assert.equal(session.row_count, 1);
   assert.equal(session.rows.length, 1);
   assert.equal(session.rows[0].id, "row_2");
+});
+
+test("revalidateSession accepts a matched policy even when certificate record id is blank", () => {
+  __setCheckImportStateForTests({
+    sessions: [buildSession({ row_count: 1, active_row_count: 1 })],
+    rows: [
+      buildRow("row_1", "check_session_1", {
+        certificate_number: "218103",
+        check_amount: "57.62",
+      }),
+    ],
+    policyCache: {
+      reportId: "00OQm0000016PuPMAU",
+      refreshedAt: "2026-06-24T16:00:00.000Z",
+      source: "test",
+      items: [
+        {
+          certificate_number: "218103",
+          policy_id: "a00f400000QB6j8AAD",
+          certificate_record_id: "",
+          p1: 29.31,
+          p2: 57.62,
+          p3: 85.93,
+          p6: 170.86,
+          p12: 333.18,
+          member_1_name: "CLARK L BROWN",
+          member_2_name: "",
+          policy_status: "In Force",
+        },
+      ],
+    },
+  });
+
+  const session = revalidateSession("check_session_1");
+  assert.equal(session.rows[0].status, "ready");
+  assert.equal(session.rows[0].matched_policy_id, "a00f400000QB6j8AAD");
+  assert.equal(session.rows[0].months, "2");
+  assert.equal(session.rows[0].issue_reason, "");
+});
+
+test("revalidateSession treats Payment Issue as an active policy status", () => {
+  __setCheckImportStateForTests({
+    sessions: [buildSession({ row_count: 1, active_row_count: 1 })],
+    rows: [
+      buildRow("row_1", "check_session_1", {
+        certificate_number: "218103",
+        check_amount: "57.62",
+      }),
+    ],
+    policyCache: {
+      reportId: "00OQm0000016PuPMAU",
+      refreshedAt: "2026-06-24T16:00:00.000Z",
+      source: "test",
+      items: [
+        {
+          certificate_number: "218103",
+          policy_id: "a00f400000QB6j8AAD",
+          certificate_record_id: "",
+          p1: 29.31,
+          p2: 57.62,
+          p3: 85.93,
+          p6: 170.86,
+          p12: 333.18,
+          member_1_name: "CLARK L BROWN",
+          member_2_name: "",
+          policy_status: "Payment Issue",
+        },
+      ],
+    },
+  });
+
+  const session = revalidateSession("check_session_1");
+  assert.equal(session.rows[0].status, "ready");
+  assert.equal(session.rows[0].matched_policy_status, "Payment Issue");
 });

@@ -23,8 +23,8 @@ const PREMIUM_REPORT_ID = "00OQm000003Q6cjMAC";
 const DEFAULT_ACTOR = "Local User";
 const IMPORT_TEMPLATE_KEY = "check-payments";
 const IMPORT_BATCH_SIZE = 200;
-const ACTIVE_POLICY_STATUSES = new Set(["in force", "payment issues", "follow up"]);
-const ACTIVE_POLICY_STATUS_LABEL = "In Force, Payment Issues, or Follow Up";
+const ACTIVE_POLICY_STATUSES = new Set(["in force", "payment issue", "payment issues", "follow up"]);
+const ACTIVE_POLICY_STATUS_LABEL = "In Force, Payment Issue, or Follow Up";
 const DEFAULT_ACTIVE_POLICY_STATUS = "In Force";
 const SALESFORCE_API_VERSION = "v61.0";
 const CHECK_HEADER_ROW = [
@@ -1157,21 +1157,22 @@ function revalidateSession(sessionId) {
     } else if (directSelection.issue) {
       issues.push(directSelection.issue);
       missingCertificateCount += 1;
-    } else if (!matchedCertificateRecordId) {
+    } else if (!matchedPolicyId) {
       issues.push({
         severity: "error",
-        code: "missing_certificate_record_id",
-        message: `Certificate ${certificateNumber} was not found on report ${POLICY_REPORT_ID}. Correct the certificate number or exclude this row.`,
+        code: "missing_policy_match",
+        message: `Certificate ${certificateNumber} was not found on report ${POLICY_REPORT_ID} with a related policy ID. Correct the certificate number or exclude this row.`,
       });
       missingCertificateCount += 1;
-      logCheckImportEvent("Certificate not found", {
+      logCheckImportEvent("Certificate missing policy match", {
         rowId: row.id,
         normalizedCertNumber: certificateNumber,
       });
     } else {
-      logCheckImportEvent("Certificate found with Salesforce Id", {
+      logCheckImportEvent("Certificate found with active policy", {
         rowId: row.id,
         normalizedCertNumber: certificateNumber,
+        policyId: matchedPolicyId,
         certificateRecordId: matchedCertificateRecordId,
       });
       if (!directPolicyEntry && inferredPolicyEntry?.certificate_number) {
@@ -1183,7 +1184,7 @@ function revalidateSession(sessionId) {
       }
     }
 
-    if (!matchedCertificateRecordId) {
+    if (!matchedPolicyId) {
       missingPolicyCount += 1;
     }
 
@@ -1207,7 +1208,7 @@ function revalidateSession(sessionId) {
       }
     }
 
-    const matchedPremium = matchedCertificateRecordId
+    const matchedPremium = matchedPolicyId
       ? deriveMonthsAndExpectedAmount(policyEntry, paymentAmount)
       : { months: "", expectedAmount: null, exact: false, comparisonLabel: "" };
     const hasManualMonths = row.corrected_months !== null && row.corrected_months !== undefined && String(row.corrected_months).trim() !== "";
@@ -1222,7 +1223,7 @@ function revalidateSession(sessionId) {
     row.member_1_name = normalizeText(policyEntry?.member_1_name || "");
     row.member_2_name = normalizeText(policyEntry?.member_2_name || "");
 
-    if (matchedCertificateRecordId && paymentAmount !== null) {
+    if (matchedPolicyId && paymentAmount !== null) {
       const selectedExpectedAmount = getExpectedPremiumAmount(policyEntry, row.months);
       row.expected_amount = selectedExpectedAmount ?? matchedPremium.expectedAmount;
       if (String(row.months || "").trim() === "") {
@@ -1240,7 +1241,7 @@ function revalidateSession(sessionId) {
 
     row.discrepancy_note = String(row.months || "").trim() !== ""
       ? (row.premium_comparison_label || "")
-      : (matchedCertificateRecordId && paymentAmount !== null ? "No exact month match found." : "");
+      : (matchedPolicyId && paymentAmount !== null ? "No exact month match found." : "");
 
     row.certificate_number = certificateNumber;
     row.matched_policy_id = matchedPolicyId;
