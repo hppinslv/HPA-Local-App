@@ -22,6 +22,7 @@ const REFRESH_MINUTE = Math.max(0, Math.min(59, Number(process.env.CERTIFICATE_L
 let cacheState = null;
 let cacheDiskWritable = true;
 let policyStatusFieldApiNameCache = null;
+let policyStatusValueLabelMapCache = null;
 let refreshScheduleTimeout = null;
 
 function clone(value) {
@@ -260,7 +261,7 @@ function chunkArray(items, chunkSize = 200) {
 }
 
 async function getPolicyStatusFieldApiName(tokenRecord) {
-  if (policyStatusFieldApiNameCache !== null) {
+  if (policyStatusFieldApiNameCache !== null && policyStatusValueLabelMapCache !== null) {
     return policyStatusFieldApiNameCache;
   }
 
@@ -284,6 +285,11 @@ async function getPolicyStatusFieldApiName(tokenRecord) {
   const matchedPreferredField = fields.find((field) => preferredMap.has(normalizeFieldToken(field?.name)));
   if (matchedPreferredField?.name) {
     policyStatusFieldApiNameCache = matchedPreferredField.name;
+    policyStatusValueLabelMapCache = new Map(
+      Array.isArray(matchedPreferredField.picklistValues)
+        ? matchedPreferredField.picklistValues.map((entry) => [normalizeText(entry?.value), normalizeText(entry?.label)])
+        : []
+    );
     return policyStatusFieldApiNameCache;
   }
 
@@ -297,7 +303,21 @@ async function getPolicyStatusFieldApiName(tokenRecord) {
   });
 
   policyStatusFieldApiNameCache = matchedLabelField?.name || "";
+  policyStatusValueLabelMapCache = new Map(
+    Array.isArray(matchedLabelField?.picklistValues)
+      ? matchedLabelField.picklistValues.map((entry) => [normalizeText(entry?.value), normalizeText(entry?.label)])
+      : []
+  );
   return policyStatusFieldApiNameCache;
+}
+
+function mapPolicyStatusValueToLabel(value) {
+  const normalizedValue = normalizeText(value);
+  if (!normalizedValue) {
+    return "";
+  }
+  const mappedLabel = policyStatusValueLabelMapCache?.get(normalizedValue);
+  return normalizePolicyStatus(mappedLabel || normalizedValue);
 }
 
 async function fetchPolicyDetailEntriesForCertificates(certificateNumbers = []) {
@@ -332,7 +352,7 @@ WHERE Account__r.Name IN (${chunk.map((entry) => `'${escapeSoqlString(entry)}'`)
     p12: normalizeAmount(record.P12__c),
     member_1_name: normalizeText(record.Member_1_Name__c || record.Member_1_Contact_Id__r?.Name),
     member_2_name: normalizeText(record.Member_2_Name__c || record.Member_2_Contact_Id__r?.Name),
-    policy_status: normalizePolicyStatus(record[policyStatusFieldApiName] || ""),
+    policy_status: mapPolicyStatusValueToLabel(record[policyStatusFieldApiName] || ""),
     refreshed_at: new Date().toISOString(),
     source_report_id: policyStatusFieldApiName ? `Policy__c.${policyStatusFieldApiName}` : "Policy__c",
   }));
