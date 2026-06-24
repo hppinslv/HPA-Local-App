@@ -230,3 +230,41 @@ test("revalidateSession treats Payment Issue as an active policy status", () => 
   assert.equal(session.rows[0].status, "ready");
   assert.equal(session.rows[0].matched_policy_status, "Payment Issue");
 });
+
+test("revalidateSession normalizes spreadsheet-style certificate values like 218103.0", () => {
+  __setCheckImportStateForTests({
+    sessions: [buildSession({ row_count: 1, active_row_count: 1 })],
+    rows: [
+      buildRow("row_1", "check_session_1", {
+        certificate_number: "218103.0",
+        check_amount: "57.62",
+      }),
+    ],
+    policyCache: {
+      reportId: "00OQm0000016PuPMAU",
+      refreshedAt: "2026-06-24T16:00:00.000Z",
+      source: "salesforce-report+premium-report+policy-soql+certificate-soql",
+      items: [
+        {
+          certificate_number: "218103",
+          policy_id: "a00f400000QB6j8AAD",
+          certificate_record_id: "",
+          p1: 29.31,
+          p2: 57.62,
+          p3: 85.93,
+          p6: 170.86,
+          p12: 333.18,
+          member_1_name: "CLARK L BROWN",
+          member_2_name: "",
+          policy_status: "In Force",
+        },
+      ],
+    },
+  });
+
+  const session = revalidateSession("check_session_1");
+  assert.equal(session.rows[0].status, "ready");
+  assert.equal(session.rows[0].matched_policy_id, "a00f400000QB6j8AAD");
+  assert.equal(session.rows[0].months, "2");
+  assert.equal(session.rows[0].issue_reason, "");
+});

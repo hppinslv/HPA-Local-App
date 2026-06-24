@@ -147,7 +147,14 @@ function normalizeText(value) {
 }
 
 function normalizeCertificateNumber(value) {
-  return normalizeText(value);
+  const text = normalizeText(value)
+    .replace(/,/g, "")
+    .replace(/[-\s]+/g, "");
+  const numericSpreadsheetMatch = text.match(/^(\d+)\.0+$/);
+  if (numericSpreadsheetMatch) {
+    return numericSpreadsheetMatch[1];
+  }
+  return text === "-" ? "" : text;
 }
 
 function normalizePolicyId(value) {

@@ -124,7 +124,11 @@ function normalizeText(value) {
 function normalizeCertificateNumber(value) {
   const text = normalizeText(value)
     .replace(/,/g, "")
-    .replace(/\s+/g, "");
+    .replace(/[-\s]+/g, "");
+  const numericSpreadsheetMatch = text.match(/^(\d+)\.0+$/);
+  if (numericSpreadsheetMatch) {
+    return numericSpreadsheetMatch[1];
+  }
   return text === "-" ? "" : text;
 }
 
@@ -1085,7 +1089,7 @@ function selectPolicyEntryForCertificate({ certificateNumber, entries = [] } = {
       issue: {
         severity: "error",
         code: "no_active_policy_status",
-        message: `Certificate ${normalizedCertificate} is not on report ${POLICY_REPORT_ID} with an active policy status. Only ${ACTIVE_POLICY_STATUS_LABEL} policies can be imported.`,
+        message: `Certificate ${normalizedCertificate} was found in the refreshed certificate lookup, but no import-eligible active policy was available. Only ${ACTIVE_POLICY_STATUS_LABEL} policies can be imported.`,
       },
     };
   }
@@ -1151,6 +1155,7 @@ function revalidateSession(sessionId) {
   const policyCacheState = readPolicyCache();
   const { byCertificate } = buildLookupMaps(policyCacheState);
   const hasLookupData = Array.isArray(policyCacheState?.items) && policyCacheState.items.length > 0;
+  const policyLookupSource = normalizeText(policyCacheState?.source || "");
 
   let readyCount = 0;
   let errorCount = 0;
@@ -1189,6 +1194,11 @@ function revalidateSession(sessionId) {
       (!directCertificateEntries.length && inferredPolicyEntry && isActivePolicyStatus(inferredPolicyEntry.policy_status)
         ? inferredPolicyEntry
         : null);
+    const lookupHitSource = directPolicyEntry
+      ? `direct:${policyLookupSource || "policy-cache"}`
+      : (inferredPolicyEntry && isActivePolicyStatus(inferredPolicyEntry.policy_status)
+        ? `fallback:${normalizeText(row.inferred_match_source || "name-amount")}`
+        : "miss");
     const matchedPolicyId = normalizePolicyId(policyEntry?.policy_id || "");
     const matchedCertificateRecordId = normalizeText(policyEntry?.certificate_record_id || "");
     const issues = [];
@@ -1196,7 +1206,10 @@ function revalidateSession(sessionId) {
     logCheckImportEvent("Row lookup started", {
       rowId: row.id,
       importedCertNumber: row.certificate_number || "",
+      correctedCertNumber: row.corrected_certificate_number || "",
       normalizedCertNumber: certificateNumber,
+      lookupSource: policyLookupSource || "none",
+      directEntryCount: directCertificateEntries.length,
     });
 
     if (!row.excluded && Number.isFinite(paymentAmount)) {
@@ -1221,19 +1234,24 @@ function revalidateSession(sessionId) {
       issues.push({
         severity: "error",
         code: "missing_policy_match",
-        message: `Certificate ${certificateNumber} was not found on report ${POLICY_REPORT_ID} with a related policy ID. Correct the certificate number or exclude this row.`,
+        message: `Certificate ${certificateNumber} was not found in the refreshed certificate lookup cache or Salesforce fallback with a related policy ID. Correct the certificate number or exclude this row.`,
       });
       missingCertificateCount += 1;
       logCheckImportEvent("Certificate missing policy match", {
         rowId: row.id,
         normalizedCertNumber: certificateNumber,
+        lookupHitSource,
+        lookupSource: policyLookupSource || "none",
+        directEntryCount: directCertificateEntries.length,
       });
     } else {
       logCheckImportEvent("Certificate found with active policy", {
         rowId: row.id,
         normalizedCertNumber: certificateNumber,
+        lookupHitSource,
         policyId: matchedPolicyId,
         certificateRecordId: matchedCertificateRecordId,
+        policyStatus: normalizePolicyStatus(policyEntry?.policy_status || ""),
       });
       if (!directPolicyEntry && inferredPolicyEntry?.certificate_number) {
         issues.push({
