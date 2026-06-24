@@ -8385,7 +8385,6 @@ function renderAnalysisComparisonReviewPanel() {
 }
 
 function syncComparisonRequestsFromLinks() {
-  hydrateComparisonLinksFromDom();
   state.analysis.comparisonRequests = (state.analysis.comparisonLinks || []).map((link, index) => {
     const reportIds = getComparisonSelectedReportIds(link);
     const derivedKeyCodeGroup = deriveComparisonKeyCodeGroupFromReportIds(reportIds);
@@ -8416,7 +8415,6 @@ function syncComparisonRequestsFromLinks() {
 }
 
 async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
-  hydrateComparisonLinksFromDom();
   syncComparisonRequestsFromLinks();
   const payload = buildAnalysisPayload("draft");
   const response = await apiRequest("/api/analysis/setups", {
