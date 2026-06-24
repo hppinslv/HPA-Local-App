@@ -93,6 +93,7 @@ const state = {
     reviewPageNumber: 1,
     reviewPrimaryReportIds: {},
     reviewSelectedScfs: {},
+    reviewExcludedScfs: {},
     reviewBaselineLists: [],
     reviewWorkingLists: [],
     reviewSummary: null,
@@ -1417,6 +1418,25 @@ function normalizeReviewSyncMap(source) {
   return output;
 }
 
+function normalizeReviewSyncScfMap(source) {
+  const raw = source && typeof source === "object" ? source : {};
+  const output = {};
+  Object.keys(raw).forEach((key) => {
+    const normalizedKey = String(key || "").trim();
+    const values = Array.from(
+      new Set(
+        ensureArray(raw[key])
+          .map((entry) => normalizeScf(entry))
+          .filter(Boolean)
+      )
+    );
+    if (normalizedKey && values.length) {
+      output[normalizedKey] = values;
+    }
+  });
+  return output;
+}
+
 function normalizeReviewSyncLists(source) {
   const rows = ensureArray(source || []);
   return rows
@@ -1464,6 +1484,7 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
     lastEditedComparisonId: String(state.analysis.lastEditedComparisonId || currentComparisonId).trim(),
     reviewPrimaryReportIds: normalizeReviewSyncMap(state.analysis.reviewPrimaryReportIds),
     reviewSelectedScfs: normalizeReviewSyncMap(state.analysis.reviewSelectedScfs),
+    reviewExcludedScfs: normalizeReviewSyncScfMap(state.analysis.reviewExcludedScfs),
     reviewBaselineLists: normalizeReviewSyncLists(state.analysis.reviewBaselineLists),
     reviewWorkingLists: normalizeReviewSyncLists(state.analysis.reviewWorkingLists),
     reviewSummary: state.analysis.reviewSummary ? cloneData(state.analysis.reviewSummary) : null,
@@ -1503,6 +1524,7 @@ function applyAnalysisReviewSync(message) {
     state.analysis.selectedComparisonId = String(message.selectedComparisonId || state.analysis.selectedComparisonId || "").trim();
     state.analysis.reviewPrimaryReportIds = normalizeReviewSyncMap(message.reviewPrimaryReportIds);
     state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(message.reviewSelectedScfs);
+    state.analysis.reviewExcludedScfs = normalizeReviewSyncScfMap(message.reviewExcludedScfs);
     state.analysis.reviewBaselineLists = normalizeReviewSyncLists(message.reviewBaselineLists);
     state.analysis.reviewWorkingLists = normalizeReviewSyncLists(message.reviewWorkingLists);
     state.analysis.reviewSummary = message.reviewSummary ? cloneData(message.reviewSummary) : null;
@@ -5275,6 +5297,7 @@ async function completeComparisonReview() {
     await loadReferenceLists();
     state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
     state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
+    state.analysis.reviewExcludedScfs = {};
     setComparisonReviewSummary(actualSummary);
     state.analysis.reviewSummaryMode = "summary";
     state.analysis.reviewSummaryApproved = true;
@@ -5535,7 +5558,7 @@ function syncReviewPageToSelectedScf(comparisonId, scf) {
     return;
   }
 
-  const sortedFilteredRows = getSortedFilteredPrimaryRows(buildPrimaryNavigatorRows(primaryReport));
+  const sortedFilteredRows = getSortedFilteredPrimaryRows(buildPrimaryNavigatorRows(primaryReport), comparisonId);
   const selectedIndex = sortedFilteredRows.findIndex((entry) => entry.scf === selectedScf);
   if (selectedIndex < 0) {
     return;
@@ -6232,7 +6255,7 @@ function buildPrimaryNavigatorRows(report) {
   }));
 }
 
-function getSortedFilteredPrimaryRows(rows = []) {
+function getSortedFilteredPrimaryRows(rows = [], comparisonId = state.analysis.selectedComparisonId) {
   const thresholdMetric = String(state.analysis.reviewThresholdMetric || "soldRate").trim();
   const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
   const parsedThreshold = parseReviewRateThreshold(thresholdValue, rows, thresholdMetric);
@@ -6286,8 +6309,9 @@ function removeWorkingListEntriesBelowRate(listType, rows = [], metricKey, thres
   }
 
   const originalItems = Array.isArray(list.items) ? list.items : [];
+  const removedItems = originalItems.filter((entry) => scfsToRemove.has(normalizeScf(entry?.scf)));
   const remainingItems = originalItems.filter((entry) => !scfsToRemove.has(normalizeScf(entry?.scf)));
-  const removedCount = originalItems.length - remainingItems.length;
+  const removedCount = removedItems.length;
   list.items = remainingItems;
   list.count = remainingItems.length;
   list.updatedAt = new Date().toISOString();
@@ -6295,7 +6319,7 @@ function removeWorkingListEntriesBelowRate(listType, rows = [], metricKey, thres
 
   return {
     removedCount,
-    affectedScfs: Array.from(scfsToRemove),
+    affectedScfs: removedItems.map((entry) => normalizeScf(entry?.scf)).filter(Boolean),
   };
 }
 
@@ -7640,8 +7664,10 @@ function renderAnalysisComparisonReviewPanel() {
   const dnmStatus = getDoNotMailStatusForScf(selectedScf, selectedStateValue);
   const targetListEntry = getWorkingListEntry(targetListType, selectedScf);
   const primaryNavigatorRows = buildPrimaryNavigatorRows(primaryReport);
-  const sortedFilteredRows = getSortedFilteredPrimaryRows(primaryNavigatorRows);
-  const effectiveSelectedScf = selectedScf || (sortedFilteredRows[0]?.scf || "");
+  const sortedFilteredRows = getSortedFilteredPrimaryRows(primaryNavigatorRows, comparison.id);
+  const effectiveSelectedScf = selectedScf && sortedFilteredRows.some((entry) => entry.scf === selectedScf)
+    ? selectedScf
+    : (sortedFilteredRows[0]?.scf || "");
   if (effectiveSelectedScf && effectiveSelectedScf !== selectedScf) {
     state.analysis.reviewSelectedScfs[comparison.id] = effectiveSelectedScf;
   }
@@ -7654,6 +7680,7 @@ function renderAnalysisComparisonReviewPanel() {
   const pagination = getComparisonReviewPagination(sortedFilteredRows.length, selectedIndex);
   const visibleRows = sortedFilteredRows.slice(pagination.startIndex, pagination.endIndex);
   const selectedNavigatorEntry = sortedFilteredRows.find((entry) => entry.scf === effectiveSelectedScf) || null;
+  const primaryReportDisplayName = primaryReport ? getAnalysisReportDisplayName(primaryReport) : "the selected primary report";
   const thresholdMetric = String(state.analysis.reviewThresholdMetric || "soldRate").trim();
   const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
   const bulkMetric = String(state.analysis.reviewBulkMetric || "soldRate").trim();
@@ -7878,7 +7905,7 @@ function renderAnalysisComparisonReviewPanel() {
       <article class="panel analysis-review-bulk-panel">
         <div class="panel-heading analysis-review-summary-heading">
           <h3>Bulk Remove From Working ${esc(listType)}</h3>
-          <p>Based on the primary report only. This does not change the live lists.</p>
+          <p>Only <strong>${esc(primaryReportDisplayName)}</strong> drives this action. Other comparison reports do not affect the removal decision, and live lists are not changed here.</p>
         </div>
         <div class="analysis-review-filter-bar">
           <div class="field-stack">
@@ -8039,20 +8066,32 @@ function renderAnalysisComparisonReviewPanel() {
                 <th class="sortable-column" data-review-sort-key="soldRate">Sold Rate${state.analysis.reviewTableSort.key === "soldRate" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
                 <th class="sortable-column" data-review-sort-key="inForceRate">In Force Rate${state.analysis.reviewTableSort.key === "inForceRate" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
                 <th class="sortable-column" data-review-sort-key="convertedRate">Converted Rate${state.analysis.reviewTableSort.key === "convertedRate" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
+                <th>Review Status</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
-              ${visibleRows.length ? visibleRows.map((entry) => `
+              ${visibleRows.length ? visibleRows.map((entry) => {
+                const rowDecisionStatus = getWorkingListDecisionStatus(targetListType, entry.scf);
+                const reviewStatusLabel = rowDecisionStatus.code === "pending-add"
+                  ? "Pending add"
+                  : rowDecisionStatus.code === "pending-remove"
+                    ? "Pending remove"
+                    : rowDecisionStatus.workingEntry
+                      ? "On working list"
+                      : "Not on working list";
+                return `
                 <tr class="${entry.scf === effectiveSelectedScf ? "is-selected-row" : ""}" data-review-row-scf="${esc(entry.scf)}" tabindex="0">
                   <td>${esc(entry.scf)}</td>
                   <td>${entry.mailed.toLocaleString("en-US")}</td>
                   <td>${esc(getRowMetricDisplayValue(entry.row, "Sold Rate"))}</td>
                   <td>${esc(getRowMetricDisplayValue(entry.row, "In Force Rate"))}</td>
                   <td>${esc(getRowMetricDisplayValue(entry.row, "Converted Rate"))}</td>
+                  <td>${esc(reviewStatusLabel)}</td>
                   <td><button class="secondary-button table-action-button" data-review-scf="${esc(entry.scf)}">Open</button></td>
                 </tr>
-              `).join("") : `<tr><td colspan="6" class="empty-cell">No SCFs were found in the selected primary report for this filter.</td></tr>`}
+              `;
+              }).join("") : `<tr><td colspan="7" class="empty-cell">No SCFs were found in the selected primary report for this filter.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -8287,8 +8326,8 @@ function renderAnalysisComparisonReviewPanel() {
     const thresholdLabel = parsedThreshold.displayLabel;
     appendAnalysisReviewNote(
       removalResult.removedCount
-        ? `Bulk removal decision: removed ${removalResult.removedCount} ${listType} SCF(s) below ${thresholdLabel} ${metricLabel}.`
-        : `Bulk removal decision: reviewed ${listType} SCFs below ${thresholdLabel} ${metricLabel}; no items were removed.`
+        ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) below ${thresholdLabel} ${metricLabel} for pending removal using ${primaryReportDisplayName} only.`
+        : `Bulk removal decision: reviewed ${listType} SCFs below ${thresholdLabel} ${metricLabel} using ${primaryReportDisplayName} only; no items were removed.`
     );
     invalidateComparisonReviewSummary();
 
@@ -8297,8 +8336,8 @@ function renderAnalysisComparisonReviewPanel() {
     setStatus(
       "analysis-comparison-selection-status",
       removalResult.removedCount
-        ? `${removalResult.removedCount} SCF(s) were removed from the working ${listType} list for falling below ${parsedThreshold.displayLabel} ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in the primary report. Live lists were not changed.`
-        : `No SCFs were removed from the working ${listType} list below ${parsedThreshold.displayLabel} ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in the primary report.`
+        ? `${removalResult.removedCount} SCF(s) were marked for pending removal from the working ${listType} list for falling below ${parsedThreshold.displayLabel} ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in ${primaryReportDisplayName} only. They remain visible in the review list.`
+        : `No SCFs were removed from the working ${listType} list below ${parsedThreshold.displayLabel} ${getReviewMetricDisplayName(state.analysis.reviewBulkMetric)} in ${primaryReportDisplayName}.`
     );
   });
 
@@ -9597,6 +9636,7 @@ function bindAnalysisButtons() {
       await loadReferenceLists();
       state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
       state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
+      state.analysis.reviewExcludedScfs = {};
       showAnalysisPanel("compare-review");
       ensureVisibleAnalysisPanel();
       setStatus("analysis-comparison-selection-status", "Review the comparison and work from the testing copy of the lists.");
