@@ -51,6 +51,8 @@ const ANALYSIS_REVIEW_POPUP_QUERY_PARAM = "analysisReviewPopup";
 const IMPORT_SESSION_POPUP_QUERY_PARAM = "importSessionPopup";
 const ANALYSIS_REVIEW_SYNC_CHANNEL_NAME = "hpa-analysis-review-sync-v1";
 const ANALYSIS_REVIEW_SYNC_STORAGE_KEY = "hpa.analysis.review.syncState";
+let comparisonSetupAutosaveHandle = null;
+let comparisonSetupAutosaveInFlight = null;
 
 function getDefaultAnalysisName() {
   return new Date().toLocaleString("en-US", {
@@ -6410,30 +6412,36 @@ function buildPrimaryNavigatorRows(report) {
   }));
 }
 
-function mergeExactMetricsIntoNavigatorRows(rows = [], report, scf) {
-  const normalizedScf = normalizeScf(scf);
+function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs) {
   const normalizedReportId = String(report?.id || "").trim();
-  if (!normalizedScf || !normalizedReportId || !Array.isArray(rows) || !rows.length) {
-    return rows;
-  }
-
-  const cachedMetrics = getCachedAnalysisReportScfMetrics(normalizedReportId, normalizedScf);
-  if (!cachedMetrics) {
-    requestAnalysisReportScfMetrics(normalizedReportId, normalizedScf);
-    return rows;
-  }
-
-  if (cachedMetrics.status !== "ready" || !cachedMetrics.row) {
+  const normalizedScfs = Array.from(
+    new Set(
+      ensureArray(Array.isArray(scfs) ? scfs : [scfs])
+        .map((entry) => normalizeScf(entry))
+        .filter(Boolean)
+    )
+  );
+  if (!normalizedScfs.length || !normalizedReportId || !Array.isArray(rows) || !rows.length) {
     return rows;
   }
 
   return rows.map((entry) => {
-    if (entry.scf !== normalizedScf) {
+    if (!normalizedScfs.includes(entry.scf)) {
+      return entry;
+    }
+
+    const cachedMetrics = getCachedAnalysisReportScfMetrics(normalizedReportId, entry.scf);
+    if (!cachedMetrics) {
+      requestAnalysisReportScfMetrics(normalizedReportId, entry.scf);
+      return entry;
+    }
+
+    if (cachedMetrics.status !== "ready" || !cachedMetrics.row) {
       return entry;
     }
 
     return {
-      scf: normalizedScf,
+      scf: entry.scf,
       row: cachedMetrics.row,
       mailed: getRowMetricNumber(cachedMetrics.row, "Sum of Mailed"),
       soldRate: getRowMetricNumber(cachedMetrics.row, "Sold Rate"),
@@ -7565,6 +7573,7 @@ function toggleComparisonReportSelection(comparisonId, reportId, shouldSelect) {
   state.analysis.lastEditedComparisonId = comparisonId;
   link.updatedAt = new Date().toISOString();
   renderAnalysisSetupHome();
+  scheduleComparisonSetupAutosave({ immediate: true });
   return true;
 }
 
@@ -7937,10 +7946,23 @@ function renderAnalysisComparisonReviewPanel() {
   const dnmStatus = getDoNotMailStatusForScf(selectedScf, selectedStateValue);
   const targetListEntry = getWorkingListEntry(targetListType, selectedScf);
   let primaryNavigatorRows = buildPrimaryNavigatorRows(primaryReport);
-  primaryNavigatorRows = mergeExactMetricsIntoNavigatorRows(primaryNavigatorRows, primaryReport, selectedScf);
-  const sortedFilteredRows = getSortedFilteredPrimaryRows(primaryNavigatorRows, comparison.id);
-  const effectiveSelectedScf = selectedScf && sortedFilteredRows.some((entry) => entry.scf === selectedScf)
+  let sortedFilteredRows = getSortedFilteredPrimaryRows(primaryNavigatorRows, comparison.id);
+  let effectiveSelectedScf = selectedScf && sortedFilteredRows.some((entry) => entry.scf === selectedScf)
     ? selectedScf
+    : (sortedFilteredRows[0]?.scf || "");
+  let selectedIndex = sortedFilteredRows.findIndex((entry) => entry.scf === effectiveSelectedScf);
+  let pagination = getComparisonReviewPagination(sortedFilteredRows.length, selectedIndex);
+  const visibleNavigatorScfs = sortedFilteredRows
+    .slice(pagination.startIndex, pagination.endIndex)
+    .map((entry) => entry.scf);
+  primaryNavigatorRows = mergeExactMetricsIntoNavigatorRows(
+    primaryNavigatorRows,
+    primaryReport,
+    [effectiveSelectedScf, ...visibleNavigatorScfs]
+  );
+  sortedFilteredRows = getSortedFilteredPrimaryRows(primaryNavigatorRows, comparison.id);
+  effectiveSelectedScf = effectiveSelectedScf && sortedFilteredRows.some((entry) => entry.scf === effectiveSelectedScf)
+    ? effectiveSelectedScf
     : (sortedFilteredRows[0]?.scf || "");
   if (effectiveSelectedScf && effectiveSelectedScf !== selectedScf) {
     state.analysis.reviewSelectedScfs[comparison.id] = effectiveSelectedScf;
@@ -7950,8 +7972,8 @@ function renderAnalysisComparisonReviewPanel() {
   const effectiveDnmStatus = getDoNotMailStatusForScf(effectiveSelectedScf, effectiveSelectedStateValue);
   const effectiveTargetListEntry = getWorkingListEntry(targetListType, effectiveSelectedScf);
   const decisionStatus = getWorkingListDecisionStatus(targetListType, effectiveSelectedScf);
-  const selectedIndex = sortedFilteredRows.findIndex((entry) => entry.scf === effectiveSelectedScf);
-  const pagination = getComparisonReviewPagination(sortedFilteredRows.length, selectedIndex);
+  selectedIndex = sortedFilteredRows.findIndex((entry) => entry.scf === effectiveSelectedScf);
+  pagination = getComparisonReviewPagination(sortedFilteredRows.length, selectedIndex);
   const visibleRows = sortedFilteredRows.slice(pagination.startIndex, pagination.endIndex);
   const selectedNavigatorEntry = sortedFilteredRows.find((entry) => entry.scf === effectiveSelectedScf) || null;
   const primaryReportDisplayName = primaryReport ? getAnalysisReportDisplayName(primaryReport) : "the selected primary report";
@@ -8807,6 +8829,51 @@ async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
   return setup;
 }
 
+function clearComparisonSetupAutosave() {
+  if (comparisonSetupAutosaveHandle) {
+    clearTimeout(comparisonSetupAutosaveHandle);
+    comparisonSetupAutosaveHandle = null;
+  }
+}
+
+function scheduleComparisonSetupAutosave(options = {}) {
+  const immediate = options.immediate === true;
+  const delayMs = Number.isFinite(Number(options.delayMs)) ? Number(options.delayMs) : 700;
+  const statusMessage = String(options.statusMessage || "Comparison setup saved automatically.").trim();
+
+  clearComparisonSetupAutosave();
+
+  const runSave = async () => {
+    if (comparisonSetupAutosaveInFlight) {
+      try {
+        await comparisonSetupAutosaveInFlight;
+      } catch {
+        // ignore prior autosave error and allow next attempt
+      }
+    }
+
+    comparisonSetupAutosaveInFlight = saveComparisonSetup(statusMessage)
+      .catch((error) => {
+        setStatus("analysis-comparison-status", `Unable to auto-save comparison setup: ${error.message}`);
+      })
+      .finally(() => {
+        comparisonSetupAutosaveInFlight = null;
+      });
+
+    await comparisonSetupAutosaveInFlight;
+  };
+
+  if (immediate) {
+    void runSave();
+    return;
+  }
+
+  comparisonSetupAutosaveHandle = setTimeout(() => {
+    comparisonSetupAutosaveHandle = null;
+    void runSave();
+  }, delayMs);
+}
+
 function stopAnalysisRunPolling() {
   if (state.analysis.runPollHandle) {
     clearTimeout(state.analysis.runPollHandle);
@@ -9146,6 +9213,7 @@ async function renameSavedAnalysisReport(reportId) {
 }
 
 function resetAnalysisWorkspace(clearPersistedSetup = true) {
+  clearComparisonSetupAutosave();
   stopAnalysisRunPolling();
   state.analysis.currentSetupId = "";
   state.analysis.currentRunId = "";
@@ -9183,6 +9251,7 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
 }
 
 function loadSetupIntoWorkspace(setup) {
+  clearComparisonSetupAutosave();
   stopAnalysisRunPolling();
   state.analysis.currentSetupId = setup.id || "";
   persistAnalysisSetupId(state.analysis.currentSetupId);
@@ -9234,6 +9303,7 @@ function loadSetupIntoWorkspace(setup) {
 }
 
 function loadRunIntoWorkspace(run) {
+  clearComparisonSetupAutosave();
   state.analysis.currentRunId = run.id || "";
   state.analysis.currentSetupId = run.setupId || "";
   persistAnalysisSetupId(state.analysis.currentSetupId);
@@ -10070,6 +10140,7 @@ function bindAnalysisButtons() {
     );
     renderAnalysisComparePanel();
     setStatus("analysis-comparison-status", "Comparison row added.");
+    scheduleComparisonSetupAutosave({ immediate: true });
   });
 
   saveComparisonSetupButton?.addEventListener("click", async () => {
@@ -10234,6 +10305,7 @@ function bindAnalysisButtons() {
       }
     }
     refreshAnalysisSetupValidationUi();
+    scheduleComparisonSetupAutosave({ delayMs: 600 });
   });
 
   compareContainer?.addEventListener("click", (event) => {
@@ -10250,6 +10322,7 @@ function bindAnalysisButtons() {
     }
     renderAnalysisComparePanel();
     setStatus("analysis-comparison-status", "Comparison removed.");
+    scheduleComparisonSetupAutosave({ immediate: true });
   });
 
   runComparisonsButton?.addEventListener("click", () => {
