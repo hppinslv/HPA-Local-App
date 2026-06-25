@@ -5977,7 +5977,7 @@ function buildSyntheticNavigatorRow({
     : rateDenominator > 0
       ? (safeTotalConvertedMonthlyPremiums * 100) / rateDenominator
       : safeMailed > 0
-        ? (safeOppCount / safeMailed) * 100
+        ? (safeSold / safeMailed) * 100
         : 0;
 
   return {

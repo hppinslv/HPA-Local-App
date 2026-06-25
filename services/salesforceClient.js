@@ -1883,31 +1883,34 @@ function fillAnalysisRateFallbacks(row = {}) {
     );
   }
   const premiumRateDivisor = mailed * ANALYSIS_PREMIUM_RATE_BASE;
-  const nextSoldRate = premiumRateDivisor > 0 && totalMonthlyPremium > 0
+  const hasPremiumSoldBasis = premiumRateDivisor > 0 && hasAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium);
+  const hasPremiumInForceBasis = premiumRateDivisor > 0 && hasAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium);
+  const hasPremiumConvertedBasis = premiumRateDivisor > 0 && hasAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums);
+  const nextSoldRate = hasPremiumSoldBasis
     ? (totalMonthlyPremium * 100) / premiumRateDivisor
     : oppCount > 0
       ? (oppCount / mailed) * 100
       : 0;
-  const nextInForceRate = premiumRateDivisor > 0 && inForceMonthlyPremium > 0
+  const nextInForceRate = hasPremiumInForceBasis
     ? (inForceMonthlyPremium * 100) / premiumRateDivisor
     : inForce > 0
       ? (inForce / mailed) * 100
       : 0;
-  const nextConvertedRate = premiumRateDivisor > 0 && totalConvertedMonthlyPremiums > 0
+  const nextConvertedRate = hasPremiumConvertedBasis
     ? (totalConvertedMonthlyPremiums * 100) / premiumRateDivisor
     : sold > 0
       ? (sold / mailed) * 100
       : 0;
 
-  if (!hasExplicitSoldRate) {
+  if (!hasExplicitSoldRate || hasPremiumSoldBasis) {
     row["Sold Rate"] = nextSoldRate.toFixed(10);
     row["sold rate"] = nextSoldRate.toFixed(10);
   }
-  if (!hasExplicitInForceRate) {
+  if (!hasExplicitInForceRate || hasPremiumInForceBasis) {
     row["In Force Rate"] = nextInForceRate.toFixed(10);
     row["in force rate"] = nextInForceRate.toFixed(10);
   }
-  if (!hasExplicitConvertedRate) {
+  if (!hasExplicitConvertedRate || hasPremiumConvertedBasis) {
     row["Converted Rate"] = nextConvertedRate.toFixed(10);
     row["converted rate"] = nextConvertedRate.toFixed(10);
   }
@@ -2498,9 +2501,22 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       ]) ?? 0
     );
     const rowSold = resolveAnalysisSoldValue(row, rowConvertedPremium);
-    const sourceSoldRate = parseNumber(row["Sold Rate"] ?? row["sold rate"]);
-    const sourceInForceRate = parseNumber(row["In Force Rate"] ?? row["in force rate"]);
-    const sourceConvertedRate = rowMailed > 0 ? (rowSold / rowMailed) * 100 : 0;
+    const premiumRateDivisor = rowMailed > 0 ? rowMailed * ANALYSIS_PREMIUM_RATE_BASE : 0;
+    const sourceSoldRate = premiumRateDivisor > 0 && rowTotalMonthlyPremium > 0
+      ? (rowTotalMonthlyPremium * 100) / premiumRateDivisor
+      : rowMailed > 0
+        ? (rowOppCount / rowMailed) * 100
+        : parseNumber(row["Sold Rate"] ?? row["sold rate"]);
+    const sourceInForceRate = premiumRateDivisor > 0 && rowInForceMonthlyPremium >= 0
+      ? (rowInForceMonthlyPremium * 100) / premiumRateDivisor
+      : rowMailed > 0
+        ? (parseNumber(getLikelyColumnValue(row, ["In Force", "Sum of In Force"]) ?? 0) / rowMailed) * 100
+        : parseNumber(row["In Force Rate"] ?? row["in force rate"]);
+    const sourceConvertedRate = premiumRateDivisor > 0 && rowConvertedPremium >= 0
+      ? (rowConvertedPremium * 100) / premiumRateDivisor
+      : rowMailed > 0
+        ? (rowSold / rowMailed) * 100
+        : parseNumber(row["Converted Rate"] ?? row["converted rate"]);
     if (rowMailed > 0 && Number.isFinite(sourceSoldRate) && Math.abs(sourceSoldRate) > 0.000001) {
       current.soldRateWeightedTotal += sourceSoldRate * rowMailed;
       current.soldRateWeight += rowMailed;
