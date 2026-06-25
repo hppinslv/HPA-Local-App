@@ -53,6 +53,7 @@ const ANALYSIS_REVIEW_SYNC_CHANNEL_NAME = "hpa-analysis-review-sync-v1";
 const ANALYSIS_REVIEW_SYNC_STORAGE_KEY = "hpa.analysis.review.syncState";
 let comparisonSetupAutosaveHandle = null;
 let comparisonSetupAutosaveInFlight = null;
+let analysisReviewPopupWindowRef = null;
 
 function getDefaultAnalysisName() {
   return new Date().toLocaleString("en-US", {
@@ -1844,9 +1845,22 @@ function openComparisonReviewPopup() {
   popupUrl.searchParams.set("reviewSummaryMode", String(state.analysis.reviewSummaryMode || "review"));
   popupUrl.searchParams.set(ANALYSIS_REVIEW_POPUP_QUERY_PARAM, "1");
 
+  if (analysisReviewPopupWindowRef && analysisReviewPopupWindowRef.closed) {
+    analysisReviewPopupWindowRef = null;
+  }
+
+  if (analysisReviewPopupWindowRef && !analysisReviewPopupWindowRef.closed) {
+    analysisReviewPopupWindowRef.focus();
+    setStatus(
+      "analysis-comparison-selection-status",
+      "Detached review window is already open."
+    );
+    return true;
+  }
+
   const popupWindow = window.open(
     popupUrl.toString(),
-    `hpa-analysis-review-${setupId}`,
+    `hpa-analysis-review-${setupId}-${Date.now()}`,
     "popup=yes,width=1600,height=1000,resizable=yes,scrollbars=yes"
   );
 
@@ -1858,6 +1872,7 @@ function openComparisonReviewPopup() {
     return false;
   }
 
+  analysisReviewPopupWindowRef = popupWindow;
   popupWindow.focus();
   setStatus(
     "analysis-comparison-selection-status",
@@ -5889,6 +5904,18 @@ function getCachedAnalysisReportScfMetrics(reportId, scf) {
   return state.analysis.reportScfMetricCache[key] || null;
 }
 
+let analysisComparisonReviewRenderHandle = null;
+
+function scheduleAnalysisComparisonReviewRender(delayMs = 0) {
+  if (analysisComparisonReviewRenderHandle) {
+    window.clearTimeout(analysisComparisonReviewRenderHandle);
+  }
+  analysisComparisonReviewRenderHandle = window.setTimeout(() => {
+    analysisComparisonReviewRenderHandle = null;
+    renderAnalysisComparisonReviewPanel();
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
 async function requestAnalysisReportScfMetrics(reportId, scf) {
   const normalizedReportId = String(reportId || "").trim();
   const normalizedScf = normalizeScf(scf);
@@ -5915,7 +5942,7 @@ async function requestAnalysisReportScfMetrics(reportId, scf) {
         row: nextRow,
         updatedAt: Date.now(),
       };
-      renderAnalysisComparisonReviewPanel();
+      scheduleAnalysisComparisonReviewRender(40);
       return nextRow;
     })
     .catch((error) => {
@@ -5925,7 +5952,7 @@ async function requestAnalysisReportScfMetrics(reportId, scf) {
         error: error instanceof Error ? error.message : String(error || "Unable to load SCF metrics."),
         updatedAt: Date.now(),
       };
-      renderAnalysisComparisonReviewPanel();
+      scheduleAnalysisComparisonReviewRender(40);
       return null;
     });
 
@@ -6449,6 +6476,26 @@ function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs) {
       convertedRate: getRowMetricNumber(cachedMetrics.row, "Converted Rate"),
     };
   });
+}
+
+function prefetchAnalysisReportScfMetrics(report, scfs) {
+  const normalizedReportId = String(report?.id || "").trim();
+  const normalizedScfs = Array.from(
+    new Set(
+      ensureArray(Array.isArray(scfs) ? scfs : [scfs])
+        .map((entry) => normalizeScf(entry))
+        .filter(Boolean)
+    )
+  );
+  if (!normalizedReportId || !normalizedScfs.length) {
+    return;
+  }
+
+  window.setTimeout(() => {
+    normalizedScfs.forEach((scf) => {
+      requestAnalysisReportScfMetrics(normalizedReportId, scf);
+    });
+  }, 0);
 }
 
 function getSortedFilteredPrimaryRows(rows = [], comparisonId = state.analysis.selectedComparisonId) {
@@ -7958,7 +8005,11 @@ function renderAnalysisComparisonReviewPanel() {
   primaryNavigatorRows = mergeExactMetricsIntoNavigatorRows(
     primaryNavigatorRows,
     primaryReport,
-    [effectiveSelectedScf, ...visibleNavigatorScfs]
+    [effectiveSelectedScf]
+  );
+  prefetchAnalysisReportScfMetrics(
+    primaryReport,
+    visibleNavigatorScfs.filter((scf) => scf && scf !== effectiveSelectedScf)
   );
   sortedFilteredRows = getSortedFilteredPrimaryRows(primaryNavigatorRows, comparison.id);
   effectiveSelectedScf = effectiveSelectedScf && sortedFilteredRows.some((entry) => entry.scf === effectiveSelectedScf)
