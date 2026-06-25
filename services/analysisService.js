@@ -2811,6 +2811,34 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
     throw new Error("Analysis report not found.");
   }
 
+  const savedExportRows = ensureArray(report.exportRows);
+  if (savedExportRows.length) {
+    const savedSummary = buildFlatRowsFromDetailExport(savedExportRows);
+    const normalizedKeys = ensureArray(report.parameters?.key_codes)
+      .map((value) => String(value || "").trim().toUpperCase())
+      .filter(Boolean);
+    const matchingSavedRows = ensureArray(savedSummary?.rows).filter((row) => {
+      const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row.scf ?? "");
+      if (rowScf !== normalizedScf) {
+        return false;
+      }
+      if (!normalizedKeys.length) {
+        return true;
+      }
+      const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
+      return normalizedKeys.includes(rowKey);
+    });
+    if (matchingSavedRows.length) {
+      return {
+        reportId: normalizedId,
+        scf: normalizedScf,
+        row: matchingSavedRows[0],
+        rows: matchingSavedRows,
+        source: "saved-export-rows",
+      };
+    }
+  }
+
   const parameters = report.parameters || {};
   const result = await fetchAnalysisReportScfMetrics(parameters.report_id || DEFAULT_REPORT_ID, {
     scf: normalizedScf,
@@ -2826,6 +2854,7 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
     scf: normalizedScf,
     row: result.row,
     rows: result.rows,
+    source: "salesforce-scoped-refetch",
   };
 }
 
