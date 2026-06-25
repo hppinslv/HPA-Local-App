@@ -35,6 +35,7 @@ const SCORE_HISTORY_VISIBLE_PAYMENT_TYPES = ["ACH", "Credit Card", "Check"];
 
 const DEFAULT_ANALYSIS_REPORT_ID = "00OQm000003PIxhMAG";
 const ANALYSIS_SETUP_STORAGE_KEY = "hpa.analysis.currentSetupId";
+const ANALYSIS_SETUP_DRAFT_STORAGE_KEY = "hpa.analysis.currentSetupDraft";
 const ANALYSIS_KEY_CODE_GROUPS = ["NHCL", "RFC"];
 const ANALYSIS_KEY_CODE_OPTIONS = ["N", "RFC"];
 const APPLICATION_DEFAULTS = Object.freeze({
@@ -1304,6 +1305,110 @@ function readPersistedAnalysisSetupId() {
   } catch {
     return "";
   }
+}
+
+function clearPersistedAnalysisSetupDraft() {
+  try {
+    window.localStorage.removeItem(ANALYSIS_SETUP_DRAFT_STORAGE_KEY);
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function persistAnalysisSetupDraft() {
+  try {
+    const runName = String(el("analysis-run-name")?.value || state.analysis.runName || "").trim();
+    const runNotes = String(el("analysis-run-notes")?.value || state.analysis.runNotes || "").trim();
+    const payload = {
+      setupId: String(state.analysis.currentSetupId || "").trim(),
+      runName,
+      runNotes,
+      reportPulls: cloneData(state.analysis.reportPulls || []),
+      comparisonLinks: cloneData(state.analysis.comparisonLinks || []),
+      comparisonRequests: cloneData(state.analysis.comparisonRequests || []),
+      selectedComparisonId: String(state.analysis.selectedComparisonId || "").trim(),
+      lastEditedComparisonId: String(state.analysis.lastEditedComparisonId || "").trim(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const hasContent =
+      payload.runName ||
+      payload.runNotes ||
+      payload.reportPulls.length ||
+      payload.comparisonLinks.length > 1 ||
+      (payload.comparisonLinks.length === 1 && getComparisonSelectedReportIds(payload.comparisonLinks[0]).length);
+
+    if (!hasContent) {
+      clearPersistedAnalysisSetupDraft();
+      return;
+    }
+
+    window.localStorage.setItem(ANALYSIS_SETUP_DRAFT_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function readPersistedAnalysisSetupDraft() {
+  try {
+    const raw = window.localStorage.getItem(ANALYSIS_SETUP_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function restorePersistedAnalysisSetupDraft(setupId = "") {
+  const draft = readPersistedAnalysisSetupDraft();
+  if (!draft) {
+    return false;
+  }
+
+  const draftSetupId = String(draft.setupId || "").trim();
+  const normalizedSetupId = String(setupId || state.analysis.currentSetupId || "").trim();
+  if (draftSetupId && normalizedSetupId && draftSetupId !== normalizedSetupId) {
+    return false;
+  }
+  if (draftSetupId && !normalizedSetupId) {
+    return false;
+  }
+
+  if (Array.isArray(draft.reportPulls) && draft.reportPulls.length) {
+    state.analysis.reportPulls = draft.reportPulls.map((pull, index) => ({
+      ...createEmptyPull(index),
+      ...pull,
+      dateRange: pull.dateRange
+        ? {
+            startDate: normalizeIsoDateInput(pull.dateRange.startDate || ""),
+            endDate: normalizeIsoDateInput(pull.dateRange.endDate || ""),
+          }
+        : null,
+    }));
+  }
+
+  if (Array.isArray(draft.comparisonLinks) && draft.comparisonLinks.length) {
+    state.analysis.comparisonLinks = draft.comparisonLinks.map((link, index) =>
+      createComparisonLink(index, link)
+    );
+    state.analysis.comparisonRequests = syncComparisonRequestsFromLinks();
+  } else if (Array.isArray(draft.comparisonRequests) && draft.comparisonRequests.length) {
+    state.analysis.comparisonRequests = cloneData(draft.comparisonRequests);
+    state.analysis.comparisonLinks = state.analysis.comparisonRequests.map((entry, index) =>
+      createComparisonLink(index, entry)
+    );
+  }
+
+  if (draft.runName !== undefined) {
+    state.analysis.runName = String(draft.runName || "");
+  }
+  if (draft.runNotes !== undefined) {
+    state.analysis.runNotes = String(draft.runNotes || "");
+  }
+  state.analysis.selectedComparisonId = String(draft.selectedComparisonId || state.analysis.selectedComparisonId || "").trim();
+  state.analysis.lastEditedComparisonId = String(draft.lastEditedComparisonId || state.analysis.lastEditedComparisonId || "").trim();
+  return true;
 }
 
 function persistUiState() {
@@ -5906,11 +6011,33 @@ function getCachedAnalysisReportScfMetrics(reportId, scf) {
 
 let analysisComparisonReviewRenderHandle = null;
 
+function isAnalysisReviewControlActive() {
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) {
+    return false;
+  }
+
+  const reviewPanel = el("analysis-comparison-review-panel");
+  if (!(reviewPanel instanceof HTMLElement) || !reviewPanel.contains(activeElement)) {
+    return false;
+  }
+
+  if (activeElement.matches("select, input, textarea")) {
+    return true;
+  }
+
+  return Boolean(activeElement.closest(".analysis-review-toolbar, .analysis-review-shell"));
+}
+
 function scheduleAnalysisComparisonReviewRender(delayMs = 0) {
   if (analysisComparisonReviewRenderHandle) {
     window.clearTimeout(analysisComparisonReviewRenderHandle);
   }
   analysisComparisonReviewRenderHandle = window.setTimeout(() => {
+    if (isAnalysisReviewControlActive()) {
+      scheduleAnalysisComparisonReviewRender(250);
+      return;
+    }
     analysisComparisonReviewRenderHandle = null;
     renderAnalysisComparisonReviewPanel();
   }, Math.max(0, Number(delayMs) || 0));
@@ -7668,6 +7795,7 @@ function toggleComparisonReportSelection(comparisonId, reportId, shouldSelect) {
   }
   state.analysis.lastEditedComparisonId = comparisonId;
   link.updatedAt = new Date().toISOString();
+  persistAnalysisSetupDraft();
   renderAnalysisSetupHome();
   scheduleComparisonSetupAutosave({ immediate: true });
   return true;
@@ -8905,6 +9033,7 @@ function syncComparisonRequestsFromLinks() {
       metricColumns: readComparisonMetricColumns(link),
     };
   });
+  persistAnalysisSetupDraft();
   return state.analysis.comparisonRequests;
 }
 
@@ -8918,6 +9047,7 @@ async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
   const setup = response.setup || {};
   state.analysis.currentSetupId = setup.id || state.analysis.currentSetupId;
   persistAnalysisSetupId(state.analysis.currentSetupId);
+  persistAnalysisSetupDraft();
   syncAnalysisMeta({
     runName: setup.run_name || setup.runName || payload.runName,
     notes: setup.notes ?? payload.notes,
@@ -9340,6 +9470,7 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   if (clearPersistedSetup) {
     persistAnalysisSetupId("");
   }
+  clearPersistedAnalysisSetupDraft();
   syncAnalysisMeta({
     runName: getDefaultAnalysisName(),
     notes: "",
@@ -9377,6 +9508,7 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.comparisonLinks = state.analysis.comparisonRequests.length
     ? state.analysis.comparisonRequests.map((entry, index) => createComparisonLink(index, entry))
     : [createComparisonLink(0)];
+  restorePersistedAnalysisSetupDraft(state.analysis.currentSetupId);
   state.analysis.comparisonResults = [];
   state.analysis.selectedComparisonId = "";
   state.analysis.lastEditedComparisonId = "";
@@ -9961,6 +10093,8 @@ async function loadAnalysisSetupView() {
       persistAnalysisSetupId("");
       setStatus("analysis-comparison-status", `Unable to restore saved comparison setup: ${error.message}`);
     }
+  } else if (!persistedSetupId && !state.analysis.setupHydrated) {
+    restorePersistedAnalysisSetupDraft("");
   }
 
   state.analysis.setupHydrated = true;
@@ -10042,16 +10176,19 @@ function bindAnalysisButtons() {
     const nextPull = createEmptyPull(state.analysis.reportPulls.length);
     state.analysis.reportPulls.push(nextPull);
     setAnalysisPullCollapsed(nextPull.id, true);
+    persistAnalysisSetupDraft();
     renderAnalysisWorkspace();
     setStatus("analysis-status-detail", "Report pull added.");
   });
 
   runNameInput?.addEventListener("input", () => {
     state.analysis.runName = String(runNameInput.value || "");
+    persistAnalysisSetupDraft();
   });
 
   runNotesInput?.addEventListener("input", () => {
     state.analysis.runNotes = String(runNotesInput.value || "");
+    persistAnalysisSetupDraft();
   });
 
   continueButton?.addEventListener("click", async () => {
@@ -10100,6 +10237,7 @@ function bindAnalysisButtons() {
     if (field === "keyCodes" || field === "startDate" || field === "endDate") {
       updateAnalysisPullCardPreview(pullId);
     }
+    persistAnalysisSetupDraft();
   });
 
   pullContainer?.addEventListener("change", (event) => {
@@ -10149,6 +10287,7 @@ function bindAnalysisButtons() {
     const pullId = target.getAttribute("data-pull-id");
     if (!pullId) return;
     state.analysis.reportPulls = state.analysis.reportPulls.filter((entry) => entry.id !== pullId);
+    persistAnalysisSetupDraft();
     renderAnalysisWorkspace();
     setStatus("analysis-status-detail", "Report pull removed.");
   });
@@ -10170,6 +10309,7 @@ function bindAnalysisButtons() {
       const setup = response.setup || {};
       state.analysis.currentSetupId = setup.id || state.analysis.currentSetupId;
       persistAnalysisSetupId(state.analysis.currentSetupId);
+      persistAnalysisSetupDraft();
       syncAnalysisMeta({
         runName: setup.run_name || setup.runName || payload.runName,
         notes: setup.notes ?? payload.notes,
@@ -10203,6 +10343,7 @@ function bindAnalysisButtons() {
       const savedSetup = saveResponse.setup || {};
       state.analysis.currentSetupId = savedSetup.id || state.analysis.currentSetupId;
       persistAnalysisSetupId(state.analysis.currentSetupId);
+      persistAnalysisSetupDraft();
       const runResponse = await apiRequest("/api/analysis/runs", {
         method: "POST",
         body: {
@@ -10244,6 +10385,7 @@ function bindAnalysisButtons() {
     state.analysis.comparisonLinks.push(
       createComparisonLink(state.analysis.comparisonLinks.length)
     );
+    persistAnalysisSetupDraft();
     renderAnalysisComparePanel();
     setStatus("analysis-comparison-status", "Comparison row added.");
     scheduleComparisonSetupAutosave({ immediate: true });
@@ -10410,6 +10552,7 @@ function bindAnalysisButtons() {
         comparisonTitle.textContent = resolveComparisonName(target.value, comparisonIndex >= 0 ? comparisonIndex : 0);
       }
     }
+    persistAnalysisSetupDraft();
     refreshAnalysisSetupValidationUi();
     scheduleComparisonSetupAutosave({ delayMs: 600 });
   });
@@ -10426,6 +10569,7 @@ function bindAnalysisButtons() {
     if (!state.analysis.comparisonLinks.length) {
       state.analysis.comparisonLinks = [createComparisonLink(0)];
     }
+    persistAnalysisSetupDraft();
     renderAnalysisComparePanel();
     setStatus("analysis-comparison-status", "Comparison removed.");
     scheduleComparisonSetupAutosave({ immediate: true });
@@ -11592,6 +11736,8 @@ function bindMonthlyActions() {
   });
   window.addEventListener("beforeunload", stopAllReportProgress);
   window.addEventListener("beforeunload", stopSingleReportProgress);
+  window.addEventListener("beforeunload", persistAnalysisSetupDraft);
+  window.addEventListener("pagehide", persistAnalysisSetupDraft);
 
 }
 
