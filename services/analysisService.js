@@ -1228,6 +1228,11 @@ function normalizePullRequest(rawPull = {}, index = 0) {
 
   return {
     id: rawPull.id || createPullId(),
+    savedReportId: String(rawPull.savedReportId || "").trim(),
+    reportName: String(rawPull.reportName || rawPull.report_name || "").trim(),
+    status: String(rawPull.status || "").trim(),
+    resultCount: Number(rawPull.resultCount || rawPull.result_count || 0),
+    rawRowCount: Number(rawPull.rawRowCount || 0),
     analysisLabel: String(rawPull.analysisLabel || autoAnalysisLabel).trim(),
     reportId: validateAnalysisReportId(
       rawPull.reportId,

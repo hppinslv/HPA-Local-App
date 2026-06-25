@@ -6033,8 +6033,7 @@ function isAnalysisReviewControlActive() {
   if (activeElement.matches("select, input, textarea")) {
     return true;
   }
-
-  return Boolean(activeElement.closest(".analysis-review-toolbar, .analysis-review-shell"));
+  return false;
 }
 
 function scheduleAnalysisComparisonReviewRender(delayMs = 0) {
@@ -6779,6 +6778,7 @@ function buildComparisonReviewReportMap() {
     const reportId = String(report?.id || "").trim();
     if (!reportId) return;
     addReportAlias(reportId, report);
+    addReportAlias(report?.pullId || report?.pull_id, report);
   });
 
   ensureArray(state.analysis.reportPulls).forEach((pull) => {
@@ -9603,6 +9603,11 @@ function buildAnalysisPayload(statusOverride) {
   state.analysis.runNotes = notes;
   const reportPulls = state.analysis.reportPulls.map((pull, index) => ({
     id: pull.id,
+    savedReportId: String(pull.savedReportId || "").trim(),
+    reportName: String(pull.reportName || "").trim(),
+    status: String(pull.status || "").trim(),
+    resultCount: Number(pull.resultCount || pull.result_count || 0),
+    rawRowCount: Number(pull.rawRowCount || 0),
     reportId: String(pull.reportId || "").trim(),
     analysisLabel: buildAutoAnalysisLabel(pull, index),
     keyCodes: Array.isArray(pull.keyCodes) ? pull.keyCodes : [],
@@ -9733,6 +9738,22 @@ async function loadAnalysisReports() {
   const rows = payload.reports || [];
   state.analysis.reportScfMetricCache = {};
   state.analysis.savedReports = rows;
+  const savedReportIdByPullId = new Map(
+    ensureArray(rows)
+      .map((report) => [String(report?.pullId || report?.pull_id || "").trim(), String(report?.id || "").trim()])
+      .filter(([pullId, reportId]) => pullId && reportId)
+  );
+  state.analysis.reportPulls = ensureArray(state.analysis.reportPulls).map((pull) => {
+    const pullId = String(pull?.id || "").trim();
+    const savedReportId = String(pull?.savedReportId || savedReportIdByPullId.get(pullId) || "").trim();
+    if (!savedReportId || savedReportId === String(pull?.savedReportId || "").trim()) {
+      return pull;
+    }
+    return {
+      ...pull,
+      savedReportId,
+    };
+  });
   const validReportIds = new Set(rows.map((report) => String(report.id || "").trim()).filter(Boolean));
   setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => validReportIds.has(id)));
   if (!tbody) {
