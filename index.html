@@ -504,15 +504,40 @@
           </header>
 
           <section class="panel analysis-home-panel" id="analysis-home-panel">
+            <section class="analysis-step-indicator-panel">
+              <div class="analysis-step-indicator">
+                <article class="analysis-step is-complete">
+                  <span class="analysis-step-number">1</span>
+                  <div>
+                    <strong>Pick Reports</strong>
+                    <p>Report pulls are ready to group.</p>
+                  </div>
+                </article>
+                <article class="analysis-step is-active">
+                  <span class="analysis-step-number">2</span>
+                  <div>
+                    <strong>Set Up Comparison</strong>
+                    <p>Choose which report pulls should be compared together.</p>
+                  </div>
+                </article>
+                <article class="analysis-step">
+                  <span class="analysis-step-number">3</span>
+                  <div>
+                    <strong>Review Analysis</strong>
+                    <p>Summarize, approve, and complete the review.</p>
+                  </div>
+                </article>
+              </div>
+            </section>
             <div class="panel-heading">
-              <h3>Build Analysis Comparisons</h3>
-              <p>Choose which reports should be compared together and which key-code list should be used.</p>
+              <h3>Step 2: Set Up Comparison</h3>
+              <p>Group the report pulls that belong together. Choose the reports that should be compared together for each comparison.</p>
             </div>
             <section class="analysis-setup-layout">
               <article class="panel analysis-setup-section">
                 <div class="panel-heading">
-                  <h3>Available Reports</h3>
-                  <p>This list comes from the reports created in the report setup flow.</p>
+                  <h3>Available Report Pulls</h3>
+                  <p>These are the report pulls created in Step 1. Only ready report pulls can be selected for a comparison.</p>
                 </div>
                 <p id="analysis-ready-report-status" class="inline-status"></p>
                 <div id="analysis-available-reports" class="analysis-available-reports">
@@ -525,19 +550,19 @@
 
               <article class="panel analysis-setup-section">
                 <div class="panel-heading">
-                  <h3>Comparisons</h3>
-                  <p>Select 2 to 5 reports for each named comparison.</p>
+                  <h3>Comparison Builder</h3>
+                  <p>Choose the reports that should be compared together. Each comparison can include 2 to 5 report pulls.</p>
                 </div>
                 <div id="analysis-comparison-links" class="analysis-pulls"></div>
                 <p id="analysis-comparison-validation-summary" class="inline-status"></p>
                 <div class="action-row analysis-toolbar-actions">
-                  <button id="add-comparison-link-button" class="secondary-button">Add Comparison</button>
-                  <button id="save-comparison-setup-button" class="secondary-button">Save Setup</button>
+                  <button id="add-comparison-link-button" class="secondary-button">Add Another Comparison</button>
+                  <button id="save-comparison-setup-button" class="secondary-button">Save Comparison Setup</button>
                 </div>
                 <p id="analysis-comparison-status" class="inline-status"></p>
                 <div class="action-row analysis-builder-footer">
-                  <button id="analysis-setup-back-button" class="secondary-button">Back</button>
-                  <button id="analysis-home-next-button" class="primary-button">Next</button>
+                  <button id="analysis-setup-back-button" class="secondary-button">Back to Pick Reports</button>
+                  <button id="analysis-home-next-button" class="primary-button">Continue to Review Analysis</button>
                 </div>
               </article>
             </section>
@@ -578,18 +603,43 @@
           <section id="analysis-workspace" class="analysis-workspace-panel is-hidden">
             <section class="panel analysis-subtabs-panel">
               <div class="action-row analysis-subtabs" id="analysis-subtabs">
-                <button class="secondary-button" data-analysis-workflow="run-reports">Run Reports</button>
-                <button class="secondary-button" data-analysis-workflow="set-up-comparisons">Set Up Comparisons</button>
-                <button class="secondary-button" data-analysis-workflow="run-analysis">Run Analysis</button>
+                <button class="secondary-button" data-analysis-workflow="run-reports">1. Pick Reports</button>
+                <button class="secondary-button" data-analysis-workflow="set-up-comparisons">2. Set Up Comparison</button>
+                <button class="secondary-button" data-analysis-workflow="run-analysis">3. Review Analysis</button>
               </div>
             </section>
 
             <div class="analysis-subtab-panel is-active" data-analysis-subtab-panel="runs">
               <section class="analysis-layout">
                 <article class="panel">
+                  <section class="analysis-step-indicator-panel">
+                    <div class="analysis-step-indicator">
+                      <article class="analysis-step is-active">
+                        <span class="analysis-step-number">1</span>
+                        <div>
+                          <strong>Pick Reports</strong>
+                          <p>Add report pulls, run them, then view or download the results.</p>
+                        </div>
+                      </article>
+                      <article class="analysis-step">
+                        <span class="analysis-step-number">2</span>
+                        <div>
+                          <strong>Set Up Comparison</strong>
+                          <p>Choose which report pulls belong together.</p>
+                        </div>
+                      </article>
+                      <article class="analysis-step">
+                        <span class="analysis-step-number">3</span>
+                        <div>
+                          <strong>Review Analysis</strong>
+                          <p>Summarize, approve, and complete the review.</p>
+                        </div>
+                      </article>
+                    </div>
+                  </section>
                   <div class="panel-heading">
-                    <h3>New Analysis Run</h3>
-                    <p>Use one or more report pulls. Each pull can have its own key codes, date logic, SCF filter, and notes.</p>
+                    <h3>Step 1: Pick Reports</h3>
+                    <p>Build the report pulls you want to use in this analysis. This is where you add reports, run them, and manage the saved report pulls before moving on.</p>
                   </div>
 
                   <div class="analysis-builder-toolbar">
@@ -606,9 +656,9 @@
                       <textarea id="analysis-run-notes" class="field-input multiline-input" placeholder="Optional run-level notes"></textarea>
                     </div>
                     <div class="action-row analysis-toolbar-actions">
-                      <button id="save-analysis-setup-button" class="secondary-button">Save Setup</button>
+                      <button id="save-analysis-setup-button" class="secondary-button">Save Report Setup</button>
                       <button id="add-analysis-pull-button" class="secondary-button">Add Report Pull</button>
-                      <button id="run-analysis-button" class="primary-button">Run Analysis</button>
+                      <button id="run-analysis-button" class="primary-button">Run Report Pulls</button>
                       <button id="back-to-analysis-home-button" class="secondary-button">
                         Back to Analysis Home
                       </button>
@@ -625,10 +675,9 @@
 
                   <article class="panel analysis-run-instructions">
                     <div class="panel-heading">
-                      <h3>Report Comparison Setup</h3>
+                      <h3>What Happens In This Step</h3>
                       <p>
-                        This is where you prepare the reports that will later be tied
-                        together in Compare.
+                        Pick and run the report pulls here first. Once the saved report pulls look right, continue to the comparison step.
                       </p>
                     </div>
                     <ul class="notes-list">
@@ -648,12 +697,12 @@
               <article class="panel">
                 <div class="panel-heading analysis-reports-heading">
                   <div>
-                    <h3>Analysis Reports</h3>
-                    <p>Each run keeps parameters, result counts, SCF actions, and export files.</p>
+                    <h3>Saved Report Pulls</h3>
+                    <p>View, download, rename, or remove the report pulls created in this step. When they look right, continue to comparison setup.</p>
                   </div>
                   <div class="action-row analysis-reports-heading-action">
                     <button id="analysis-delete-selected-button" class="secondary-button" disabled>Delete Selected</button>
-                    <button id="analysis-continue-button" class="primary-button">Continue</button>
+                    <button id="analysis-continue-button" class="primary-button">Continue to Set Up Comparison</button>
                   </div>
                 </div>
 
@@ -662,12 +711,12 @@
                     <thead>
                     <tr>
                       <th><input id="analysis-select-all-reports" type="checkbox" aria-label="Select all analysis reports" /></th>
-                      <th>Report</th>
+                      <th>Report Pull</th>
                       <th>Created</th>
                       <th>Status</th>
-                      <th>Results</th>
-                      <th>Export</th>
-                      <th>Action</th>
+                      <th>Rows</th>
+                      <th>Download</th>
+                      <th>Quick Actions</th>
                     </tr>
                   </thead>
                     <tbody id="analysis-history-body">
@@ -838,6 +887,35 @@
                         </tbody>
                       </table>
                     </div>
+
+                    <section class="panel mailing-list-history-panel">
+                      <div class="panel-heading">
+                        <h3>List History</h3>
+                        <p>Review how this list looked before and after each analysis or manual edit.</p>
+                      </div>
+                      <div class="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Changed</th>
+                              <th>Action</th>
+                              <th>Source</th>
+                              <th>Before</th>
+                              <th>After</th>
+                              <th>Preview</th>
+                            </tr>
+                          </thead>
+                          <tbody id="mailing-list-history-body">
+                            <tr>
+                              <td colspan="6" class="empty-cell">No history yet.</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div id="mailing-list-history-preview" class="comparison-results-block">
+                        <div class="empty-state-block">Choose a history snapshot to preview what the list looked like.</div>
+                      </div>
+                    </section>
                   </article>
                 </div>
               </article>

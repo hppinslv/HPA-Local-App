@@ -179,6 +179,7 @@ function resolveListItemState(entry = {}) {
 function createDefaultReferenceLists() {
   return {
     updatedAt: new Date().toISOString(),
+    history: [],
     lists: [
       {
         type: "dnm",
@@ -216,6 +217,108 @@ function createDefaultReferenceLists() {
       },
     ],
   };
+}
+
+const REFERENCE_LIST_HISTORY_LIMIT = 250;
+
+function normalizeReferenceListSnapshotItems(items = []) {
+  const seen = new Set();
+  return ensureArray(items)
+    .map((item) => {
+      const scf = normalizeScf(item?.scf);
+      if (!scf) {
+        return null;
+      }
+      return {
+        scf,
+        state: normalizeState(item?.state || item?.scope || ""),
+      };
+    })
+    .filter(Boolean)
+    .filter((item) => {
+      if (seen.has(item.scf)) {
+        return false;
+      }
+      seen.add(item.scf);
+      return true;
+    })
+    .sort((left, right) => left.scf.localeCompare(right.scf, undefined, { numeric: true }));
+}
+
+function normalizeReferenceListHistoryEntries(entries = []) {
+  return ensureArray(entries)
+    .map((entry) => ({
+      id: String(entry?.id || "").trim() || `ref_history_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      listType: String(entry?.listType || "").trim().toLowerCase(),
+      actionType: String(entry?.actionType || "").trim().toLowerCase() || "update",
+      actor: String(entry?.actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
+      sourceName: String(entry?.sourceName || "").trim(),
+      reason: String(entry?.reason || "").trim(),
+      changedAt: entry?.changedAt || entry?.changed_at || new Date().toISOString(),
+      beforeItems: normalizeReferenceListSnapshotItems(entry?.beforeItems || []),
+      afterItems: normalizeReferenceListSnapshotItems(entry?.afterItems || []),
+      metadata: entry?.metadata && typeof entry.metadata === "object" ? clone(entry.metadata) : {},
+    }))
+    .filter((entry) => ["dnm", "nhcl", "rfc", "candidate"].includes(entry.listType))
+    .slice(0, REFERENCE_LIST_HISTORY_LIMIT);
+}
+
+function normalizeReferenceListsPayload(payload = null) {
+  const fallback = createDefaultReferenceLists();
+  const source = payload && typeof payload === "object" ? payload : fallback;
+  const normalizedLists = ensureArray(source.lists).length
+    ? ensureArray(source.lists).map((list) => ({
+        ...list,
+        type: String(list?.type || "").trim().toLowerCase(),
+        name: String(list?.name || "").trim(),
+        sourceName: String(list?.sourceName || "").trim(),
+        items: ensureArray(list?.items),
+      }))
+    : fallback.lists;
+
+  return {
+    updatedAt: source.updatedAt || new Date().toISOString(),
+    history: normalizeReferenceListHistoryEntries(source.history || []),
+    lists: normalizedLists,
+  };
+}
+
+function buildReferenceListHistoryEntry({
+  listType,
+  actionType,
+  actor,
+  sourceName,
+  reason,
+  beforeItems,
+  afterItems,
+  changedAt,
+  metadata = {},
+}) {
+  return {
+    id: `ref_history_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    listType: String(listType || "").trim().toLowerCase(),
+    actionType: String(actionType || "").trim().toLowerCase() || "update",
+    actor: String(actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
+    sourceName: String(sourceName || "").trim(),
+    reason: String(reason || "").trim(),
+    changedAt: changedAt || new Date().toISOString(),
+    beforeItems: normalizeReferenceListSnapshotItems(beforeItems),
+    afterItems: normalizeReferenceListSnapshotItems(afterItems),
+    metadata: metadata && typeof metadata === "object" ? clone(metadata) : {},
+  };
+}
+
+function recordReferenceListHistory(payload, entry) {
+  const normalizedEntry = buildReferenceListHistoryEntry(entry);
+  const beforeSerialized = JSON.stringify(normalizedEntry.beforeItems);
+  const afterSerialized = JSON.stringify(normalizedEntry.afterItems);
+  if (beforeSerialized === afterSerialized) {
+    return;
+  }
+  payload.history = [
+    normalizedEntry,
+    ...ensureArray(payload.history),
+  ].slice(0, REFERENCE_LIST_HISTORY_LIMIT);
 }
 
 function readJson(filePath, fallbackValue) {
@@ -750,17 +853,17 @@ function writeAnalysisReports(reports) {
 function readReferenceLists() {
   if (!referenceListsCache) {
     if (fs.existsSync(SCF_REFERENCE_LISTS_PATH)) {
-      referenceListsCache = readJson(
+      referenceListsCache = normalizeReferenceListsPayload(readJson(
         SCF_REFERENCE_LISTS_PATH,
         createDefaultReferenceLists()
-      );
+      ));
     } else if (fs.existsSync(SCF_REFERENCE_LISTS_FALLBACK_PATH)) {
-      referenceListsCache = readJson(
+      referenceListsCache = normalizeReferenceListsPayload(readJson(
         SCF_REFERENCE_LISTS_FALLBACK_PATH,
         createDefaultReferenceLists()
-      );
+      ));
     } else {
-      referenceListsCache = clone(createDefaultReferenceLists());
+      referenceListsCache = normalizeReferenceListsPayload(createDefaultReferenceLists());
     }
   }
 
@@ -768,7 +871,7 @@ function readReferenceLists() {
 }
 
 function writeReferenceLists(payload) {
-  referenceListsCache = clone(payload);
+  referenceListsCache = normalizeReferenceListsPayload(clone(payload));
   const savedPrimary = persistJsonFile(SCF_REFERENCE_LISTS_PATH, referenceListsCache);
   if (!savedPrimary) {
     persistJsonFile(SCF_REFERENCE_LISTS_FALLBACK_PATH, referenceListsCache);
@@ -815,6 +918,33 @@ function normalizeCompletionReferenceListChanges(rawChanges = []) {
   return normalized;
 }
 
+function hasMeaningfulReferenceListChanges(rawChanges = []) {
+  const normalized = normalizeCompletionReferenceListChanges(rawChanges);
+  return ["nhcl", "rfc"].some((type) => {
+    const entry = normalized[type] || {};
+    return ensureArray(entry.added).length > 0 || ensureArray(entry.removed).length > 0;
+  });
+}
+
+function normalizeReferenceListSnapshot(snapshot = []) {
+  return ensureArray(snapshot)
+    .map((entry) => {
+      const type = String(entry?.type || "").trim().toLowerCase();
+      if (!["nhcl", "rfc", "dnm", "candidate"].includes(type)) {
+        return null;
+      }
+      const items = Array.isArray(entry?.items)
+        ? entry.items
+        : ensureArray(entry?.scfValues).map((scf) => ({ scf, state: "" }));
+      return {
+        type,
+        sourceName: String(entry?.sourceName || entry?.source || "").trim(),
+        items: normalizeReferenceListSnapshotItems(items),
+      };
+    })
+    .filter(Boolean);
+}
+
 function applyCompletionReferenceListChanges(rawChanges = [], actor, sourceName, reason) {
   const changes = normalizeCompletionReferenceListChanges(rawChanges);
   const payload = readReferenceLists();
@@ -831,6 +961,7 @@ function applyCompletionReferenceListChanges(rawChanges = [], actor, sourceName,
     if (!list) {
       return;
     }
+    const beforeItems = normalizeReferenceListSnapshotItems(list.items);
 
     const existingItems = ensureArray(list.items);
     const blockedScfs = new Set();
@@ -877,6 +1008,21 @@ function applyCompletionReferenceListChanges(rawChanges = [], actor, sourceName,
       });
       nextSet.add(scf);
       changed = true;
+    });
+
+    recordReferenceListHistory(payload, {
+      listType: type,
+      actionType: "analysis-complete",
+      actor: normalizedActor,
+      sourceName: normalizedSource,
+      reason: normalizedReason,
+      changedAt: now,
+      beforeItems,
+      afterItems: normalizeReferenceListSnapshotItems(list.items),
+      metadata: {
+        addedScfs: ensureArray(listChanges.added).map((entry) => entry.scf),
+        removedScfs: ensureArray(listChanges.removed).map((entry) => entry.scf),
+      },
     });
   });
 
@@ -1139,6 +1285,7 @@ function normalizeAnalysisRequest(body = {}) {
       body.referenceListSourceName || body.runName || "Analysis Run"
     ).trim(),
     referenceListReason: String(body.referenceListReason || "").trim(),
+    referenceListChangesAppliedAt: body.referenceListChangesAppliedAt || null,
   };
 }
 
@@ -1161,6 +1308,10 @@ function serializeAnalysisSetup(setup) {
     results: setup.results || null,
     referenceListsSnapshot: setup.referenceListsSnapshot || null,
     reference_lists_snapshot: setup.referenceListsSnapshot || null,
+    referenceListChanges: ensureArray(setup.referenceListChanges),
+    reference_list_changes: ensureArray(setup.referenceListChanges),
+    referenceListChangesAppliedAt: setup.referenceListChangesAppliedAt || null,
+    reference_list_changes_applied_at: setup.referenceListChangesAppliedAt || null,
   };
 }
 
@@ -2237,6 +2388,13 @@ function saveAnalysisSetup(body = {}) {
     notes: request.notes || "",
     results: request.results || existingSetup?.results || null,
     referenceListsSnapshot: request.referenceListsSnapshot || existingSetup?.referenceListsSnapshot || null,
+    referenceListChanges: ensureArray(request.referenceListChanges).length
+      ? clone(request.referenceListChanges)
+      : ensureArray(existingSetup?.referenceListChanges),
+    referenceListChangesAppliedAt:
+      request.referenceListChangesAppliedAt ||
+      existingSetup?.referenceListChangesAppliedAt ||
+      null,
   };
 
   if (existingSetup) {
@@ -2247,26 +2405,128 @@ function saveAnalysisSetup(body = {}) {
   }
 
   const normalizedStatus = String(request.status || setup.status || "").trim().toLowerCase();
-  if (normalizedStatus === "complete" && ensureArray(request.referenceListChanges).length) {
+  if (
+    normalizedStatus === "complete" &&
+    ensureArray(request.referenceListChanges).length &&
+    !setup.referenceListChangesAppliedAt
+  ) {
     applyCompletionReferenceListChanges(
       request.referenceListChanges,
       request.referenceListActor,
       request.referenceListSourceName || setup.runName,
       request.referenceListReason
     );
+    setup.referenceListChangesAppliedAt = timestamp;
   }
 
   writeAnalysisSetups(setups);
   return serializeAnalysisSetup(setup);
 }
 
-function deleteAnalysisSetup(setupId) {
+function restoreReferenceListsFromSnapshot(snapshot = [], options = {}) {
+  const normalizedSnapshot = normalizeReferenceListSnapshot(snapshot);
+  const payload = readReferenceLists();
+  const now = new Date().toISOString();
+  const actor = String(options.actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR;
+  const sourceName = String(options.sourceName || "analysis-delete-restore").trim() || "analysis-delete-restore";
+  const reason = String(options.reason || "").trim();
+  const restoredTypes = [];
+
+  ["nhcl", "rfc"].forEach((type) => {
+    const snapshotEntry = normalizedSnapshot.find((entry) => entry.type === type);
+    if (!snapshotEntry) {
+      return;
+    }
+    const list = payload.lists.find((entry) => entry.type === type);
+    if (!list) {
+      return;
+    }
+    const beforeItems = normalizeReferenceListSnapshotItems(list.items);
+    const afterItems = normalizeReferenceListSnapshotItems(snapshotEntry.items);
+    if (JSON.stringify(beforeItems) === JSON.stringify(afterItems)) {
+      return;
+    }
+    list.items = afterItems.map((entry) => ({
+      scf: entry.scf,
+      state: entry.state,
+      scope: entry.state,
+      addedAt: now,
+      addedBy: actor,
+      reason,
+      sourceAnalysis: sourceName,
+    }));
+    if (snapshotEntry.sourceName) {
+      list.sourceName = snapshotEntry.sourceName;
+    }
+    recordReferenceListHistory(payload, {
+      listType: type,
+      actionType: "restore-analysis-delete",
+      actor,
+      sourceName,
+      reason,
+      changedAt: now,
+      beforeItems,
+      afterItems,
+      metadata: options.metadata || {},
+    });
+    restoredTypes.push(type);
+  });
+
+  if (restoredTypes.length) {
+    payload.updatedAt = now;
+    writeReferenceLists(payload);
+  }
+
+  return restoredTypes;
+}
+
+function deleteAnalysisSetup(setupId, options = {}) {
+  const normalizedSetupId = String(setupId || "").trim();
   const setups = readAnalysisSetups();
-  const nextSetups = setups.filter((entry) => entry.id !== setupId);
-  if (nextSetups.length === setups.length) {
+  const setup = setups.find((entry) => entry.id === normalizedSetupId);
+  if (!setup) {
     throw new Error("Analysis setup not found.");
   }
-  writeAnalysisSetups(nextSetups);
+
+  const revertReferenceLists = options.revertReferenceLists === true;
+  const actor = String(options.actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR;
+  const relatedRuns = readAnalysisRuns().filter((entry) => String(entry.setupId || "").trim() === normalizedSetupId);
+  const relatedRunIds = new Set(relatedRuns.map((entry) => String(entry.id || "").trim()).filter(Boolean));
+  const reports = readAnalysisReports();
+  const relatedReports = reports.filter((entry) => relatedRunIds.has(String(entry.runId || "").trim()));
+
+  let revertedLists = [];
+  if (revertReferenceLists && hasMeaningfulReferenceListChanges(setup.referenceListChanges || [])) {
+    revertedLists = restoreReferenceListsFromSnapshot(setup.referenceListsSnapshot || [], {
+      actor,
+      sourceName: String(setup.runName || "analysis-delete-restore").trim() || "analysis-delete-restore",
+      reason: `Restored while deleting analysis ${String(setup.runName || setup.id || "").trim()}`,
+      metadata: {
+        setupId: normalizedSetupId,
+      },
+    });
+  }
+
+  relatedReports.forEach((report) => {
+    if (report?.export_file_path) {
+      try {
+        fs.unlinkSync(report.export_file_path);
+      } catch (error) {
+        // Ignore cleanup failures for already-removed exports.
+      }
+    }
+  });
+
+  writeAnalysisReports(reports.filter((entry) => !relatedRunIds.has(String(entry.runId || "").trim())));
+  writeAnalysisRuns(readAnalysisRuns().filter((entry) => String(entry.setupId || "").trim() !== normalizedSetupId));
+  writeAnalysisSetups(setups.filter((entry) => entry.id !== normalizedSetupId));
+
+  return {
+    deletedSetupId: normalizedSetupId,
+    deletedRunIds: Array.from(relatedRunIds),
+    deletedReportIds: relatedReports.map((entry) => String(entry.id || "").trim()).filter(Boolean),
+    revertedLists,
+  };
 }
 
 function getAnalysisRun(runId) {
@@ -2884,6 +3144,7 @@ function listReferenceLists() {
     updatedAt: payload.updatedAt,
     count: ensureArray(list.items).length,
     items: list.items,
+    history: ensureArray(payload.history).filter((entry) => entry.listType === list.type),
     ...(list.type === "dnm"
       ? {
           dnmHeader: DNM_CATALOG_HEADER,
@@ -2912,6 +3173,7 @@ function getReferenceListByType(listType) {
     updatedAt: payload.updatedAt,
     count: ensureArray(list.items).length,
     items: ensureArray(list.items),
+    history: ensureArray(payload.history).filter((entry) => entry.listType === normalizedType),
     ...(normalizedType === "dnm"
       ? {
           dnmHeader: DNM_CATALOG_HEADER,
@@ -3025,6 +3287,7 @@ function addReferenceListItems({
   if (!list) {
     throw new Error(`Reference list not found: ${normalizedType}`);
   }
+  const beforeItems = normalizeReferenceListSnapshotItems(list.items);
 
   const existing = new Set(ensureArray(list.items).map((entry) => entry.scf));
   const added = [];
@@ -3051,7 +3314,22 @@ function addReferenceListItems({
   });
 
   list.sourceName = String(sourceName || list.sourceName || "Managed in app").trim() || "Managed in app";
-  payload.updatedAt = new Date().toISOString();
+  const changedAt = new Date().toISOString();
+  payload.updatedAt = changedAt;
+  recordReferenceListHistory(payload, {
+    listType: normalizedType,
+    actionType: "manual-add",
+    actor: String(actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
+    sourceName: String(sourceName || list.sourceName || "manual-list-manager").trim() || "manual-list-manager",
+    reason: String(reason || "").trim(),
+    changedAt,
+    beforeItems,
+    afterItems: normalizeReferenceListSnapshotItems(list.items),
+    metadata: {
+      addedScfs: added,
+      skippedCount: parsedScfs.length - added.length,
+    },
+  });
   writeReferenceLists(payload);
 
   return {
@@ -3077,6 +3355,7 @@ function removeReferenceListItem(listType, scf) {
   if (!list) {
     throw new Error(`Reference list not found: ${normalizedType}`);
   }
+  const beforeItems = normalizeReferenceListSnapshotItems(list.items);
 
   const nextItems = ensureArray(list.items).filter((entry) => entry.scf !== normalizedScf);
   if (nextItems.length === ensureArray(list.items).length) {
@@ -3084,7 +3363,21 @@ function removeReferenceListItem(listType, scf) {
   }
 
   list.items = nextItems;
-  payload.updatedAt = new Date().toISOString();
+  const changedAt = new Date().toISOString();
+  payload.updatedAt = changedAt;
+  recordReferenceListHistory(payload, {
+    listType: normalizedType,
+    actionType: "manual-remove",
+    actor: DEFAULT_ACTOR,
+    sourceName: "manual-list-manager",
+    reason: "",
+    changedAt,
+    beforeItems,
+    afterItems: normalizeReferenceListSnapshotItems(list.items),
+    metadata: {
+      removedScfs: [normalizedScf],
+    },
+  });
   writeReferenceLists(payload);
 
   return getReferenceListByType(normalizedType);
@@ -3112,6 +3405,7 @@ function addDnmStateGroup({
       (entry) => entry.stateKey === group.key || normalizeScopeForDnm(entry.scope)?.key === group.key
     );
     if (!existingMarker) {
+      const beforeItems = normalizeReferenceListSnapshotItems(list.items);
       list.items.unshift({
         scf: "",
         scope: group.scope,
@@ -3121,7 +3415,21 @@ function addDnmStateGroup({
         reason: String(reason || "").trim(),
         sourceAnalysis: String(sourceName || DNM_CATALOG_HEADER).trim() || DNM_CATALOG_HEADER,
       });
-      payload.updatedAt = new Date().toISOString();
+      const changedAt = new Date().toISOString();
+      payload.updatedAt = changedAt;
+      recordReferenceListHistory(payload, {
+        listType: "dnm",
+        actionType: "manual-add-state",
+        actor: String(actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
+        sourceName: String(sourceName || DNM_CATALOG_HEADER).trim() || DNM_CATALOG_HEADER,
+        reason: String(reason || "").trim(),
+        changedAt,
+        beforeItems,
+        afterItems: normalizeReferenceListSnapshotItems(list.items),
+        metadata: {
+          stateKey: group.key,
+        },
+      });
       writeReferenceLists(payload);
     }
 
@@ -3153,6 +3461,7 @@ function removeDnmStateGroup(stateKey) {
   if (!list) {
     throw new Error("Reference list not found: dnm");
   }
+  const beforeItems = normalizeReferenceListSnapshotItems(list.items);
 
   const nextItems = ensureArray(list.items).filter((entry) => {
     const normalizedScf = normalizeScf(entry.scf);
@@ -3171,7 +3480,21 @@ function removeDnmStateGroup(stateKey) {
   }
 
   list.items = nextItems;
-  payload.updatedAt = new Date().toISOString();
+  const changedAt = new Date().toISOString();
+  payload.updatedAt = changedAt;
+  recordReferenceListHistory(payload, {
+    listType: "dnm",
+    actionType: "manual-remove-state",
+    actor: DEFAULT_ACTOR,
+    sourceName: "manual-list-manager",
+    reason: "",
+    changedAt,
+    beforeItems,
+    afterItems: normalizeReferenceListSnapshotItems(list.items),
+    metadata: {
+      stateKey: group.key,
+    },
+  });
   writeReferenceLists(payload);
   return getReferenceListByType("dnm");
 }
@@ -3553,6 +3876,7 @@ function importReferenceList({ listType, fileName, base64Content, actor = DEFAUL
   if (!list) {
     throw new Error(`Reference list not found: ${normalizedType}`);
   }
+  const beforeItems = normalizeReferenceListSnapshotItems(list.items);
 
   list.sourceName = fileName;
   const normalizedEntries = [];
@@ -3589,7 +3913,23 @@ function importReferenceList({ listType, fileName, base64Content, actor = DEFAUL
     });
   });
   list.items = normalizedEntries;
-  payload.updatedAt = new Date().toISOString();
+  const changedAt = new Date().toISOString();
+  payload.updatedAt = changedAt;
+  recordReferenceListHistory(payload, {
+    listType: normalizedType,
+    actionType: "import-replace",
+    actor: String(actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
+    sourceName: String(fileName || "").trim(),
+    reason: `Imported from ${fileName}`,
+    changedAt,
+    beforeItems,
+    afterItems: normalizeReferenceListSnapshotItems(list.items),
+    metadata: {
+      fileName,
+      skippedDuplicateCount,
+      skippedDoNotMailCount,
+    },
+  });
   writeReferenceLists(payload);
 
   const addedCount = normalizedEntries.length;

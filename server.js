@@ -1069,6 +1069,28 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  const analysisSetupDeleteMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)\/delete$/);
+  if (analysisSetupDeleteMatch && request.method === "POST") {
+    collectRequestBody(request)
+      .then((body) => {
+        const result = deleteAnalysisSetup(analysisSetupDeleteMatch[1], {
+          revertReferenceLists: body.revertReferenceLists === true,
+          actor: body.actor,
+        });
+        sendJson(response, 200, {
+          result,
+          setups: listAnalysisSetups(),
+          reports: listAnalysisReports(),
+          runs: listAnalysisRuns(),
+          lists: listReferenceLists(),
+        });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to delete analysis setup." });
+      });
+    return;
+  }
+
   if (ccPaymentImportSessionMatch && request.method === "GET") {
     try {
       const session = getCcPaymentImportSession(ccPaymentImportSessionMatch[1]);

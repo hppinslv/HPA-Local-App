@@ -110,6 +110,7 @@ const state = {
       x: 16,
       y: 16,
     },
+    mailingListHistoryPreview: null,
   },
   monthly: {
     reportType: "transaction-summary",
@@ -2089,6 +2090,123 @@ function renderMailingListRows(list) {
   }
 }
 
+function getMailingListHistoryActionLabel(actionType) {
+  const normalized = String(actionType || "").trim().toLowerCase();
+  const labels = {
+    "analysis-complete": "Analysis Complete",
+    "import-replace": "Import Replace",
+    "manual-add": "Manual Add",
+    "manual-remove": "Manual Remove",
+    "manual-add-state": "Add State",
+    "manual-remove-state": "Remove State",
+    "restore-analysis-delete": "Restore on Delete",
+  };
+  return labels[normalized] || normalized || "Update";
+}
+
+function buildMailingListPreviewMarkup(listType, items = []) {
+  const normalizedType = String(listType || "").trim().toLowerCase();
+  const normalizedItems = Array.isArray(items) ? items : [];
+  if (!normalizedItems.length) {
+    return '<div class="empty-state-block">No items in this snapshot.</div>';
+  }
+
+  if (normalizedType === "dnm") {
+    const groups = normalizedItems
+      .reduce((map, entry) => {
+        const state = String(entry.state || "").trim() || "Unknown";
+        if (!map.has(state)) {
+          map.set(state, []);
+        }
+        map.get(state).push(normalizeScf(entry.scf));
+        return map;
+      }, new Map());
+    return `
+      <div class="analysis-review-summary-list analysis-review-summary-list-rows">
+        ${Array.from(groups.entries())
+          .sort((left, right) => left[0].localeCompare(right[0]))
+          .map(([state, scfs]) => `
+            <div class="analysis-review-summary-row-item">
+              <strong>${esc(state)}</strong> <span>${esc(scfs.filter(Boolean).join(", "))}</span>
+            </div>
+          `)
+          .join("")}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="analysis-review-summary-list analysis-review-summary-list-rows">
+      ${normalizedItems
+        .slice()
+        .sort((left, right) => String(left.scf || "").localeCompare(String(right.scf || ""), undefined, { numeric: true }))
+        .map((entry) => `
+          <div class="analysis-review-summary-row-item">
+            <strong>${esc(entry.scf)}</strong>${entry.state ? ` <span>${esc(entry.state)}</span>` : ""}
+          </div>
+        `)
+        .join("")}
+    </div>
+  `;
+}
+
+function renderMailingListHistoryPreview(listType, preview = null) {
+  const container = el("mailing-list-history-preview");
+  if (!container) {
+    return;
+  }
+  if (!preview || !preview.snapshotType) {
+    container.innerHTML = '<div class="empty-state-block">Choose a history snapshot to preview what the list looked like.</div>';
+    return;
+  }
+
+  const items = Array.isArray(preview.items) ? preview.items : [];
+  container.innerHTML = `
+    <article class="panel analysis-review-summary-card">
+      <h4>${esc(preview.snapshotType === "before" ? "Before Snapshot" : "After Snapshot")} · ${esc(preview.changedAt ? formatDate(preview.changedAt) : "")}</h4>
+      <p>${esc(getMailingListHistoryActionLabel(preview.actionType))}${preview.sourceName ? ` · ${esc(preview.sourceName)}` : ""}</p>
+      ${buildMailingListPreviewMarkup(listType, items)}
+    </article>
+  `;
+}
+
+function renderMailingListHistory(list) {
+  const tbody = el("mailing-list-history-body");
+  if (!tbody) {
+    return;
+  }
+  const history = Array.isArray(list?.history) ? list.history : [];
+  if (!history.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-cell">No history yet.</td></tr>';
+    renderMailingListHistoryPreview(list?.type || "", null);
+    return;
+  }
+
+  tbody.innerHTML = history
+    .slice(0, 20)
+    .map((entry) => `
+      <tr>
+        <td>${esc(formatDate(entry.changedAt || entry.changed_at || ""))}</td>
+        <td>${esc(getMailingListHistoryActionLabel(entry.actionType))}</td>
+        <td>${esc(entry.sourceName || entry.actor || "-")}</td>
+        <td>${Number((entry.beforeItems || []).length || 0)}</td>
+        <td>${Number((entry.afterItems || []).length || 0)}</td>
+        <td class="action-row">
+          <button class="secondary-button table-action-button" data-mailing-history-preview="before" data-history-id="${esc(entry.id || "")}">Preview Before</button>
+          <button class="secondary-button table-action-button" data-mailing-history-preview="after" data-history-id="${esc(entry.id || "")}">Preview After</button>
+        </td>
+      </tr>
+    `)
+    .join("");
+
+  const preview = state.analysis.mailingListHistoryPreview;
+  if (preview && history.some((entry) => entry.id === preview.historyId)) {
+    renderMailingListHistoryPreview(list?.type || "", preview);
+    return;
+  }
+  renderMailingListHistoryPreview(list?.type || "", null);
+}
+
 async function removeDnmState(stateKey) {
   const key = String(stateKey || "").trim();
   if (!key) return;
@@ -2108,6 +2226,7 @@ function renderMailingList(list) {
   renderMailingListMeta(list);
   renderDnmStateSelect(list);
   renderMailingListRows(list);
+  renderMailingListHistory(list);
 }
 
 async function loadAndRenderMailingList(type) {
@@ -2116,6 +2235,7 @@ async function loadAndRenderMailingList(type) {
   try {
     const payload = await apiRequest(`/api/analysis/reference-lists/${normalizedType}`);
     state.analysis.mailingListType = normalizedType;
+    state.analysis.mailingListHistoryPreview = null;
     state.referenceLists = state.referenceLists.filter((item) => item.type !== normalizedType);
     state.referenceLists.push(payload.list);
     renderMailingList(payload.list);
@@ -5094,18 +5214,47 @@ function renderComparisonReviewPanelShell() {
   const detachedWindow = isAnalysisReviewPopupWindow();
 
   panel.innerHTML = `
+    <section class="analysis-step-indicator-panel">
+      <div class="analysis-step-indicator">
+        <article class="analysis-step is-complete">
+          <span class="analysis-step-number">1</span>
+          <div>
+            <strong>Pick Reports</strong>
+            <p>Report pulls have already been created.</p>
+          </div>
+        </article>
+        <article class="analysis-step is-complete">
+          <span class="analysis-step-number">2</span>
+          <div>
+            <strong>Set Up Comparison</strong>
+            <p>Comparison groups are already chosen.</p>
+          </div>
+        </article>
+        <article class="analysis-step is-active">
+          <span class="analysis-step-number">3</span>
+          <div>
+            <strong>Review Analysis</strong>
+            <p>Review, summarize, approve, and complete the analysis.</p>
+          </div>
+        </article>
+      </div>
+    </section>
     <div class="panel-heading">
-      <h3>Comparison Review</h3>
+      <h3>Step 3: Review Analysis</h3>
       <p>${detachedWindow
         ? "This detached review window can be moved anywhere, including a different monitor."
-        : "Choose a comparison, pick the primary report, and work through SCFs without changing the live lists."}</p>
+        : "This is the final review page. Choose a comparison, pick the primary report, work through the SCFs, summarize the results, then approve before completing."}</p>
     </div>
-    <div class="action-row analysis-toolbar-actions">
-      <button id="back-to-comparison-setup-button" class="secondary-button">Back</button>
-      <button id="back-to-analysis-runs-from-review-button" class="secondary-button">Back to Report Setup</button>
+    <div class="action-row analysis-toolbar-actions analysis-review-action-bar">
+      <div class="analysis-review-action-copy">
+        <strong>Final step</strong>
+        <p>Approval is required before Complete Analysis becomes available.</p>
+      </div>
+      <button id="back-to-comparison-setup-button" class="secondary-button">Back to Set Up Comparison</button>
+      <button id="back-to-analysis-runs-from-review-button" class="secondary-button">Back to Pick Reports</button>
       <button id="open-comparison-review-popup-button" class="secondary-button"${detachedWindow ? " disabled" : ""}>${detachedWindow ? "Opened In New Window" : "Open In New Window"}</button>
-      <button id="summarize-comparison-review-button" class="secondary-button">Summarize</button>
-      <button id="complete-comparison-review-button" class="primary-button" disabled>Complete</button>
+      <button id="summarize-comparison-review-button" class="secondary-button">Summarize Review</button>
+      <button id="complete-comparison-review-button" class="primary-button" disabled>Complete Analysis</button>
       <button id="exit-comparison-review-button" class="secondary-button${detachedWindow ? "" : " is-hidden"}">${detachedWindow ? "Close Window" : "Exit"}</button>
     </div>
     <p id="analysis-comparison-selection-status" class="inline-status">Comparison review needs a valid page setup.</p>
@@ -5273,50 +5422,6 @@ async function completeComparisonReview() {
     const changes = ["nhcl", "rfc"].map((type) => buildListDeltasForCompletion(type));
     const totalAdds = changes.reduce((count, change) => count + change.added.length, 0);
     const totalRemoves = changes.reduce((count, change) => count + change.removed.length, 0);
-
-    for (const change of changes) {
-      for (const removed of change.removed) {
-        const scf = normalizeScf(removed?.scf);
-        if (!scf) {
-          continue;
-        }
-        try {
-          await apiRequest(`/api/analysis/reference-lists/${encodeURIComponent(change.type)}/items/${encodeURIComponent(scf)}`, {
-            method: "DELETE",
-          });
-        } catch (error) {
-          const missingRegex = /was not found/i;
-          if (!missingRegex.test(error.message || "")) {
-            throw error;
-          }
-        }
-      }
-    }
-
-    for (const change of changes) {
-      if (!change.added.length) {
-        continue;
-      }
-      await apiRequest(`/api/analysis/reference-lists/${encodeURIComponent(change.type)}/items`, {
-        method: "POST",
-        body: {
-          entries: change.added.map((entry) => ({
-            scf: normalizeScf(entry.scf),
-            state: String(entry.state || "").trim(),
-          })),
-          actor: "Local User",
-          sourceName: state.analysis.runName || getDefaultAnalysisName(),
-          state: "",
-          reason: state.analysis.reviewSummaryNotes || `Complete comparison review for run ${state.analysis.currentRunId || "local-session"}`,
-          scfs: [],
-        },
-      });
-    }
-
-    await loadReferenceLists();
-    state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
-    state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
-    state.analysis.reviewExcludedScfs = {};
     setComparisonReviewSummary(actualSummary);
     state.analysis.reviewSummaryMode = "summary";
     state.analysis.reviewSummaryApproved = true;
@@ -5345,12 +5450,16 @@ async function completeComparisonReview() {
             },
           },
         },
-        referenceListsSnapshot: cloneData(state.referenceLists || []),
+        referenceListsSnapshot: cloneData(state.analysis.reviewBaselineLists || state.referenceLists || []),
       },
     });
     const savedSetup = savedSetupResponse.setup || {};
     state.analysis.currentSetupId = savedSetup.id || state.analysis.currentSetupId;
     persistAnalysisSetupId(state.analysis.currentSetupId);
+    await loadReferenceLists();
+    state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
+    state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
+    state.analysis.reviewExcludedScfs = {};
     syncAnalysisMeta({
       runName: savedSetup.run_name || savedSetup.runName || state.analysis.runName || getDefaultAnalysisName(),
       notes: savedSetup.notes || state.analysis.runNotes || "",
@@ -7197,14 +7306,17 @@ function renderAnalysisSetupHome() {
       const selectedIds = pruneComparisonSelectedReportIds(link);
       logComparisonDebug("render comparison picker", link.id, selectedIds);
       const comparisonName = resolveComparisonName(link.comparisonName || "", index);
+      const readyReportCount = validation.reports.filter((report) => report.status === "ready").length;
       const reportCards = validation.reports.length
         ? validation.reports
             .map((report) => {
               const checked = selectedIds.includes(report.id) ? " checked" : "";
               const disabled = report.status !== "ready" && !selectedIds.includes(report.id) ? " disabled" : "";
-              const optionClass = report.status !== "ready" && !selectedIds.includes(report.id)
-                ? "analysis-report-picker-option is-disabled"
-                : "analysis-report-picker-option";
+              const optionClass = [
+                "analysis-report-picker-option",
+                selectedIds.includes(report.id) ? "is-selected" : "",
+                report.status !== "ready" && !selectedIds.includes(report.id) ? "is-disabled" : "",
+              ].filter(Boolean).join(" ");
               return `
                 <div
                   class="${optionClass} comparison-report-option"
@@ -7244,6 +7356,7 @@ function renderAnalysisSetupHome() {
             <div>
               <span class="field-label">Comparison ${index + 1}</span>
               <strong>${esc(comparisonName)}</strong>
+              <p class="analysis-comparison-helper">Choose the reports that should be compared together.</p>
             </div>
             <button class="secondary-button table-action-button" data-action="remove-comparison-link" data-comparison-id="${esc(link.id)}"${state.analysis.comparisonLinks.length === 1 ? " disabled" : ""}>Remove Comparison</button>
           </div>
@@ -7253,9 +7366,14 @@ function renderAnalysisSetupHome() {
               <input class="field-input" data-comparison-field="comparisonName" data-comparison-id="${esc(link.id)}" type="text" value="${esc(comparisonName)}" placeholder="Example: NHCL October vs November" />
             </div>
             <div class="field-stack analysis-comparison-wide">
-              <span class="field-label">Reports</span>
-              <p class="analysis-selection-count">${selectedIds.length} of 5 reports selected</p>
-              <p class="analysis-comparison-helper">Select 2 to 5 reports for this comparison.</p>
+              <div class="analysis-comparison-selection-head">
+                <div>
+                  <span class="field-label">Reports In This Comparison</span>
+                  <p class="analysis-selection-count">${selectedIds.length} of 5 selected</p>
+                </div>
+                <p class="analysis-selection-count">${readyReportCount} ready report pull${readyReportCount === 1 ? "" : "s"} available</p>
+              </div>
+              <p class="analysis-comparison-helper">Select 2 to 5 reports for this comparison. Only ready report pulls can be added unless they are already selected.</p>
               <div class="analysis-report-picker">
                 ${reportCards}
               </div>
@@ -7548,7 +7666,7 @@ function renderAnalysisComparisonSummaryView() {
   const approved = Boolean(state.analysis.reviewSummaryApproved);
   const runNotes = String(summary.runNotes || state.analysis.runNotes || "").trim();
   const runNotesMarkup = runNotes
-    ? `<article class="panel">
+    ? `<article class="panel analysis-review-summary-notes-card">
         <h4>Run Notes</h4>
         <p>${esc(runNotes).replace(/\n/g, "<br />")}</p>
       </article>`
@@ -7559,14 +7677,14 @@ function renderAnalysisComparisonSummaryView() {
       <article class="panel analysis-summary-heading">
         <div class="analysis-review-toolbar">
           <div>
-            <h3>Comparison Review Summary</h3>
-            <p>Review what will be added and removed for NHCL and RFC before completing.</p>
+            <h3>Final Review Summary</h3>
+            <p>Review what will be added and removed for NHCL and RFC, confirm the notes, then approve before completing.</p>
           </div>
           <button id="analysis-review-summary-back-button" class="secondary-button">Back to Review</button>
         </div>
       </article>
 
-      <article class="panel">
+      <article class="panel analysis-review-summary-totals-card">
         <div class="analysis-review-summary-counts">
           <span>NHCL Added: ${Number(summary.summary?.nhclAdded || 0)} </span>
           <span>NHCL Removed: ${Number(summary.summary?.nhclRemoved || 0)} </span>
@@ -7578,9 +7696,9 @@ function renderAnalysisComparisonSummaryView() {
 
       ${runNotesMarkup}
 
-      <article class="panel">
-        <h4>Approval</h4>
-        <p>Complete this comparison only when you confirm the review summary is correct.</p>
+      <article class="panel analysis-review-finalize-card">
+        <h4>Approval Required Before Completion</h4>
+        <p>Complete this analysis only when you confirm the review summary is correct. The Complete Analysis button will stay disabled until this box is checked.</p>
         <label class="analysis-review-summary-approve">
           <input id="analysis-review-summary-approved" type="checkbox" ${approved ? "checked" : ""} />
           I approve this summary and want to move to completed review.
@@ -7662,7 +7780,7 @@ function renderAnalysisComparisonReviewPanel() {
         : "Run a summary first and clear blocked Do Not Mail additions before completing.";
     }
     const summarizeButton = el("summarize-comparison-review-button");
-    if (summarizeButton) summarizeButton.textContent = "Resummarize";
+    if (summarizeButton) summarizeButton.textContent = "Resummarize Review";
     return;
   }
   const completeButton = el("complete-comparison-review-button");
@@ -9120,7 +9238,13 @@ async function loadAnalysisReports() {
       ? `<input class="field-input" data-edit-report-title="${esc(report.id)}" type="text" value="${esc(
           state.analysis.editingReportTitle || getAnalysisReportDisplayName(report)
         )}" />`
-      : esc(getAnalysisReportDisplayName(report));
+      : `<div class="analysis-report-row-title">
+           <strong>${esc(getAnalysisReportDisplayName(report))}</strong>
+           <span>${esc(report.report_id || report.reportId || report.id || "")}</span>
+         </div>`;
+    const downloadMarkup = report.download_url || report.downloadUrl
+      ? `<a class="secondary-button table-action-button analysis-table-link-button" href="${esc(report.download_url || report.downloadUrl)}" download>Download</a>`
+      : '<span class="analysis-report-download-empty">No file</span>';
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input type="checkbox" data-select-report="${esc(report.id)}" aria-label="Select ${esc(getAnalysisReportDisplayName(report))}"${isSelected ? " checked" : ""} /></td>
@@ -9128,13 +9252,13 @@ async function loadAnalysisReports() {
       <td>${formatDate(report.created_at || report.createdAt)}</td>
       <td>${esc(report.status || "idle")}</td>
       <td>${Number(report.result_count || report.resultCount || 0)}</td>
-      <td>${report.download_url || report.downloadUrl ? `<a href="${esc(report.download_url || report.downloadUrl)}" download>Download</a>` : "No file"}</td>
-      <td>
+      <td>${downloadMarkup}</td>
+      <td class="action-row">
+        <button class="secondary-button table-action-button" data-view-report="${esc(report.id)}">View</button>
         ${isEditing
           ? `<button class="secondary-button table-action-button" data-save-report-title="${esc(report.id)}">Save</button>
              <button class="secondary-button table-action-button" data-cancel-report-title="${esc(report.id)}">Cancel</button>`
           : `<button class="secondary-button table-action-button" data-edit-report="${esc(report.id)}">Edit Title</button>`}
-        <button class="secondary-button table-action-button" data-view-report="${esc(report.id)}">View</button>
         <button class="secondary-button table-action-button" data-delete-report="${esc(report.id)}">Delete</button>
       </td>
     `;
@@ -9347,7 +9471,12 @@ async function loadAnalysisSetups() {
       <td>${formatDate(entry.updatedAt)}</td>
       <td>${formatDate(entry.completedAt)}</td>
       <td>${Number(entry.reportPullCount || 0)}</td>
-      <td><button class="secondary-button" data-open-analysis-entry="${esc(entry.id)}" data-entry-type="${esc(entry.sourceType)}">Open</button></td>
+      <td class="action-row">
+        <button class="secondary-button" data-open-analysis-entry="${esc(entry.id)}" data-entry-type="${esc(entry.sourceType)}">Open</button>
+        ${entry.sourceType === "setup"
+          ? `<button class="secondary-button" data-delete-analysis-entry="${esc(entry.id)}">Delete</button>`
+          : ""}
+      </td>
     `;
     tbody.appendChild(tr);
   });
@@ -9372,6 +9501,76 @@ async function loadAnalysisSetups() {
       setStatus("analysis-setup-status", `Loaded analysis ${defaultName}.`);
     });
   });
+
+  all("[data-delete-analysis-entry]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const setupId = button.getAttribute("data-delete-analysis-entry");
+      if (!setupId) return;
+      await deleteAnalysisSetupEntry(setupId);
+    });
+  });
+}
+
+async function deleteAnalysisSetupEntry(setupId) {
+  const normalizedSetupId = String(setupId || "").trim();
+  if (!normalizedSetupId) {
+    return;
+  }
+
+  const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(normalizedSetupId)}`);
+  const setup = response.setup || {};
+  const setupName = String(setup.run_name || setup.runName || "this analysis").trim() || "this analysis";
+  const hasListChanges = Array.isArray(setup.referenceListChanges || setup.reference_list_changes)
+    && (setup.referenceListChanges || setup.reference_list_changes).some((change) =>
+      (Array.isArray(change?.added) && change.added.length > 0)
+      || (Array.isArray(change?.removed) && change.removed.length > 0)
+    );
+  const isComplete = String(setup.status || "").trim().toLowerCase() === "complete";
+
+  const confirmedDelete = confirm(`Delete ${setupName}?`);
+  if (!confirmedDelete) {
+    return;
+  }
+
+  let revertReferenceLists = false;
+  if (isComplete && hasListChanges) {
+    revertReferenceLists = confirm(
+      `${setupName} changed the NHCL and/or RFC mailing lists.\n\nClick OK to revert those mailing lists back to how they were before this analysis.\nClick Cancel to keep the current mailing-list changes and only delete the analysis.`
+    );
+  }
+
+  setStatus("analysis-setup-status", `Deleting ${setupName}...`);
+  const result = await apiRequest(`/api/analysis/setups/${encodeURIComponent(normalizedSetupId)}/delete`, {
+    method: "POST",
+    body: {
+      revertReferenceLists,
+      actor: "Local User",
+    },
+  });
+
+  if (state.analysis.currentSetupId === normalizedSetupId) {
+    persistAnalysisSetupId("");
+    resetAnalysisWorkspace(false);
+    state.analysis.currentSetupId = "";
+    state.analysis.currentRunId = "";
+    state.analysis.currentReportId = "";
+    state.analysis.reviewSummary = null;
+    state.analysis.reviewSummaryMode = "review";
+    state.analysis.reviewSummaryNotes = "";
+    state.analysis.reviewSummaryApproved = false;
+  }
+
+  state.analysis.savedReports = Array.isArray(result.reports) ? result.reports : state.analysis.savedReports;
+  if (Array.isArray(result.lists)) {
+    state.referenceLists = result.lists;
+  }
+  await loadAnalysisSetups();
+  setStatus(
+    "analysis-setup-status",
+    revertReferenceLists && Array.isArray(result?.result?.revertedLists) && result.result.revertedLists.length
+      ? `${setupName} deleted and reverted ${result.result.revertedLists.join(", ").toUpperCase()} mailing lists.`
+      : `${setupName} deleted.`
+  );
 }
 
 async function loadAnalysisSetupView() {
@@ -11133,6 +11332,31 @@ function bindMailingListEvents() {
     if (target.getAttribute("data-action") === "delete-list-item") {
       removeMailingListItem(target.getAttribute("data-scf"));
     }
+  });
+  el("mailing-list-history-body")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const snapshotType = target.getAttribute("data-mailing-history-preview");
+    const historyId = target.getAttribute("data-history-id");
+    if (!snapshotType || !historyId) {
+      return;
+    }
+    const list = getReferenceListFromCache(state.analysis.mailingListType) || {};
+    const historyEntry = Array.isArray(list.history)
+      ? list.history.find((entry) => String(entry.id || "").trim() === String(historyId).trim())
+      : null;
+    if (!historyEntry) {
+      return;
+    }
+    state.analysis.mailingListHistoryPreview = {
+      historyId,
+      snapshotType,
+      actionType: historyEntry.actionType,
+      sourceName: historyEntry.sourceName || historyEntry.actor || "",
+      changedAt: historyEntry.changedAt || historyEntry.changed_at || "",
+      items: snapshotType === "before" ? historyEntry.beforeItems || [] : historyEntry.afterItems || [],
+    };
+    renderMailingListHistoryPreview(state.analysis.mailingListType, state.analysis.mailingListHistoryPreview);
   });
 }
 

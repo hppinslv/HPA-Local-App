@@ -292,6 +292,58 @@ textarea {
   align-items: start;
 }
 
+.analysis-step-indicator-panel {
+  margin-bottom: 24px;
+}
+
+.analysis-step-indicator {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.analysis-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  border: 1px solid rgba(221, 211, 194, 0.95);
+  border-radius: 18px;
+  background: rgba(248, 244, 237, 0.72);
+}
+
+.analysis-step.is-active {
+  border-color: rgba(13, 92, 99, 0.35);
+  background: rgba(216, 236, 238, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(13, 92, 99, 0.08);
+}
+
+.analysis-step.is-complete {
+  border-color: rgba(72, 105, 53, 0.28);
+  background: rgba(237, 242, 225, 0.78);
+}
+
+.analysis-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: #0d5c63;
+  color: #fff;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.analysis-step.is-complete .analysis-step-number {
+  background: #486935;
+}
+
+.analysis-step p {
+  margin: 4px 0 0;
+}
+
 .analysis-run-meta {
   display: grid;
   gap: 8px;
@@ -400,6 +452,14 @@ textarea {
   flex-wrap: wrap;
 }
 
+.analysis-comparison-selection-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
 .analysis-comparison-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -445,6 +505,11 @@ textarea {
   z-index: 0;
 }
 
+.analysis-report-picker-option.is-selected {
+  border-color: rgba(13, 92, 99, 0.35);
+  background: rgba(216, 236, 238, 0.38);
+}
+
 .analysis-report-picker-option.is-disabled {
   opacity: 0.65;
 }
@@ -455,9 +520,11 @@ textarea {
 }
 
 .comparison-report-checkbox {
-  margin-top: 3px;
+  margin-top: 1px;
   pointer-events: none;
   flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
 }
 
 .analysis-report-picker-copy {
@@ -494,6 +561,14 @@ textarea {
 
 .analysis-builder-footer {
   justify-content: flex-end;
+  position: sticky;
+  bottom: 12px;
+  z-index: 12;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.96);
+  border: 1px solid rgba(221, 211, 194, 0.95);
+  box-shadow: var(--shadow);
 }
 
 .analysis-selection-card {
@@ -511,6 +586,22 @@ textarea {
   gap: 12px;
   flex-wrap: wrap;
   color: var(--muted);
+}
+
+.analysis-report-row-title {
+  display: grid;
+  gap: 4px;
+}
+
+.analysis-report-row-title span,
+.analysis-report-download-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.analysis-table-link-button {
+  display: inline-flex;
+  text-decoration: none;
 }
 
 .analysis-review-shell,
@@ -608,6 +699,28 @@ textarea {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
   align-items: start;
+}
+
+.analysis-review-action-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 18;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.96);
+  border: 1px solid rgba(221, 211, 194, 0.95);
+  box-shadow: var(--shadow);
+}
+
+.analysis-review-action-copy {
+  display: grid;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.analysis-review-action-copy p {
+  margin: 0;
 }
 
 .analysis-review-summary-heading {
@@ -794,6 +907,39 @@ textarea {
   display: grid;
   grid-template-columns: 1fr;
   gap: 18px;
+}
+
+.analysis-review-summary-counts {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.analysis-review-summary-counts span {
+  display: inline-flex;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(244, 237, 225, 0.9);
+  border: 1px solid rgba(221, 211, 194, 0.95);
+}
+
+.analysis-review-finalize-card {
+  border-color: rgba(13, 92, 99, 0.28);
+  background: rgba(216, 236, 238, 0.24);
+}
+
+.analysis-review-summary-approve {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 16px 0;
+  font-weight: 600;
+}
+
+.analysis-review-summary-approve input {
+  margin-top: 2px;
+  width: 20px;
+  height: 20px;
 }
 
 .analysis-review-summary-list-rows {
@@ -2089,6 +2235,10 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .analysis-step-indicator {
+    grid-template-columns: 1fr;
+  }
+
   .applications-layout {
     grid-template-columns: 1fr;
   }
@@ -2123,5 +2273,14 @@ th {
 
   .analysis-review-spreadsheet-area {
     min-height: 420px;
+  }
+
+  .analysis-review-action-bar,
+  .analysis-builder-footer {
+    position: static;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
   }
 }
