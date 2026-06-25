@@ -9529,13 +9529,15 @@ function bindAnalysisSubtabs() {
 
 async function loadAnalysisReports() {
   const tbody = el("analysis-history-body");
-  if (!tbody) return;
   const payload = await apiRequest("/api/analysis/reports");
   const rows = payload.reports || [];
   state.analysis.reportScfMetricCache = {};
   state.analysis.savedReports = rows;
   const validReportIds = new Set(rows.map((report) => String(report.id || "").trim()).filter(Boolean));
   setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => validReportIds.has(id)));
+  if (!tbody) {
+    return rows;
+  }
   const empty = el("analysis-history-empty-row");
   if (empty) empty.remove();
   tbody.innerHTML = "";
@@ -9544,7 +9546,7 @@ async function loadAnalysisReports() {
     row.innerHTML = '<td colspan="7" class="empty-cell">No analysis reports yet.</td>';
     tbody.appendChild(row);
     updateAnalysisReportSelectionUi();
-    return;
+    return rows;
   }
   rows.forEach((report) => {
     const isEditing = state.analysis.editingReportId === report.id;
@@ -9690,6 +9692,7 @@ async function loadAnalysisReports() {
   });
 
   updateAnalysisReportSelectionUi();
+  return rows;
 }
 
 function updateAnalysisReportSelectionUi() {
