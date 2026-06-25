@@ -6637,9 +6637,53 @@ function getComparisonReviewComparisonById(comparisonId) {
   return comparisons.find((entry) => entry.id === comparisonId) || null;
 }
 
+function buildComparisonReviewReportMap() {
+  const reportMap = new Map();
+
+  ensureArray(state.analysis.savedReports).forEach((report) => {
+    const reportId = String(report?.id || "").trim();
+    if (!reportId) return;
+    reportMap.set(reportId, report);
+  });
+
+  ensureArray(state.analysis.reportPulls).forEach((pull) => {
+    const savedReportId = String(pull?.savedReportId || "").trim();
+    const pullId = String(pull?.id || "").trim();
+    const fallbackId = savedReportId || pullId;
+    if (!fallbackId || reportMap.has(fallbackId)) return;
+
+    const reportName = String(
+      pull?.reportName || pull?.analysisLabel || pull?.report_name || fallbackId
+    ).trim();
+    const exportRows = Array.isArray(pull?.exportRows) ? pull.exportRows : [];
+    const summaryValues = Array.isArray(pull?.summaryValues) ? pull.summaryValues : [];
+    reportMap.set(fallbackId, {
+      id: fallbackId,
+      report_name: reportName,
+      reportName,
+      status: String(pull?.status || "complete").trim(),
+      result_count: Number(pull?.resultCount || pull?.result_count || pull?.rawRowCount || 0),
+      resultCount: Number(pull?.resultCount || pull?.result_count || pull?.rawRowCount || 0),
+      rows: ensureArray(pull?.rows),
+      columns: ensureArray(pull?.columns),
+      summaryValues,
+      summary_values: summaryValues,
+      exportRows,
+      export_rows: exportRows,
+      keyCodes: ensureArray(pull?.keyCodes),
+      years: ensureArray(pull?.years),
+      clientType: String(pull?.clientType || "").trim(),
+      scf: normalizeScf(pull?.scf),
+      dateRange: pull?.dateRange || null,
+    });
+  });
+
+  return reportMap;
+}
+
 function getComparisonReviewReports(comparison) {
   if (!comparison) return [];
-  const reportMap = new Map((state.analysis.savedReports || []).map((report) => [report.id, report]));
+  const reportMap = buildComparisonReviewReportMap();
   const selectedReportIds = Array.isArray(comparison.selectedReportIds) && comparison.selectedReportIds.length
     ? comparison.selectedReportIds
     : Array.isArray(comparison.reportIds) && comparison.reportIds.length
@@ -9408,6 +9452,7 @@ function loadRunIntoWorkspace(run) {
 }
 
 function buildAnalysisPayload(statusOverride) {
+  syncComparisonRequestsFromLinks();
   const runName = String(el("analysis-run-name")?.value || state.analysis.runName || "").trim() || getDefaultAnalysisName();
   const notes = String(el("analysis-run-notes")?.value || state.analysis.runNotes || "").trim();
   state.analysis.runName = runName;
