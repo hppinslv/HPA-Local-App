@@ -6300,24 +6300,33 @@ function getUnifiedReportScfEntries(report) {
   return combinedScfs.map((scf) => {
     const summaryEntry = summaryMap.get(scf);
     const aggregateEntry = exportAggregateMap.get(scf) || null;
-    if (aggregateEntry) {
-      return {
-        scf,
-        row: buildSyntheticNavigatorRow({
-          ...aggregateEntry,
-          soldRate: null,
-          inForceRate: null,
-          convertedRate: null,
-        }),
-        source: "export-aggregate",
-      };
-    }
-
     if (summaryEntry) {
       return {
         scf,
         row: summaryEntry.row,
         source: "summary",
+      };
+    }
+
+    if (aggregateEntry) {
+      return {
+        scf,
+        row: buildSyntheticNavigatorRow({
+          ...aggregateEntry,
+          soldRate:
+            aggregateEntry.soldRateWeight > 0
+              ? aggregateEntry.soldRateWeightedTotal / aggregateEntry.soldRateWeight
+              : null,
+          inForceRate:
+            aggregateEntry.inForceRateWeight > 0
+              ? aggregateEntry.inForceRateWeightedTotal / aggregateEntry.inForceRateWeight
+              : null,
+          convertedRate:
+            aggregateEntry.convertedRateWeight > 0
+              ? aggregateEntry.convertedRateWeightedTotal / aggregateEntry.convertedRateWeight
+              : null,
+        }),
+        source: "export-aggregate",
       };
     }
 
