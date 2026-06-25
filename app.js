@@ -8637,7 +8637,7 @@ function renderAnalysisComparisonReviewPanel() {
     button.addEventListener("click", () => {
       const scf = button.getAttribute("data-review-scf");
       if (!scf) return;
-      selectComparisonReviewScf(comparison.id, scf);
+      selectComparisonReviewScf(comparison.id, scf, { preservePage: true });
     });
   });
 
@@ -8649,7 +8649,7 @@ function renderAnalysisComparisonReviewPanel() {
       }
       const scf = row.getAttribute("data-review-row-scf");
       if (!scf) return;
-      selectComparisonReviewScf(comparison.id, scf);
+      selectComparisonReviewScf(comparison.id, scf, { preservePage: true });
     });
 
     row.addEventListener("keydown", (event) => {
@@ -8659,7 +8659,7 @@ function renderAnalysisComparisonReviewPanel() {
       event.preventDefault();
       const scf = row.getAttribute("data-review-row-scf");
       if (!scf) return;
-      selectComparisonReviewScf(comparison.id, scf);
+      selectComparisonReviewScf(comparison.id, scf, { preservePage: true });
     });
   });
 
