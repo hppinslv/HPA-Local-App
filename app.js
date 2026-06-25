@@ -105,6 +105,7 @@ const state = {
     editingReportId: "",
     editingReportTitle: "",
     selectedReportIds: [],
+    collapsedPullIds: {},
     setupHydrated: false,
     reviewFloatingPanel: {
       x: 16,
@@ -1644,7 +1645,7 @@ function getComparisonReviewResultFromEntry(entry = {}) {
 function resolveAnalysisLandingFromEntry(entry = {}) {
   const comparisonReview = getComparisonReviewResultFromEntry(entry);
   if (comparisonReview?.summary) {
-    return { panel: "compare-review", summaryMode: "summary" };
+    return { panel: "compare-review", summaryMode: "review" };
   }
 
   if (Array.isArray(entry?.comparisonRequests) && entry.comparisonRequests.length) {
@@ -6745,10 +6746,10 @@ function syncAnalysisMeta(meta = {}) {
     state.analysis.runName = meta.runName || "";
   }
   if (meta.notes !== undefined) {
-    state.analysis.runNotes = meta.notes || "";
+    state.analysis.runNotes = String(meta.notes ?? "");
   }
   if (runName && meta.runName !== undefined) runName.value = meta.runName;
-  if (notes && meta.notes !== undefined) notes.value = meta.notes;
+  if (notes && meta.notes !== undefined) notes.value = String(meta.notes ?? "");
   if (created) created.textContent = `Created: ${formatDate(meta.createdAt)}`;
   if (updated) updated.textContent = `Last Saved: ${formatDate(meta.updatedAt)}`;
 }
@@ -6774,6 +6775,21 @@ function renderComparisonPullOptions() {
   });
 }
 
+function isAnalysisPullCollapsed(pullId) {
+  return Boolean(state.analysis.collapsedPullIds?.[String(pullId || "").trim()]);
+}
+
+function setAnalysisPullCollapsed(pullId, collapsed) {
+  const normalizedPullId = String(pullId || "").trim();
+  if (!normalizedPullId) {
+    return;
+  }
+  state.analysis.collapsedPullIds = {
+    ...(state.analysis.collapsedPullIds || {}),
+    [normalizedPullId]: Boolean(collapsed),
+  };
+}
+
 function renderAnalysisPulls() {
   const container = el("analysis-report-pulls");
   if (!container) return;
@@ -6787,6 +6803,7 @@ function renderAnalysisPulls() {
 
   state.analysis.reportPulls.forEach((pull, index) => {
     const autoAnalysisLabel = buildAutoAnalysisLabel(pull, index);
+    const isCollapsed = isAnalysisPullCollapsed(pull.id);
     const normalizedKeyCode = String((pull.keyCodes || [])[0] || "").trim().toUpperCase();
     const keyCodeOptions = Array.from(
       new Set(
@@ -6797,7 +6814,7 @@ function renderAnalysisPulls() {
       )
     );
     const card = document.createElement("article");
-    card.className = "analysis-pull-card";
+    card.className = `analysis-pull-card${isCollapsed ? " is-collapsed" : ""}`;
     card.setAttribute("data-pull-id", pull.id);
     card.innerHTML = `
       <div class="analysis-pull-head">
@@ -6806,10 +6823,18 @@ function renderAnalysisPulls() {
             <span class="field-label">Report Pull ${index + 1}</span>
             <strong>${esc(autoAnalysisLabel)}</strong>
           </div>
-          <button class="secondary-button table-action-button" data-action="remove-analysis-pull" data-pull-id="${esc(pull.id)}">Remove</button>
+          <div class="action-row analysis-pull-head-actions">
+            <button
+              class="secondary-button table-action-button analysis-pull-collapse-button"
+              data-action="toggle-analysis-pull"
+              data-pull-id="${esc(pull.id)}"
+              aria-expanded="${isCollapsed ? "false" : "true"}"
+            >${isCollapsed ? "Expand" : "Collapse"}</button>
+            <button class="secondary-button table-action-button" data-action="remove-analysis-pull" data-pull-id="${esc(pull.id)}">Remove</button>
+          </div>
         </div>
       </div>
-      <div class="analysis-pull-grid">
+      <div class="analysis-pull-grid"${isCollapsed ? ' hidden' : ""}>
         <div class="field-stack">
           <label class="field-label">Salesforce Report ID</label>
           <input class="field-input" data-pull-field="reportId" data-pull-id="${esc(pull.id)}" type="text" value="${esc(pull.reportId || "")}" />
@@ -8610,7 +8635,7 @@ async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
   persistAnalysisSetupId(state.analysis.currentSetupId);
   syncAnalysisMeta({
     runName: setup.run_name || setup.runName || payload.runName,
-    notes: setup.notes || payload.notes,
+    notes: setup.notes ?? payload.notes,
     createdAt: setup.created_at || setup.createdAt || null,
     updatedAt: setup.updated_at || setup.updatedAt || null,
   });
@@ -8970,6 +8995,7 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   state.analysis.comparisonResults = [];
   state.analysis.selectedComparisonId = "";
   state.analysis.lastEditedComparisonId = "";
+  state.analysis.collapsedPullIds = {};
   state.analysis.reviewPrimaryReportIds = {};
   state.analysis.reviewSelectedScfs = {};
   state.analysis.reviewBaselineLists = [];
@@ -9020,18 +9046,19 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.comparisonResults = [];
   state.analysis.selectedComparisonId = "";
   state.analysis.lastEditedComparisonId = "";
+  state.analysis.collapsedPullIds = {};
   state.analysis.reviewPrimaryReportIds = {};
   state.analysis.reviewSelectedScfs = {};
   state.analysis.reviewBaselineLists = [];
   state.analysis.reviewWorkingLists = [];
   const comparisonReview = getComparisonReviewResultFromEntry(setup);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
-  state.analysis.reviewSummaryMode = comparisonReview?.summary ? "summary" : "review";
+  state.analysis.reviewSummaryMode = "review";
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   state.analysis.setupHydrated = true;
   syncAnalysisMeta({
     runName: setup.run_name || setup.runName || "",
-    notes: setup.notes || "",
+    notes: setup.notes ?? state.analysis.runNotes,
     createdAt: setup.created_at || setup.createdAt || null,
     updatedAt: setup.updated_at || setup.updatedAt || null,
   });
@@ -9067,17 +9094,18 @@ function loadRunIntoWorkspace(run) {
   state.analysis.comparisonResults = [];
   state.analysis.selectedComparisonId = "";
   state.analysis.lastEditedComparisonId = "";
+  state.analysis.collapsedPullIds = {};
   state.analysis.reviewPrimaryReportIds = {};
   state.analysis.reviewSelectedScfs = {};
   state.analysis.reviewBaselineLists = [];
   state.analysis.reviewWorkingLists = [];
   const comparisonReview = getComparisonReviewResultFromEntry(run);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
-  state.analysis.reviewSummaryMode = comparisonReview?.summary ? "summary" : "review";
+  state.analysis.reviewSummaryMode = "review";
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   syncAnalysisMeta({
     runName: run.runName || "",
-    notes: run.notes || "",
+    notes: run.notes ?? state.analysis.runNotes,
     createdAt: run.createdAt || null,
     updatedAt: run.updatedAt || null,
   });
@@ -9766,6 +9794,13 @@ function bindAnalysisButtons() {
   pullContainer?.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+    if (target.getAttribute("data-action") === "toggle-analysis-pull") {
+      const pullId = target.getAttribute("data-pull-id");
+      if (!pullId) return;
+      setAnalysisPullCollapsed(pullId, !isAnalysisPullCollapsed(pullId));
+      renderAnalysisWorkspace();
+      return;
+    }
     if (target.getAttribute("data-action") !== "remove-analysis-pull") return;
     const pullId = target.getAttribute("data-pull-id");
     if (!pullId) return;
@@ -9793,7 +9828,7 @@ function bindAnalysisButtons() {
       persistAnalysisSetupId(state.analysis.currentSetupId);
       syncAnalysisMeta({
         runName: setup.run_name || setup.runName || payload.runName,
-        notes: setup.notes || payload.notes,
+        notes: setup.notes ?? payload.notes,
         createdAt: setup.created_at || setup.createdAt || null,
         updatedAt: setup.updated_at || setup.updatedAt || null,
       });
@@ -9835,7 +9870,7 @@ function bindAnalysisButtons() {
       state.analysis.currentRunId = run.id || "";
       syncAnalysisMeta({
         runName: savePayload.runName,
-        notes: savePayload.notes,
+        notes: savePayload.notes ?? state.analysis.runNotes,
         createdAt: savedSetup.created_at || savedSetup.createdAt || null,
         updatedAt: savedSetup.updated_at || savedSetup.updatedAt || null,
       });
