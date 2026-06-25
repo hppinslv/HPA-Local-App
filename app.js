@@ -6634,25 +6634,30 @@ function getComparisonReviewComparisonById(comparisonId) {
 function buildComparisonReviewReportMap() {
   const reportMap = new Map();
 
+  const addReportAlias = (reportId, report) => {
+    const normalizedId = String(reportId || "").trim();
+    if (!normalizedId || reportMap.has(normalizedId)) return;
+    reportMap.set(normalizedId, report);
+  };
+
   ensureArray(state.analysis.savedReports).forEach((report) => {
     const reportId = String(report?.id || "").trim();
     if (!reportId) return;
-    reportMap.set(reportId, report);
+    addReportAlias(reportId, report);
   });
 
   ensureArray(state.analysis.reportPulls).forEach((pull) => {
     const savedReportId = String(pull?.savedReportId || "").trim();
     const pullId = String(pull?.id || "").trim();
-    const fallbackId = savedReportId || pullId;
-    if (!fallbackId || reportMap.has(fallbackId)) return;
+    if (!savedReportId && !pullId) return;
 
     const reportName = String(
-      pull?.reportName || pull?.analysisLabel || pull?.report_name || fallbackId
+      pull?.reportName || pull?.analysisLabel || pull?.report_name || savedReportId || pullId
     ).trim();
     const exportRows = Array.isArray(pull?.exportRows) ? pull.exportRows : [];
     const summaryValues = Array.isArray(pull?.summaryValues) ? pull.summaryValues : [];
-    reportMap.set(fallbackId, {
-      id: fallbackId,
+    const reportRecord = {
+      id: savedReportId || pullId,
       report_name: reportName,
       reportName,
       status: String(pull?.status || "complete").trim(),
@@ -6669,7 +6674,10 @@ function buildComparisonReviewReportMap() {
       clientType: String(pull?.clientType || "").trim(),
       scf: normalizeScf(pull?.scf),
       dateRange: pull?.dateRange || null,
-    });
+    };
+
+    addReportAlias(savedReportId, reportRecord);
+    addReportAlias(pullId, reportRecord);
   });
 
   return reportMap;
