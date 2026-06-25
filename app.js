@@ -6166,14 +6166,6 @@ function getUnifiedReportScfEntries(report) {
   return combinedScfs.map((scf) => {
     const summaryEntry = summaryMap.get(scf);
     const aggregateEntry = exportAggregateMap.get(scf) || null;
-    if (summaryEntry) {
-      return {
-        scf,
-        row: summaryEntry.row,
-        source: "summary",
-      };
-    }
-
     if (aggregateEntry) {
       return {
         scf,
@@ -6190,6 +6182,14 @@ function getUnifiedReportScfEntries(report) {
             : null,
         }),
         source: "export-aggregate",
+      };
+    }
+
+    if (summaryEntry) {
+      return {
+        scf,
+        row: summaryEntry.row,
+        source: "summary",
       };
     }
 
