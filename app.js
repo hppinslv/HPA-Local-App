@@ -6391,6 +6391,39 @@ function buildPrimaryNavigatorRows(report) {
   }));
 }
 
+function mergeExactMetricsIntoNavigatorRows(rows = [], report, scf) {
+  const normalizedScf = normalizeScf(scf);
+  const normalizedReportId = String(report?.id || "").trim();
+  if (!normalizedScf || !normalizedReportId || !Array.isArray(rows) || !rows.length) {
+    return rows;
+  }
+
+  const cachedMetrics = getCachedAnalysisReportScfMetrics(normalizedReportId, normalizedScf);
+  if (!cachedMetrics) {
+    requestAnalysisReportScfMetrics(normalizedReportId, normalizedScf);
+    return rows;
+  }
+
+  if (cachedMetrics.status !== "ready" || !cachedMetrics.row) {
+    return rows;
+  }
+
+  return rows.map((entry) => {
+    if (entry.scf !== normalizedScf) {
+      return entry;
+    }
+
+    return {
+      scf: normalizedScf,
+      row: cachedMetrics.row,
+      mailed: getRowMetricNumber(cachedMetrics.row, "Sum of Mailed"),
+      soldRate: getRowMetricNumber(cachedMetrics.row, "Sold Rate"),
+      inForceRate: getRowMetricNumber(cachedMetrics.row, "In Force Rate"),
+      convertedRate: getRowMetricNumber(cachedMetrics.row, "Converted Rate"),
+    };
+  });
+}
+
 function getSortedFilteredPrimaryRows(rows = [], comparisonId = state.analysis.selectedComparisonId) {
   const thresholdMetric = String(state.analysis.reviewThresholdMetric || "soldRate").trim();
   const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
@@ -7842,7 +7875,8 @@ function renderAnalysisComparisonReviewPanel() {
   const selectedStateValue = getRowStateValue(selectedPrimaryRow);
   const dnmStatus = getDoNotMailStatusForScf(selectedScf, selectedStateValue);
   const targetListEntry = getWorkingListEntry(targetListType, selectedScf);
-  const primaryNavigatorRows = buildPrimaryNavigatorRows(primaryReport);
+  let primaryNavigatorRows = buildPrimaryNavigatorRows(primaryReport);
+  primaryNavigatorRows = mergeExactMetricsIntoNavigatorRows(primaryNavigatorRows, primaryReport, selectedScf);
   const sortedFilteredRows = getSortedFilteredPrimaryRows(primaryNavigatorRows, comparison.id);
   const effectiveSelectedScf = selectedScf && sortedFilteredRows.some((entry) => entry.scf === selectedScf)
     ? selectedScf
