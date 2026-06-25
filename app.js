@@ -1328,6 +1328,8 @@ function persistAnalysisSetupDraft() {
       comparisonRequests: cloneData(state.analysis.comparisonRequests || []),
       selectedComparisonId: String(state.analysis.selectedComparisonId || "").trim(),
       lastEditedComparisonId: String(state.analysis.lastEditedComparisonId || "").trim(),
+      reviewPrimaryReportIds: cloneData(state.analysis.reviewPrimaryReportIds || {}),
+      reviewSelectedScfs: cloneData(state.analysis.reviewSelectedScfs || {}),
       updatedAt: new Date().toISOString(),
     };
 
@@ -1405,6 +1407,12 @@ function restorePersistedAnalysisSetupDraft(setupId = "") {
   }
   if (draft.runNotes !== undefined) {
     state.analysis.runNotes = String(draft.runNotes || "");
+  }
+  if (draft.reviewPrimaryReportIds && typeof draft.reviewPrimaryReportIds === "object") {
+    state.analysis.reviewPrimaryReportIds = normalizeReviewSyncMap(draft.reviewPrimaryReportIds);
+  }
+  if (draft.reviewSelectedScfs && typeof draft.reviewSelectedScfs === "object") {
+    state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(draft.reviewSelectedScfs);
   }
   state.analysis.selectedComparisonId = String(draft.selectedComparisonId || state.analysis.selectedComparisonId || "").trim();
   state.analysis.lastEditedComparisonId = String(draft.lastEditedComparisonId || state.analysis.lastEditedComparisonId || "").trim();
@@ -8658,6 +8666,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.selectedComparisonId = nextId;
     state.analysis.lastEditedComparisonId = nextId;
     state.analysis.reviewPageNumber = 1;
+    persistAnalysisSetupDraft();
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("comparison-select");
   });
@@ -8667,6 +8676,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.reviewPrimaryReportIds[comparison.id] = nextReportId;
     state.analysis.reviewSelectedScfs[comparison.id] = "";
     state.analysis.reviewPageNumber = 1;
+    persistAnalysisSetupDraft();
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("primary-report-select");
     focusComparisonReviewSummary();
@@ -9508,17 +9518,17 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.comparisonLinks = state.analysis.comparisonRequests.length
     ? state.analysis.comparisonRequests.map((entry, index) => createComparisonLink(index, entry))
     : [createComparisonLink(0)];
-  restorePersistedAnalysisSetupDraft(state.analysis.currentSetupId);
   state.analysis.comparisonResults = [];
-  state.analysis.selectedComparisonId = "";
-  state.analysis.lastEditedComparisonId = "";
+  state.analysis.selectedComparisonId = String(setup.reviewState?.selectedComparisonId || "").trim();
+  state.analysis.lastEditedComparisonId = String(setup.reviewState?.lastEditedComparisonId || "").trim();
   state.analysis.collapsedPullIds = {};
   collapseAnalysisPullsByDefault(state.analysis.reportPulls);
-  state.analysis.reviewPrimaryReportIds = {};
-  state.analysis.reviewSelectedScfs = {};
+  state.analysis.reviewPrimaryReportIds = normalizeReviewSyncMap(setup.reviewState?.reviewPrimaryReportIds || {});
+  state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(setup.reviewState?.reviewSelectedScfs || {});
   state.analysis.reviewBaselineLists = [];
   state.analysis.reviewWorkingLists = [];
   state.analysis.reviewBulkPreview = null;
+  restorePersistedAnalysisSetupDraft(state.analysis.currentSetupId);
   const comparisonReview = getComparisonReviewResultFromEntry(setup);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
   state.analysis.reviewSummaryMode = "review";
@@ -9561,11 +9571,11 @@ function loadRunIntoWorkspace(run) {
     ? state.analysis.comparisonRequests.map((entry, index) => createComparisonLink(index, entry))
     : [createComparisonLink(0)];
   state.analysis.comparisonResults = [];
-  state.analysis.selectedComparisonId = "";
-  state.analysis.lastEditedComparisonId = "";
+  state.analysis.selectedComparisonId = String(run.reviewState?.selectedComparisonId || "").trim();
+  state.analysis.lastEditedComparisonId = String(run.reviewState?.lastEditedComparisonId || "").trim();
   state.analysis.collapsedPullIds = {};
-  state.analysis.reviewPrimaryReportIds = {};
-  state.analysis.reviewSelectedScfs = {};
+  state.analysis.reviewPrimaryReportIds = normalizeReviewSyncMap(run.reviewState?.reviewPrimaryReportIds || {});
+  state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(run.reviewState?.reviewSelectedScfs || {});
   state.analysis.reviewBaselineLists = [];
   state.analysis.reviewWorkingLists = [];
   state.analysis.reviewBulkPreview = null;
@@ -9616,6 +9626,12 @@ function buildAnalysisPayload(statusOverride) {
     notes,
     reportPulls,
     comparisonRequests: state.analysis.comparisonRequests,
+    reviewState: {
+      selectedComparisonId: String(state.analysis.selectedComparisonId || "").trim(),
+      lastEditedComparisonId: String(state.analysis.lastEditedComparisonId || "").trim(),
+      reviewPrimaryReportIds: normalizeReviewSyncMap(state.analysis.reviewPrimaryReportIds),
+      reviewSelectedScfs: normalizeReviewSyncMap(state.analysis.reviewSelectedScfs),
+    },
     results: state.analysis.reviewSummary
       ? {
           comparisonReview: {

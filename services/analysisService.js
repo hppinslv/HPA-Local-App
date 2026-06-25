@@ -1254,6 +1254,30 @@ function normalizeArchivedValue(value) {
   return false;
 }
 
+function normalizeAnalysisReviewState(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const normalizeMap = (entries) => {
+    if (!entries || typeof entries !== "object") {
+      return {};
+    }
+    return Object.entries(entries).reduce((accumulator, [key, rawValue]) => {
+      const normalizedKey = String(key || "").trim();
+      if (!normalizedKey) {
+        return accumulator;
+      }
+      accumulator[normalizedKey] = String(rawValue || "").trim();
+      return accumulator;
+    }, {});
+  };
+
+  return {
+    selectedComparisonId: String(source.selectedComparisonId || "").trim(),
+    lastEditedComparisonId: String(source.lastEditedComparisonId || "").trim(),
+    reviewPrimaryReportIds: normalizeMap(source.reviewPrimaryReportIds),
+    reviewSelectedScfs: normalizeMap(source.reviewSelectedScfs),
+  };
+}
+
 function normalizeAnalysisRequest(body = {}) {
   const reportPulls = ensureArray(body.reportPulls).map(normalizePullRequest);
 
@@ -1295,6 +1319,7 @@ function normalizeAnalysisRequest(body = {}) {
           .filter(Boolean),
       };
     }),
+    reviewState: normalizeAnalysisReviewState(body.reviewState),
     results: body.results || null,
     errorMessage: body.errorMessage || null,
     referenceListsSnapshot: body.referenceListsSnapshot || null,
@@ -1324,6 +1349,7 @@ function serializeAnalysisSetup(setup) {
     reportPulls: setup.reportPulls,
     notes: setup.notes || "",
     comparisonRequests: setup.comparisonRequests || [],
+    reviewState: normalizeAnalysisReviewState(setup.reviewState),
     results: setup.results || null,
     referenceListsSnapshot: setup.referenceListsSnapshot || null,
     reference_lists_snapshot: setup.referenceListsSnapshot || null,
@@ -2282,6 +2308,7 @@ function serializeAnalysisRun(run) {
     statusDetail: run.statusDetail,
     errorMessage: run.errorMessage || "",
     setupId: run.setupId || null,
+    reviewState: normalizeAnalysisReviewState(run.reviewState),
     referenceListsSnapshot: run.referenceListsSnapshot || null,
     reference_lists_snapshot: run.referenceListsSnapshot || null,
     reportPulls: run.reportPulls,
@@ -2404,6 +2431,7 @@ function saveAnalysisSetup(body = {}) {
     archived: request.archived !== undefined ? request.archived : existingSetup?.archived || false,
     reportPulls: request.reportPulls,
     comparisonRequests: request.comparisonRequests,
+    reviewState: request.reviewState || existingSetup?.reviewState || null,
     notes: request.notes || "",
     results: request.results || existingSetup?.results || null,
     referenceListsSnapshot: request.referenceListsSnapshot || existingSetup?.referenceListsSnapshot || null,
@@ -3158,6 +3186,7 @@ function createAnalysisRun(body = {}) {
     statusDetail: "Queued Salesforce analysis run.",
     reportPulls: request.reportPulls,
     comparisonRequests: request.comparisonRequests,
+    reviewState: request.reviewState,
     comparisons: [],
     scfActions: [],
     artifacts: [],
