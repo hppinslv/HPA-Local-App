@@ -1323,6 +1323,10 @@ textarea {
   gap: 10px;
 }
 
+.analysis-pull-card.is-collapsed .analysis-pull-grid {
+  display: none;
+}
+
 .analysis-pull-head,
 .analysis-result-head,
 .reference-list-summary {
