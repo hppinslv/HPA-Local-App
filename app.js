@@ -1794,21 +1794,41 @@ function resolveAnalysisLandingFromEntry(entry = {}) {
   return { panel: "previous", summaryMode: "review" };
 }
 
-function choosePreferredAnalysisSetup(setups = []) {
+function choosePreferredAnalysisSetup(setups = [], options = {}) {
   const normalizedSetups = ensureArray(setups).filter((entry) => !entry?.archived);
   if (!normalizedSetups.length) {
     return null;
   }
 
+  const preferredId = String(options.preferredId || state.analysis.currentSetupId || readPersistedAnalysisSetupId() || "").trim();
   const defaultName = getDefaultAnalysisName().toLowerCase();
-  const matchingSetup = normalizedSetups.find((setup) =>
-    String(setup.run_name || setup.runName || "").trim().toLowerCase() === defaultName
-  );
-  if (matchingSetup) {
-    return matchingSetup;
-  }
+
+  const scoreSetup = (setup) => {
+    const setupId = String(setup?.id || "").trim();
+    const runName = String(setup?.run_name || setup?.runName || "").trim().toLowerCase();
+    const comparisonCount = Array.isArray(setup?.comparisonRequests) ? setup.comparisonRequests.length : 0;
+    const pullCount = Array.isArray(setup?.reportPulls) ? setup.reportPulls.length : 0;
+    let score = 0;
+    if (setupId && preferredId && setupId === preferredId) {
+      score += 1000;
+    }
+    if (runName === defaultName) {
+      score += 100;
+    }
+    if (comparisonCount > 0) {
+      score += 50 + comparisonCount;
+    }
+    if (pullCount > 0) {
+      score += 10 + Math.min(pullCount, 5);
+    }
+    return score;
+  };
 
   return [...normalizedSetups].sort((a, b) => {
+    const scoreDiff = scoreSetup(b) - scoreSetup(a);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
     const aTime = Date.parse(a.updated_at || a.updatedAt || a.created_at || a.createdAt || "") || 0;
     const bTime = Date.parse(b.updated_at || b.updatedAt || b.created_at || b.createdAt || "") || 0;
     return bTime - aTime;
@@ -1819,7 +1839,9 @@ async function openAnalysisLanding() {
   setAnalysisLeftSubmenuExpanded(true);
   setRoute("analysis");
   const setupsPayload = await apiRequest("/api/analysis/setups");
-  const setup = choosePreferredAnalysisSetup(setupsPayload.setups || []);
+  const setup = choosePreferredAnalysisSetup(setupsPayload.setups || [], {
+    preferredId: state.analysis.currentSetupId || readPersistedAnalysisSetupId(),
+  });
 
   if (!setup) {
     showAnalysisPanel("previous");
@@ -9993,7 +10015,9 @@ async function loadAnalysisSetups() {
   const setupsPayload = await apiRequest("/api/analysis/setups");
   const setups = (setupsPayload.setups || []).filter((entry) => !entry.archived);
   const defaultName = getDefaultAnalysisName();
-  const setup = choosePreferredAnalysisSetup(setups);
+  const setup = choosePreferredAnalysisSetup(setups, {
+    preferredId: state.analysis.currentSetupId || readPersistedAnalysisSetupId(),
+  });
   const rows = [{
     id: setup?.id || "__current_month_analysis__",
     sourceType: setup ? "setup" : "draft",
