@@ -6006,24 +6006,24 @@ function buildSyntheticNavigatorRow({
   const safeInForceMonthlyPremium = Number(inForceMonthlyPremium || 0);
   const safeTotalConvertedMonthlyPremiums = Number(totalConvertedMonthlyPremiums || 0);
   const rateDenominator = safeMailed > 0 ? safeMailed * 14.86 : 0;
-  const safeSoldRate = Number.isFinite(Number(soldRate))
-    ? Number(soldRate)
-    : rateDenominator > 0
-      ? (safeTotalMonthlyPremium * 100) / rateDenominator
+  const safeSoldRate = rateDenominator > 0
+    ? (safeTotalMonthlyPremium * 100) / rateDenominator
+    : Number.isFinite(Number(soldRate))
+      ? Number(soldRate)
       : safeMailed > 0
         ? (safeSold / safeMailed) * 100
         : 0;
-  const safeInForceRate = Number.isFinite(Number(inForceRate))
-    ? Number(inForceRate)
-    : rateDenominator > 0
-      ? (safeInForceMonthlyPremium * 100) / rateDenominator
+  const safeInForceRate = rateDenominator > 0
+    ? (safeInForceMonthlyPremium * 100) / rateDenominator
+    : Number.isFinite(Number(inForceRate))
+      ? Number(inForceRate)
       : safeMailed > 0
         ? (safeInForce / safeMailed) * 100
         : 0;
-  const safeConvertedRate = Number.isFinite(Number(convertedRate))
-    ? Number(convertedRate)
-    : rateDenominator > 0
-      ? (safeTotalConvertedMonthlyPremiums * 100) / rateDenominator
+  const safeConvertedRate = rateDenominator > 0
+    ? (safeTotalConvertedMonthlyPremiums * 100) / rateDenominator
+    : Number.isFinite(Number(convertedRate))
+      ? Number(convertedRate)
       : safeMailed > 0
         ? (safeSold / safeMailed) * 100
         : 0;
@@ -6171,15 +6171,9 @@ function getUnifiedReportScfEntries(report) {
         scf,
         row: buildSyntheticNavigatorRow({
           ...aggregateEntry,
-          soldRate: aggregateEntry.soldRateWeight > 0
-            ? aggregateEntry.soldRateWeightedTotal / aggregateEntry.soldRateWeight
-            : null,
-          inForceRate: aggregateEntry.inForceRateWeight > 0
-            ? aggregateEntry.inForceRateWeightedTotal / aggregateEntry.inForceRateWeight
-            : null,
-          convertedRate: aggregateEntry.convertedRateWeight > 0
-            ? aggregateEntry.convertedRateWeightedTotal / aggregateEntry.convertedRateWeight
-            : null,
+          soldRate: null,
+          inForceRate: null,
+          convertedRate: null,
         }),
         source: "export-aggregate",
       };
