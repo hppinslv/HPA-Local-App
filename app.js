@@ -6141,6 +6141,74 @@ function reportNeedsExactScfMetricFetch(report, rowEntry) {
   return true;
 }
 
+function parseAnalysisMetricNumber(value) {
+  const numeric = Number(String(value ?? "").replace(/[$,%(),\s]/g, ""));
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function formatAnalysisCurrency(value) {
+  return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function isSparseAnalysisMetricRow(row = {}) {
+  const oppCount = parseAnalysisMetricNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
+  const totalMonthlyPremium = parseAnalysisMetricNumber(
+    row["Sum of Total Monthly Premium"] ?? row["sum of total monthly premium"] ?? 0
+  );
+  const inForceMonthlyPremium = parseAnalysisMetricNumber(
+    row["Sum of In Force Monthly Premium"] ?? row["sum of in force monthly premium"] ?? 0
+  );
+  const convertedPremium = parseAnalysisMetricNumber(
+    row["Sum of Total Converted Monthly Premiums"] ?? row["sum of total converted monthly premiums"] ?? 0
+  );
+  return oppCount > 0 && totalMonthlyPremium === 0 && inForceMonthlyPremium === 0 && convertedPremium === 0;
+}
+
+function normalizeAnalysisMetricRow(row = {}) {
+  if (!row || typeof row !== "object") {
+    return row;
+  }
+
+  const mailed = getRowMetricNumber(row, "Sum of Mailed");
+  if (!(mailed > 0)) {
+    return row;
+  }
+
+  const totalMonthlyPremium = getRowMetricNumber(row, "Total Monthly Premium");
+  const inForceMonthlyPremium = getRowMetricNumber(row, "In Force Monthly Premium");
+  const totalConvertedMonthlyPremiums = getRowMetricNumber(row, "Total Converted Monthly Premiums");
+  const hasPremiumTotals =
+    totalMonthlyPremium > 0 || inForceMonthlyPremium > 0 || totalConvertedMonthlyPremiums > 0;
+  if (!hasPremiumTotals) {
+    return row;
+  }
+
+  const denominator = mailed * 14.86;
+  if (!(denominator > 0)) {
+    return row;
+  }
+
+  const normalizedRow = { ...row };
+  const soldRate = (totalMonthlyPremium * 100) / denominator;
+  const inForceRate = (inForceMonthlyPremium * 100) / denominator;
+  const convertedRate = (totalConvertedMonthlyPremiums * 100) / denominator;
+
+  normalizedRow["Sum of Total Monthly Premium"] = formatAnalysisCurrency(totalMonthlyPremium);
+  normalizedRow["sum of total monthly premium"] = formatAnalysisCurrency(totalMonthlyPremium);
+  normalizedRow["Sum of In Force Monthly Premium"] = formatAnalysisCurrency(inForceMonthlyPremium);
+  normalizedRow["sum of in force monthly premium"] = formatAnalysisCurrency(inForceMonthlyPremium);
+  normalizedRow["Sum of Total Converted Monthly Premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
+  normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
+  normalizedRow["Sold Rate"] = soldRate.toFixed(10);
+  normalizedRow["sold rate"] = soldRate.toFixed(10);
+  normalizedRow["In Force Rate"] = inForceRate.toFixed(10);
+  normalizedRow["in force rate"] = inForceRate.toFixed(10);
+  normalizedRow["Converted Rate"] = convertedRate.toFixed(10);
+  normalizedRow["converted rate"] = convertedRate.toFixed(10);
+
+  return normalizedRow;
+}
+
 function buildSyntheticNavigatorRow({
   scf,
   mailed = 0,
@@ -6195,12 +6263,12 @@ function buildSyntheticNavigatorRow({
     "sum of in force": formatNavigatorCount(safeInForce),
     "Sum of Sold": formatNavigatorCount(safeSold),
     "sum of sold": formatNavigatorCount(safeSold),
-    "Sum of Total Monthly Premium": safeTotalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-    "sum of total monthly premium": safeTotalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-    "Sum of In Force Monthly Premium": safeInForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-    "sum of in force monthly premium": safeInForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-    "Sum of Total Converted Monthly Premiums": safeTotalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-    "sum of total converted monthly premiums": safeTotalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+    "Sum of Total Monthly Premium": formatAnalysisCurrency(safeTotalMonthlyPremium),
+    "sum of total monthly premium": formatAnalysisCurrency(safeTotalMonthlyPremium),
+    "Sum of In Force Monthly Premium": formatAnalysisCurrency(safeInForceMonthlyPremium),
+    "sum of in force monthly premium": formatAnalysisCurrency(safeInForceMonthlyPremium),
+    "Sum of Total Converted Monthly Premiums": formatAnalysisCurrency(safeTotalConvertedMonthlyPremiums),
+    "sum of total converted monthly premiums": formatAnalysisCurrency(safeTotalConvertedMonthlyPremiums),
     "Sold Rate": safeSoldRate.toFixed(10),
     "sold rate": safeSoldRate.toFixed(10),
     "In Force Rate": safeInForceRate.toFixed(10),
@@ -6322,10 +6390,10 @@ function getUnifiedReportScfEntries(report) {
   return combinedScfs.map((scf) => {
     const summaryEntry = summaryMap.get(scf);
     const aggregateEntry = exportAggregateMap.get(scf) || null;
-    if (summaryEntry) {
+    if (summaryEntry && !isSparseAnalysisMetricRow(summaryEntry.row)) {
       return {
         scf,
-        row: summaryEntry.row,
+        row: normalizeAnalysisMetricRow(summaryEntry.row),
         source: "summary",
       };
     }
@@ -6349,6 +6417,14 @@ function getUnifiedReportScfEntries(report) {
               : null,
         }),
         source: "export-aggregate",
+      };
+    }
+
+    if (summaryEntry) {
+      return {
+        scf,
+        row: normalizeAnalysisMetricRow(summaryEntry.row),
+        source: "summary-sparse",
       };
     }
 
@@ -6629,13 +6705,15 @@ function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs, options = {
       return entry;
     }
 
+    const normalizedRow = normalizeAnalysisMetricRow(cachedMetrics.row);
+
     return {
       scf: entry.scf,
-      row: cachedMetrics.row,
-      mailed: getRowMetricNumber(cachedMetrics.row, "Sum of Mailed"),
-      soldRate: getRowMetricNumber(cachedMetrics.row, "Sold Rate"),
-      inForceRate: getRowMetricNumber(cachedMetrics.row, "In Force Rate"),
-      convertedRate: getRowMetricNumber(cachedMetrics.row, "Converted Rate"),
+      row: normalizedRow,
+      mailed: getRowMetricNumber(normalizedRow, "Sum of Mailed"),
+      soldRate: getRowMetricNumber(normalizedRow, "Sold Rate"),
+      inForceRate: getRowMetricNumber(normalizedRow, "In Force Rate"),
+      convertedRate: getRowMetricNumber(normalizedRow, "Converted Rate"),
     };
   });
 }
@@ -8269,7 +8347,7 @@ function renderAnalysisComparisonReviewPanel() {
     }
     const hasExactMetrics = cachedMetrics?.status === "ready";
     const exactRow = hasExactMetrics ? cachedMetrics.row : null;
-    const row = exactRow || fallbackRow;
+    const row = normalizeAnalysisMetricRow(exactRow || fallbackRow);
     const isMetricLoading = needsExactMetrics && cachedMetrics?.status === "loading";
     const hasMetricError = cachedMetrics?.status === "error";
     const totalMailed = row ? getTotalMailedFromRow(row) : "";
