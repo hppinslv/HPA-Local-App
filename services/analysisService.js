@@ -30,6 +30,25 @@ const SCF_REFERENCE_LISTS_SUPABASE_KEY = "scf-reference-lists.json";
 const DEFAULT_REPORT_ID = "00OQm000003PIxhMAG";
 const DEFAULT_ACTOR = "Local User";
 
+function parseAnalysisMetricNumber(value) {
+  const normalized = Number(String(value ?? "").replace(/[$,%(),\s]/g, ""));
+  return Number.isFinite(normalized) ? normalized : 0;
+}
+
+function isSparseSavedAnalysisMetricRow(row = {}) {
+  const oppCount = parseAnalysisMetricNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
+  const totalMonthlyPremium = parseAnalysisMetricNumber(
+    row["Sum of Total Monthly Premium"] ?? row["sum of total monthly premium"] ?? 0
+  );
+  const inForceMonthlyPremium = parseAnalysisMetricNumber(
+    row["Sum of In Force Monthly Premium"] ?? row["sum of in force monthly premium"] ?? 0
+  );
+  const convertedPremium = parseAnalysisMetricNumber(
+    row["Sum of Total Converted Monthly Premiums"] ?? row["sum of total converted monthly premiums"] ?? 0
+  );
+  return oppCount > 0 && totalMonthlyPremium === 0 && inForceMonthlyPremium === 0 && convertedPremium === 0;
+}
+
 const DNM_CATALOG_HEADER = "Per Amalgamated, states we can not mail 9/19/2024:";
 const DNM_SEED_GROUPS = [
   { key: "alabama", state: "Alabama", label: "Alabama", scope: "Alabama", scfs: [] },
@@ -2829,13 +2848,17 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
       return normalizedKeys.includes(rowKey);
     });
     if (matchingSavedRows.length) {
+      const preferredSavedRow =
+        matchingSavedRows.find((row) => !isSparseSavedAnalysisMetricRow(row)) || matchingSavedRows[0];
+      if (!isSparseSavedAnalysisMetricRow(preferredSavedRow)) {
       return {
         reportId: normalizedId,
         scf: normalizedScf,
-        row: matchingSavedRows[0],
+        row: preferredSavedRow,
         rows: matchingSavedRows,
         source: "saved-export-rows",
       };
+      }
     }
   }
 
