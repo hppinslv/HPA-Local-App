@@ -5251,9 +5251,8 @@ function renderComparisonReviewPanelShell() {
         <strong>Final step</strong>
         <p>Approval is required before Complete Analysis becomes available.</p>
       </div>
-      <button id="back-to-comparison-setup-button" class="secondary-button">Back to Set Up Comparison</button>
-      <button id="back-to-analysis-runs-from-review-button" class="secondary-button">Back to Pick Reports</button>
       <button id="open-comparison-review-popup-button" class="secondary-button"${detachedWindow ? " disabled" : ""}>${detachedWindow ? "Opened In New Window" : "Open In New Window"}</button>
+      <button id="back-to-comparison-setup-button" class="secondary-button">Back to Set Up Comparison</button>
       <button id="summarize-comparison-review-button" class="secondary-button">Summarize Review</button>
       <button id="complete-comparison-review-button" class="primary-button" disabled>Complete Analysis</button>
       <button id="exit-comparison-review-button" class="secondary-button${detachedWindow ? "" : " is-hidden"}">${detachedWindow ? "Close Window" : "Exit"}</button>
@@ -6788,6 +6787,16 @@ function setAnalysisPullCollapsed(pullId, collapsed) {
     ...(state.analysis.collapsedPullIds || {}),
     [normalizedPullId]: Boolean(collapsed),
   };
+}
+
+function collapseAnalysisPullsByDefault(pulls = []) {
+  state.analysis.collapsedPullIds = ensureArray(pulls).reduce((next, pull) => {
+    const pullId = String(pull?.id || "").trim();
+    if (pullId) {
+      next[pullId] = true;
+    }
+    return next;
+  }, {});
 }
 
 function renderAnalysisPulls() {
@@ -8996,6 +9005,7 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   state.analysis.selectedComparisonId = "";
   state.analysis.lastEditedComparisonId = "";
   state.analysis.collapsedPullIds = {};
+  collapseAnalysisPullsByDefault(state.analysis.reportPulls);
   state.analysis.reviewPrimaryReportIds = {};
   state.analysis.reviewSelectedScfs = {};
   state.analysis.reviewBaselineLists = [];
@@ -9047,6 +9057,7 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.selectedComparisonId = "";
   state.analysis.lastEditedComparisonId = "";
   state.analysis.collapsedPullIds = {};
+  collapseAnalysisPullsByDefault(state.analysis.reportPulls);
   state.analysis.reviewPrimaryReportIds = {};
   state.analysis.reviewSelectedScfs = {};
   state.analysis.reviewBaselineLists = [];
@@ -9697,7 +9708,9 @@ function bindAnalysisButtons() {
   );
 
   addPullButton?.addEventListener("click", () => {
-    state.analysis.reportPulls.push(createEmptyPull(state.analysis.reportPulls.length));
+    const nextPull = createEmptyPull(state.analysis.reportPulls.length);
+    state.analysis.reportPulls.push(nextPull);
+    setAnalysisPullCollapsed(nextPull.id, true);
     renderAnalysisWorkspace();
     setStatus("analysis-status-detail", "Report pull added.");
   });
@@ -9792,7 +9805,7 @@ function bindAnalysisButtons() {
   }, true);
 
   pullContainer?.addEventListener("click", (event) => {
-    const target = event.target;
+    const target = event.target instanceof HTMLElement ? event.target.closest("button[data-action]") : null;
     if (!(target instanceof HTMLElement)) return;
     if (target.getAttribute("data-action") === "toggle-analysis-pull") {
       const pullId = target.getAttribute("data-pull-id");
