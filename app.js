@@ -6439,8 +6439,9 @@ function buildPrimaryNavigatorRows(report) {
   }));
 }
 
-function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs) {
+function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs, options = {}) {
   const normalizedReportId = String(report?.id || "").trim();
+  const requestMissing = options.requestMissing !== false;
   const normalizedScfs = Array.from(
     new Set(
       ensureArray(Array.isArray(scfs) ? scfs : [scfs])
@@ -6459,7 +6460,9 @@ function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs) {
 
     const cachedMetrics = getCachedAnalysisReportScfMetrics(normalizedReportId, entry.scf);
     if (!cachedMetrics) {
-      requestAnalysisReportScfMetrics(normalizedReportId, entry.scf);
+      if (requestMissing) {
+        requestAnalysisReportScfMetrics(normalizedReportId, entry.scf);
+      }
       return entry;
     }
 
@@ -8005,8 +8008,10 @@ function renderAnalysisComparisonReviewPanel() {
   primaryNavigatorRows = mergeExactMetricsIntoNavigatorRows(
     primaryNavigatorRows,
     primaryReport,
-    [effectiveSelectedScf]
+    [effectiveSelectedScf, ...visibleNavigatorScfs],
+    { requestMissing: false }
   );
+  requestAnalysisReportScfMetrics(primaryReport?.id, effectiveSelectedScf);
   prefetchAnalysisReportScfMetrics(
     primaryReport,
     visibleNavigatorScfs.filter((scf) => scf && scf !== effectiveSelectedScf)
