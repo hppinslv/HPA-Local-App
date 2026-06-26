@@ -7321,11 +7321,44 @@ function removeWorkingListEntriesBelowRate(listType, rows = [], metricKey, thres
     rows
       .filter((entry) => {
         const metricValue = Number(entry?.[normalizedMetricKey] || 0);
-        if (parsedThreshold.compareValue === 0) {
-          return metricValue <= 0;
-        }
-        return metricValue < parsedThreshold.compareValue;
+        return metricValue <= parsedThreshold.compareValue;
       })
+      .map((entry) => normalizeScf(entry?.scf))
+      .filter(Boolean)
+  );
+
+  if (!scfsToRemove.size) {
+    return { removedCount: 0, affectedScfs: [] };
+  }
+
+  const originalItems = Array.isArray(list.items) ? list.items : [];
+  const removedItems = originalItems.filter((entry) => scfsToRemove.has(normalizeScf(entry?.scf)));
+  const remainingItems = originalItems.filter((entry) => !scfsToRemove.has(normalizeScf(entry?.scf)));
+  const removedCount = removedItems.length;
+  list.items = remainingItems;
+  list.count = remainingItems.length;
+  list.updatedAt = new Date().toISOString();
+  invalidateComparisonReviewSummary();
+
+  return {
+    removedCount,
+    affectedScfs: removedItems.map((entry) => normalizeScf(entry?.scf)).filter(Boolean),
+  };
+}
+
+function removeWorkingListEntriesAtZeroRate(listType, rows = [], metricKey) {
+  const normalizedListType = String(listType || "").trim().toLowerCase();
+  const normalizedMetricKey = String(metricKey || "soldRate").trim();
+
+  ensureComparisonReviewWorkingLists();
+  const list = getWorkingReferenceList(normalizedListType);
+  if (!list) {
+    return { removedCount: 0, affectedScfs: [] };
+  }
+
+  const scfsToRemove = new Set(
+    rows
+      .filter((entry) => Number(entry?.[normalizedMetricKey] || 0) <= 0)
       .map((entry) => normalizeScf(entry?.scf))
       .filter(Boolean)
   );
@@ -7372,10 +7405,7 @@ function calculateWorkingListEntriesBelowRatePreview(listType, rows = [], metric
         return false;
       }
       const metricValue = Number(entry?.[normalizedMetricKey] || 0);
-      if (parsedThreshold.compareValue === 0) {
-        return metricValue <= 0;
-      }
-      return metricValue < parsedThreshold.compareValue;
+      return metricValue <= parsedThreshold.compareValue;
     })
     .map((entry) => normalizeScf(entry?.scf))
     .filter(Boolean);
@@ -8707,6 +8737,181 @@ function renderReviewSummaryRows(title, rows) {
   `;
 }
 
+function renderReviewSummaryPrintListMarkup(title, rows = []) {
+  const normalizedRows = Array.isArray(rows) ? rows : [];
+  if (!normalizedRows.length) {
+    return `
+      <section class="analysis-print-section">
+        <h2>${esc(title)}</h2>
+        <p>No items.</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="analysis-print-section">
+      <h2>${esc(title)} (${normalizedRows.length})</h2>
+      <table class="analysis-print-table">
+        <thead>
+          <tr>
+            <th>SCF</th>
+            <th>State</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${normalizedRows
+            .map((entry) => `
+              <tr>
+                <td>${esc(entry?.scf || "")}</td>
+                <td>${esc(entry?.state || "")}</td>
+                <td>${esc(entry?.reason || "")}</td>
+              </tr>
+            `)
+            .join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function buildAnalysisReviewPrintWindowDocument() {
+  const summary = state.analysis.reviewSummary || {};
+  const listSummary = summary.lists || {};
+  const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
+  const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
+  const reviewerName = String(state.analysis.reviewCompletedByName || "").trim();
+  const reviewerDate = normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate();
+  const reviewNotes = String(state.analysis.reviewSummaryNotes || "").trim();
+  const runNotes = String(summary.runNotes || state.analysis.runNotes || "").trim();
+  const analysisName = String(state.analysis.runName || "Analysis Review").trim() || "Analysis Review";
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>${esc(analysisName)} Print Summary</title>
+  <style>
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      margin: 24px;
+      color: #1f1a17;
+      line-height: 1.35;
+    }
+    h1, h2, h3 {
+      margin: 0 0 8px;
+    }
+    h1 {
+      font-size: 28px;
+    }
+    h2 {
+      font-size: 18px;
+      margin-top: 22px;
+    }
+    p {
+      margin: 6px 0;
+    }
+    .analysis-print-meta,
+    .analysis-print-counts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 18px;
+      margin-top: 14px;
+    }
+    .analysis-print-counts {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .analysis-print-card {
+      border: 1px solid #d8c9b8;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-top: 16px;
+      break-inside: avoid;
+    }
+    .analysis-print-section {
+      margin-top: 18px;
+      break-inside: avoid;
+    }
+    .analysis-print-notes {
+      white-space: pre-wrap;
+    }
+    .analysis-print-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    .analysis-print-table th,
+    .analysis-print-table td {
+      border: 1px solid #d8c9b8;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .analysis-print-table th {
+      background: #f5efe7;
+    }
+    @media print {
+      body {
+        margin: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>${esc(analysisName)}</h1>
+  <p>Printed ${esc(formatDate(new Date().toISOString()))}</p>
+
+  <section class="analysis-print-card">
+    <h2>Summary</h2>
+    <div class="analysis-print-meta">
+      <p><strong>Reviewer:</strong> ${esc(reviewerName || "Not set")}</p>
+      <p><strong>Date:</strong> ${esc(formatDateOnly(reviewerDate) || reviewerDate || "Not set")}</p>
+    </div>
+    <div class="analysis-print-counts">
+      <p><strong>NHCL Added:</strong> ${Number(summary.summary?.nhclAdded || 0)}</p>
+      <p><strong>NHCL Removed:</strong> ${Number(summary.summary?.nhclRemoved || 0)}</p>
+      <p><strong>RFC Added:</strong> ${Number(summary.summary?.rfcAdded || 0)}</p>
+      <p><strong>RFC Removed:</strong> ${Number(summary.summary?.rfcRemoved || 0)}</p>
+      <p><strong>Blocked Additions:</strong> ${Number(summary.summary?.blockedCount || 0)}</p>
+    </div>
+  </section>
+
+  ${runNotes
+    ? `<section class="analysis-print-card"><h2>Run Notes</h2><div class="analysis-print-notes">${esc(runNotes)}</div></section>`
+    : ""}
+  ${reviewNotes
+    ? `<section class="analysis-print-card"><h2>Review Notes</h2><div class="analysis-print-notes">${esc(reviewNotes)}</div></section>`
+    : ""}
+
+  ${renderReviewSummaryPrintListMarkup("NHCL - Added", nhcl.added)}
+  ${renderReviewSummaryPrintListMarkup("NHCL - Removed", nhcl.removed)}
+  ${renderReviewSummaryPrintListMarkup("RFC - Added", rfc.added)}
+  ${renderReviewSummaryPrintListMarkup("RFC - Removed", rfc.removed)}
+  ${renderReviewSummaryPrintListMarkup("Blocked Additions", [
+    ...(Array.isArray(nhcl.blocked) ? nhcl.blocked : []),
+    ...(Array.isArray(rfc.blocked) ? rfc.blocked : []),
+  ])}
+
+  <script>
+    window.addEventListener("load", () => {
+      window.print();
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function openAnalysisReviewPrintSummary() {
+  const printWindow = window.open("", "hpa-analysis-review-print", "width=960,height=1200");
+  if (!printWindow) {
+    throw new Error("Allow pop-ups to print the review summary.");
+  }
+  printWindow.document.open();
+  printWindow.document.write(buildAnalysisReviewPrintWindowDocument());
+  printWindow.document.close();
+}
+
 function renderAnalysisComparisonSummaryView() {
   const container = el("analysis-comparison-results");
   const summary = state.analysis.reviewSummary || {};
@@ -8736,7 +8941,10 @@ function renderAnalysisComparisonSummaryView() {
             <h3>Final Review Summary</h3>
             <p>Review what will be added and removed for NHCL and RFC, confirm the notes, then approve before completing.</p>
           </div>
-          <button id="analysis-review-summary-back-button" class="secondary-button"${readOnly ? " disabled" : ""}>Back to Review</button>
+          <div class="action-row">
+            <button id="analysis-review-summary-print-button" class="secondary-button">Print Summary</button>
+            <button id="analysis-review-summary-back-button" class="secondary-button"${readOnly ? " disabled" : ""}>Back to Review</button>
+          </div>
         </div>
       </article>
 
@@ -8798,6 +9006,18 @@ function renderAnalysisComparisonSummaryView() {
     scheduleReviewStateAutosave("summary-back");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("summary-back");
+  });
+
+  el("analysis-review-summary-print-button")?.addEventListener("click", () => {
+    try {
+      openAnalysisReviewPrintSummary();
+      setStatus("analysis-comparison-selection-status", "Opening print summary...");
+    } catch (error) {
+      setStatus(
+        "analysis-comparison-selection-status",
+        `Unable to print summary: ${error instanceof Error ? error.message : String(error || "Unknown error")}`
+      );
+    }
   });
 
   el("analysis-review-summary-approved")?.addEventListener("change", () => {
@@ -9208,7 +9428,10 @@ function renderAnalysisComparisonReviewPanel() {
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-bulk-remove-button">Working copy cleanup</label>
-            <button id="analysis-review-bulk-remove-button" class="secondary-button"${bulkPreview ? "" : " disabled"}>Remove Below Threshold</button>
+            <div class="action-row">
+              <button id="analysis-review-bulk-remove-button" class="secondary-button"${bulkPreview ? "" : " disabled"}>Remove Below Threshold</button>
+              <button id="analysis-review-bulk-remove-zeroes-button" class="secondary-button">Remove All Zeroes</button>
+            </div>
           </div>
         </div>
         <div class="analysis-review-bulk-remove">
@@ -9667,6 +9890,32 @@ function renderAnalysisComparisonReviewPanel() {
       removalResult.removedCount
         ? `${removalResult.removedCount} SCF(s) were marked for pending removal from the working ${listType} list for falling below ${thresholdLabel} ${metricLabel} in ${primaryReportDisplayName} only. They remain visible in the review list.`
         : `No SCFs were removed from the working ${listType} list below ${thresholdLabel} ${metricLabel} in ${primaryReportDisplayName}.`
+    );
+  });
+
+  el("analysis-review-bulk-remove-zeroes-button")?.addEventListener("click", () => {
+    const metricKey = String(state.analysis.reviewBulkMetric || "soldRate").trim();
+    const metricLabel = getReviewMetricDisplayName(metricKey);
+    const removalResult = removeWorkingListEntriesAtZeroRate(
+      targetListType,
+      primaryNavigatorRows,
+      metricKey
+    );
+    appendAnalysisReviewNote(
+      removalResult.removedCount
+        ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) at 0.00% ${metricLabel} for pending removal using ${primaryReportDisplayName} only.`
+        : `Bulk removal decision: reviewed ${listType} SCFs at 0.00% ${metricLabel} using ${primaryReportDisplayName} only; no items were removed.`
+    );
+    invalidateComparisonReviewSummary();
+    state.analysis.reviewBulkPreview = null;
+    scheduleReviewStateAutosave("bulk-remove-zeroes");
+    renderAnalysisComparisonReviewPanel();
+    broadcastAnalysisReviewState("bulk-remove-zeroes");
+    setStatus(
+      "analysis-comparison-selection-status",
+      removalResult.removedCount
+        ? `${removalResult.removedCount} SCF(s) with 0.00% ${metricLabel} were marked for pending removal from the working ${listType} list using ${primaryReportDisplayName} only. They remain visible in the review list.`
+        : `No SCFs with 0.00% ${metricLabel} were removed from the working ${listType} list in ${primaryReportDisplayName}.`
     );
   });
 
