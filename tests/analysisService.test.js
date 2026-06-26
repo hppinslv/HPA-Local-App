@@ -348,6 +348,76 @@ test("older saved setups recover comparison groups from report pulls and backfil
   assert.equal(saved.reviewState.reviewPrimaryReportIds.comparison_rfc, "report_rfc_current");
 });
 
+test("review debug resolves saved primary report rows from pull ids", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  fs.writeFileSync(path.join(tempDir, "analysis-reports.json"), JSON.stringify([
+    {
+      id: "report_nhcl_saved",
+      pullId: "pull_nhcl",
+      report_name: "NHCL 2026.06.26 - Jan 2013 - Dec 2025",
+      parameters: {
+        key_codes: ["NHCL"],
+        client_type: "NHCL",
+      },
+      rows: [
+        {
+          "SCF Grouping": "143",
+          "Sum of Mailed": "489",
+          "Sold Rate": "0.8179959100",
+          "In Force Rate": "0.0000000000",
+          "Converted Rate": "0.0000000000",
+        },
+      ],
+    },
+  ], null, 2));
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const saved = service.saveAnalysisSetup({
+    ...createComparisonPayload({
+      reportPulls: [
+        {
+          id: "pull_nhcl",
+          reportName: "NHCL Jan 2013 - Dec 2025",
+          reportId: "00OQm000003PIxhMAG",
+          keyCodes: ["NHCL"],
+          clientType: "NHCL",
+        },
+        {
+          id: "pull_nhcl_b",
+          savedReportId: "report_nhcl_saved_b",
+          reportName: "NHCL Jan 2026 - May 2026",
+          reportId: "00OQm000003PIxhMAG",
+          keyCodes: ["NHCL"],
+          clientType: "NHCL",
+        },
+      ],
+      comparisonRequests: [],
+      reviewState: {
+        selectedComparisonId: "",
+        lastEditedComparisonId: "",
+        reviewPrimaryReportIds: {},
+      },
+    }),
+  });
+
+  const debug = service.getAnalysisSetupReviewDebug(saved.id);
+
+  assert.equal(debug.setupId, saved.id);
+  assert.equal(debug.comparisonRequestsCount, 1);
+  assert.equal(debug.selectedPrimaryReportId, "report_nhcl_saved");
+  assert.equal(debug.resolvedPrimaryReportId, "report_nhcl_saved");
+  assert.equal(debug.selectedPrimaryReportExists, true);
+  assert.equal(debug.savedReportRowCount, 1);
+  assert.ok(debug.fieldHints.scfFieldKeys.includes("SCF Grouping"));
+  assert.ok(debug.fieldHints.mailedFieldKeys.includes("Sum of Mailed"));
+});
+
 test("review working-list changes persist before completion and reload with the setup", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);
@@ -382,8 +452,10 @@ test("review working-list changes persist before completion and reload with the 
           primaryReportId: "report_a",
           primaryReportName: "New Home - Jan 2013 - Dec 2025 (06/26/2026)",
           listType: "nhcl",
+          removalKind: "zero-quantity",
           metricKey: "soldRate",
           checkedCount: 25,
+          totalMailedRemoved: 0,
           removedScfs: ["010"],
           foundZeroRateScfs: ["010", "011"],
           skippedAlreadyRemovedScfs: ["011"],
@@ -414,8 +486,10 @@ test("review working-list changes persist before completion and reload with the 
       primaryReportId: "report_a",
       primaryReportName: "New Home - Jan 2013 - Dec 2025 (06/26/2026)",
       listType: "nhcl",
+      removalKind: "zero-quantity",
       metricKey: "soldRate",
       checkedCount: 25,
+      totalMailedRemoved: 0,
       removedScfs: ["010"],
       foundZeroRateScfs: ["010", "011"],
       skippedAlreadyRemovedScfs: ["011"],

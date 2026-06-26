@@ -39,6 +39,7 @@ const {
   getAnalysisReportExportPath,
   getAnalysisRun,
   getAnalysisSetup,
+  getAnalysisSetupReviewDebug,
   getAnalysisComparisonSetup,
   getAnalysisComparisonSetups,
   getReferenceListByType,
@@ -1118,6 +1119,17 @@ const server = http.createServer((request, response) => {
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to delete analysis setup." });
     }
+    return;
+  }
+
+  const analysisSetupReviewDebugMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)\/review-debug$/);
+  if (analysisSetupReviewDebugMatch && request.method === "GET") {
+    const debug = getAnalysisSetupReviewDebug(analysisSetupReviewDebugMatch[1]);
+    if (!debug) {
+      sendJson(response, 404, { error: "Analysis setup not found." });
+      return;
+    }
+    sendJson(response, 200, { debug });
     return;
   }
 

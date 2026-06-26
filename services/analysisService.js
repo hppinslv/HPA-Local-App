@@ -1579,8 +1579,10 @@ function normalizeAnalysisReviewState(value = {}) {
         primaryReportId: String(entry.primaryReportId || "").trim(),
         primaryReportName: String(entry.primaryReportName || "").trim(),
         listType: String(entry.listType || "").trim().toLowerCase(),
+        removalKind: String(entry.removalKind || "zero-rate").trim().toLowerCase(),
         metricKey: String(entry.metricKey || "soldRate").trim() || "soldRate",
         checkedCount: Number(entry.checkedCount || 0),
+        totalMailedRemoved: Number(entry.totalMailedRemoved || 0),
         removedScfs,
         foundZeroRateScfs,
         skippedAlreadyRemovedScfs,
@@ -3023,6 +3025,125 @@ function listAnalysisSetups() {
 function getAnalysisSetup(setupId) {
   const setup = readAnalysisSetups().find((entry) => entry.id === setupId);
   return setup ? serializeAnalysisSetup(setup) : null;
+}
+
+function normalizeAnalysisDebugKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findAnalysisDebugFieldKeys(row = {}, matchers = []) {
+  const keys = Object.keys(row || {});
+  return Array.from(
+    new Set(
+      keys.filter((key) => {
+        const normalizedKey = normalizeAnalysisDebugKey(key);
+        return ensureArray(matchers).some((matcher) => normalizedKey.includes(matcher));
+      })
+    )
+  ).slice(0, 3);
+}
+
+function getLatestOpenAnalysisSetupEntry() {
+  return readAnalysisSetups()
+    .filter((entry) => !entry?.archived && isOpenAnalysisStatus(entry?.status || ""))
+    .sort((left, right) => {
+      const leftTime = Date.parse(left?.updatedAt || left?.createdAt || "") || 0;
+      const rightTime = Date.parse(right?.updatedAt || right?.createdAt || "") || 0;
+      return rightTime - leftTime;
+    })[0] || null;
+}
+
+function getAnalysisSetupReviewDebug(setupId = "") {
+  const normalizedSetupId = String(setupId || "").trim();
+  const setupEntry = normalizedSetupId && normalizedSetupId.toLowerCase() !== "active"
+    ? readAnalysisSetups().find((entry) => String(entry?.id || "").trim() === normalizedSetupId)
+    : getLatestOpenAnalysisSetupEntry();
+  if (!setupEntry) {
+    return null;
+  }
+
+  const setup = serializeAnalysisSetup(setupEntry);
+  const reports = readAnalysisReports();
+  const savedReportIdByPullId = new Map(
+    reports
+      .map((report) => [String(report?.pullId || report?.pull_id || "").trim(), String(report?.id || "").trim()])
+      .filter(([pullId, reportId]) => pullId && reportId)
+  );
+  const comparisonRequests = ensureArray(setup.comparisonRequests);
+  const selectedComparisonId = String(
+    setup?.reviewState?.selectedComparisonId
+    || comparisonRequests[0]?.id
+    || ""
+  ).trim();
+  const selectedComparison = comparisonRequests.find((entry) => String(entry?.id || "").trim() === selectedComparisonId)
+    || comparisonRequests[0]
+    || null;
+  const selectedPrimaryReportId = selectedComparison
+    ? String(
+        setup?.reviewState?.reviewPrimaryReportIds?.[selectedComparison.id]
+        || selectedComparison?.selectedReportIds?.[0]
+        || selectedComparison?.reportIds?.[0]
+        || ""
+      ).trim()
+    : "";
+  const resolvedPrimaryReportId = String(
+    savedReportIdByPullId.get(selectedPrimaryReportId)
+    || selectedPrimaryReportId
+  ).trim();
+  const selectedPrimaryReport = reports.find((report) => (
+    String(report?.id || "").trim() === resolvedPrimaryReportId
+    || String(report?.pullId || report?.pull_id || "").trim() === selectedPrimaryReportId
+  )) || null;
+  const firstRow = selectedPrimaryReport?.rows?.[0] || null;
+
+  return {
+    setupId: String(setup.id || "").trim(),
+    setupStatus: String(setup.status || "").trim(),
+    comparisonRequestsCount: comparisonRequests.length,
+    reportPullsCount: ensureArray(setup.reportPulls).length,
+    selectedComparisonId,
+    selectedComparisonName: String(selectedComparison?.comparisonName || selectedComparison?.name || "").trim(),
+    selectedPrimaryReportId,
+    resolvedPrimaryReportId,
+    selectedPrimaryReportExists: Boolean(selectedPrimaryReport),
+    savedReportRowCount: Array.isArray(selectedPrimaryReport?.rows) ? selectedPrimaryReport.rows.length : 0,
+    savedReportName: String(selectedPrimaryReport?.report_name || selectedPrimaryReport?.reportName || "").trim(),
+    reportPulls: ensureArray(setup.reportPulls).map((pull) => ({
+      id: String(pull?.id || "").trim(),
+      savedReportId: String(pull?.savedReportId || savedReportIdByPullId.get(String(pull?.id || "").trim()) || "").trim(),
+      analysisLabel: String(pull?.analysisLabel || "").trim(),
+      clientType: String(pull?.clientType || "").trim(),
+      keyCodes: ensureArray(pull?.keyCodes),
+    })),
+    comparisonRequests: comparisonRequests.map((entry) => ({
+      id: String(entry?.id || "").trim(),
+      comparisonName: String(entry?.comparisonName || entry?.name || "").trim(),
+      selectedReportIds: ensureArray(entry?.selectedReportIds),
+      reportIds: ensureArray(entry?.reportIds),
+      keyCodeGroup: String(entry?.keyCodeGroup || "").trim(),
+    })),
+    fieldHints: firstRow
+      ? {
+          sampleKeys: Object.keys(firstRow).slice(0, 12),
+          scfFieldKeys: findAnalysisDebugFieldKeys(firstRow, ["scf"]),
+          mailedFieldKeys: findAnalysisDebugFieldKeys(firstRow, ["mailed", "mail", "quantity"]),
+          soldRateFieldKeys: findAnalysisDebugFieldKeys(firstRow, ["sold rate"]),
+          inForceRateFieldKeys: findAnalysisDebugFieldKeys(firstRow, ["in force rate", "inforce rate"]),
+          convertedRateFieldKeys: findAnalysisDebugFieldKeys(firstRow, ["converted rate"]),
+        }
+      : {
+          sampleKeys: [],
+          scfFieldKeys: [],
+          mailedFieldKeys: [],
+          soldRateFieldKeys: [],
+          inForceRateFieldKeys: [],
+          convertedRateFieldKeys: [],
+        },
+  };
 }
 
 function getAnalysisComparisonSetups(setupId) {
@@ -5160,6 +5281,7 @@ module.exports = {
   getAnalysisReportExportPath,
   getAnalysisRun,
   getAnalysisSetup,
+  getAnalysisSetupReviewDebug,
   getAnalysisComparisonSetup,
   getAnalysisComparisonSetups,
   getReferenceListByType,

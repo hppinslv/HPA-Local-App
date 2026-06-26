@@ -1499,6 +1499,9 @@ function logComparisonSetupPersistenceContext(reason = "compare-review-open") {
   const selectedPrimaryReportId = selectedComparisonId
     ? String(state.analysis.reviewPrimaryReportIds?.[selectedComparisonId] || "").trim()
     : "";
+  const selectedPrimaryReport = ensureArray(state.analysis.savedReports).find(
+    (report) => String(report?.id || "").trim() === selectedPrimaryReportId
+  ) || null;
   console.info("[analysis-comparison-persistence]", {
     reason,
     analysisId: String(state.analysis.currentRunId || state.analysis.currentSetupId || "").trim(),
@@ -1506,6 +1509,8 @@ function logComparisonSetupPersistenceContext(reason = "compare-review-open") {
     savedComparisonSetupId: selectedComparisonId,
     selectedPrimaryReportId,
     selectedComparisonIds,
+    selectedPrimaryReportExists: Boolean(selectedPrimaryReport),
+    selectedPrimaryReportRowCount: Array.isArray(selectedPrimaryReport?.rows) ? selectedPrimaryReport.rows.length : 0,
     loadSource: String(state.analysis.lastSetupLoadSource || "runtime-state").trim() || "runtime-state",
   });
 }
@@ -1753,8 +1758,10 @@ function normalizeReviewZeroRateRemovals(source) {
       primaryReportId: String(entry.primaryReportId || "").trim(),
       primaryReportName: String(entry.primaryReportName || "").trim(),
       listType: String(entry.listType || "").trim().toLowerCase(),
+      removalKind: String(entry.removalKind || "zero-rate").trim().toLowerCase(),
       metricKey: String(entry.metricKey || "soldRate").trim() || "soldRate",
       checkedCount: Number(entry.checkedCount || 0),
+      totalMailedRemoved: Number(entry.totalMailedRemoved || 0),
       removedScfs,
       foundZeroRateScfs,
       skippedAlreadyRemovedScfs,
@@ -5657,6 +5664,98 @@ function recoverComparisonSetupFromWorkspace() {
   return true;
 }
 
+function buildSavedReportIdByPullIdMap(savedReports = state.analysis.savedReports) {
+  return new Map(
+    ensureArray(savedReports)
+      .map((report) => [String(report?.pullId || report?.pull_id || "").trim(), String(report?.id || "").trim()])
+      .filter(([pullId, reportId]) => pullId && reportId)
+  );
+}
+
+function remapAnalysisReportIdentifier(reportId, savedReportIdByPullId = buildSavedReportIdByPullIdMap()) {
+  const normalizedId = String(reportId || "").trim();
+  if (!normalizedId) {
+    return "";
+  }
+  return String(savedReportIdByPullId.get(normalizedId) || normalizedId).trim();
+}
+
+function remapComparisonReportIdsWithSavedReports(collection = [], savedReportIdByPullId = buildSavedReportIdByPullIdMap()) {
+  return ensureArray(collection).map((entry, index) => {
+    const clonedEntry = entry && typeof entry === "object" ? { ...entry } : createComparisonLink(index);
+    const rawIds = Array.isArray(clonedEntry.selectedReportIds) && clonedEntry.selectedReportIds.length
+      ? clonedEntry.selectedReportIds
+      : Array.isArray(clonedEntry.reportIds) && clonedEntry.reportIds.length
+        ? clonedEntry.reportIds
+        : [clonedEntry.reportAId, clonedEntry.reportBId];
+    const remappedIds = Array.from(
+      new Set(
+        ensureArray(rawIds)
+          .map((reportId) => remapAnalysisReportIdentifier(reportId, savedReportIdByPullId))
+          .filter(Boolean)
+      )
+    ).slice(0, 5);
+    clonedEntry.selectedReportIds = remappedIds;
+    clonedEntry.reportIds = remappedIds;
+    clonedEntry.reportAId = remappedIds[0] || "";
+    clonedEntry.reportBId = remappedIds[1] || "";
+    return clonedEntry;
+  });
+}
+
+function hydrateAnalysisWorkspaceFromSavedReports() {
+  const savedReportIdByPullId = buildSavedReportIdByPullIdMap();
+  if (!savedReportIdByPullId.size && !ensureArray(state.analysis.savedReports).length) {
+    return;
+  }
+
+  state.analysis.reportPulls = ensureArray(state.analysis.reportPulls).map((pull) => {
+    const pullId = String(pull?.id || "").trim();
+    const savedReportId = String(pull?.savedReportId || savedReportIdByPullId.get(pullId) || "").trim();
+    if (!savedReportId || savedReportId === String(pull?.savedReportId || "").trim()) {
+      return pull;
+    }
+    return {
+      ...pull,
+      savedReportId,
+    };
+  });
+
+  state.analysis.comparisonLinks = remapComparisonReportIdsWithSavedReports(
+    state.analysis.comparisonLinks,
+    savedReportIdByPullId
+  );
+  state.analysis.comparisonRequests = remapComparisonReportIdsWithSavedReports(
+    state.analysis.comparisonRequests,
+    savedReportIdByPullId
+  );
+
+  state.analysis.reviewPrimaryReportIds = normalizeReviewSyncMap(
+    Object.fromEntries(
+      Object.entries(state.analysis.reviewPrimaryReportIds || {}).map(([comparisonId, reportId]) => ([
+        comparisonId,
+        remapAnalysisReportIdentifier(reportId, savedReportIdByPullId),
+      ]))
+    )
+  );
+
+  ensureArray(state.analysis.comparisonRequests).forEach((comparison) => {
+    const comparisonId = String(comparison?.id || "").trim();
+    if (!comparisonId) {
+      return;
+    }
+    const selectedIds = ensureArray(comparison?.selectedReportIds).length
+      ? ensureArray(comparison.selectedReportIds)
+      : ensureArray(comparison?.reportIds);
+    if (!selectedIds.length) {
+      return;
+    }
+    if (!String(state.analysis.reviewPrimaryReportIds?.[comparisonId] || "").trim()) {
+      state.analysis.reviewPrimaryReportIds[comparisonId] = String(selectedIds[0] || "").trim();
+    }
+  });
+}
+
 function focusComparisonReviewSummary() {
   // intentionally no-op: preventing review navigation from forcing page-level scroll.
 }
@@ -5863,7 +5962,7 @@ function buildZeroRateRemovalReviewNotesText() {
   }
 
   const lines = [
-    `Pending zero-rate working-copy removals: ${zeroRateSummary.totalRemovedCount} SCF(s) across ${zeroRateSummary.totalActionCount} action(s).`,
+    `Pending working-copy removals: ${zeroRateSummary.totalRemovedCount} SCF(s) across ${zeroRateSummary.totalActionCount} action(s).`,
   ];
 
   zeroRateSummary.actions.forEach((action) => {
@@ -5872,8 +5971,11 @@ function buildZeroRateRemovalReviewNotesText() {
         action.comparisonName || action.comparisonId || "Comparison",
         action.primaryReportName || action.primaryReportId || "Primary report",
         `${String(action.listType || "").toUpperCase()} list`,
-        getReviewMetricDisplayName(action.metricKey),
+        action.removalKind === "zero-quantity"
+          ? "Zero mailed quantity"
+          : getReviewMetricDisplayName(action.metricKey),
         `${Number(action.activeRemovedCount || 0)} removed`,
+        `${Number(action.totalMailedRemoved || 0).toLocaleString("en-US")} mailed removed`,
         action.activeRemovedScfs.join(", "),
       ]
         .filter(Boolean)
@@ -7745,6 +7847,85 @@ function removeWorkingListEntriesAtZeroRate(listType, rows = [], metricKey) {
   };
 }
 
+function isZeroQuantityNavigatorEntry(entry) {
+  const rawMailedValue = getTotalMailedFromRow(entry?.row || {});
+  if (rawMailedValue === "" || rawMailedValue === null || rawMailedValue === undefined) {
+    return true;
+  }
+  return parseLooseMetricNumber(rawMailedValue) === 0;
+}
+
+function removeWorkingListEntriesAtZeroQuantity(listType, rows = []) {
+  const normalizedListType = String(listType || "").trim().toLowerCase();
+
+  ensureComparisonReviewWorkingLists();
+  const list = getWorkingReferenceList(normalizedListType);
+  if (!list) {
+    return {
+      removedCount: 0,
+      removedScfs: [],
+      foundZeroRateScfs: [],
+      skippedAlreadyRemovedScfs: [],
+      skippedDnmScfs: [],
+      checkedCount: 0,
+      totalMailedRemoved: 0,
+    };
+  }
+
+  const checkedRows = ensureArray(rows);
+  const currentScfs = new Set(ensureArray(list.items).map((entry) => normalizeScf(entry?.scf)).filter(Boolean));
+  const dnmScfs = getDnmReferenceScfSet();
+  const foundZeroQuantityScfs = [];
+  const skippedAlreadyRemovedScfs = [];
+  const skippedDnmScfs = [];
+  const scfsToRemove = [];
+  const mailedByScf = new Map();
+
+  checkedRows.forEach((entry) => {
+    const scf = normalizeScf(entry?.scf);
+    if (!scf || !isZeroQuantityNavigatorEntry(entry)) {
+      return;
+    }
+    foundZeroQuantityScfs.push(scf);
+    mailedByScf.set(scf, parseLooseMetricNumber(getTotalMailedFromRow(entry?.row || {})));
+    if (!currentScfs.has(scf)) {
+      if (dnmScfs.has(scf)) {
+        skippedDnmScfs.push(scf);
+      } else {
+        skippedAlreadyRemovedScfs.push(scf);
+      }
+      return;
+    }
+    scfsToRemove.push(scf);
+  });
+
+  const uniqueScfsToRemove = new Set(scfsToRemove);
+  const originalItems = Array.isArray(list.items) ? list.items : [];
+  const removedItems = originalItems.filter((entry) => uniqueScfsToRemove.has(normalizeScf(entry?.scf)));
+  const remainingItems = originalItems.filter((entry) => !uniqueScfsToRemove.has(normalizeScf(entry?.scf)));
+  const removedCount = removedItems.length;
+  const totalMailedRemoved = removedItems.reduce(
+    (sum, entry) => sum + Number(mailedByScf.get(normalizeScf(entry?.scf)) || 0),
+    0
+  );
+  if (removedCount > 0) {
+    list.items = remainingItems;
+    list.count = remainingItems.length;
+    list.updatedAt = new Date().toISOString();
+    invalidateComparisonReviewSummary();
+  }
+
+  return {
+    removedCount,
+    removedScfs: removedItems.map((entry) => normalizeScf(entry?.scf)).filter(Boolean),
+    foundZeroRateScfs: Array.from(new Set(foundZeroQuantityScfs)),
+    skippedAlreadyRemovedScfs: Array.from(new Set(skippedAlreadyRemovedScfs)),
+    skippedDnmScfs: Array.from(new Set(skippedDnmScfs)),
+    checkedCount: checkedRows.length,
+    totalMailedRemoved,
+  };
+}
+
 function calculateWorkingListEntriesBelowRatePreview(listType, rows = [], metricKey, thresholdValue) {
   const normalizedListType = String(listType || "").trim().toLowerCase();
   const normalizedMetricKey = String(metricKey || "soldRate").trim();
@@ -7851,6 +8032,7 @@ function buildZeroRateRemovalSummary() {
   return {
     actions,
     totalRemovedCount: actions.reduce((sum, entry) => sum + Number(entry.activeRemovedCount || 0), 0),
+    totalMailedRemoved: actions.reduce((sum, entry) => sum + Number(entry.totalMailedRemoved || 0), 0),
     totalActionCount: actions.length,
   };
 }
@@ -9730,6 +9912,25 @@ function renderAnalysisComparisonReviewPanel() {
       });
     return;
   }
+  if (
+    primaryReport
+    && Array.isArray(primaryReport?.rows)
+    && primaryReport.rows.length > 0
+    && Array.isArray(primaryRows)
+    && primaryRows.length === 0
+  ) {
+    const sampleKeys = Object.keys(primaryReport.rows[0] || {}).slice(0, 8);
+    container.innerHTML = `<div class="empty-state-block">Saved report rows were loaded, but no SCF field could be detected for the selected primary report. Sample fields: ${esc(sampleKeys.join(", "))}</div>`;
+    console.warn("[analysis-primary-report-debug]", {
+      setupId: String(state.analysis.currentSetupId || "").trim(),
+      selectedComparisonId: comparison?.id || "",
+      selectedPrimaryReportId: primaryReport?.id || "",
+      selectedPrimaryReportName: primaryReport?.report_name || primaryReport?.reportName || "",
+      savedReportRowCount: primaryReport.rows.length,
+      sampleKeys,
+    });
+    return;
+  }
   if (!reports.length || !primaryReport) {
     if (recoverComparisonSetupFromWorkspace()) {
       scheduleAnalysisComparisonReviewRender(20);
@@ -10530,14 +10731,12 @@ function renderAnalysisComparisonReviewPanel() {
       return;
     }
     const metricKey = String(state.analysis.reviewBulkMetric || "soldRate").trim();
-    const metricLabel = getReviewMetricDisplayName(metricKey);
-    const removalResult = removeWorkingListEntriesAtZeroRate(
+    const removalResult = removeWorkingListEntriesAtZeroQuantity(
       targetListType,
-      primaryNavigatorRows,
-      metricKey
+      primaryNavigatorRows
     );
-    const visibleZeroRateScfs = primaryNavigatorRows
-      .filter((entry) => isZeroNavigatorMetricEntry(entry, metricKey))
+    const visibleZeroQuantityScfs = primaryNavigatorRows
+      .filter((entry) => isZeroQuantityNavigatorEntry(entry))
       .map((entry) => normalizeScf(entry?.scf))
       .filter(Boolean);
     console.info("[analysis-zero-rate-removal]", {
@@ -10546,14 +10745,14 @@ function renderAnalysisComparisonReviewPanel() {
       selectedPrimaryReportId: primaryReport.id,
       selectedPrimaryReportName: primaryReportDisplayName,
       listType: targetListType,
-      metricKey,
-      metricLabel,
+      removalKind: "zero-quantity",
       totalScfsChecked: removalResult.checkedCount,
-      visibleZeroRateScfs,
-      zeroRateScfsFound: removalResult.foundZeroRateScfs,
+      visibleZeroQuantityScfs,
+      zeroQuantityScfsFound: removalResult.foundZeroRateScfs,
       skippedAlreadyNotOnWorkingList: removalResult.skippedAlreadyRemovedScfs,
       skippedAlreadyDnm: removalResult.skippedDnmScfs,
       removedScfs: removalResult.removedScfs,
+      totalMailedRemoved: removalResult.totalMailedRemoved,
     });
     if (removalResult.removedCount > 0) {
       recordZeroRateRemovalAction({
@@ -10562,8 +10761,10 @@ function renderAnalysisComparisonReviewPanel() {
         primaryReportId: primaryReport.id,
         primaryReportName: primaryReportDisplayName,
         listType: targetListType,
+        removalKind: "zero-quantity",
         metricKey,
         checkedCount: removalResult.checkedCount,
+        totalMailedRemoved: removalResult.totalMailedRemoved,
         removedScfs: removalResult.removedScfs,
         foundZeroRateScfs: removalResult.foundZeroRateScfs,
         skippedAlreadyRemovedScfs: removalResult.skippedAlreadyRemovedScfs,
@@ -10572,8 +10773,8 @@ function renderAnalysisComparisonReviewPanel() {
     }
     appendAnalysisReviewNote(
       removalResult.removedCount
-        ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) at 0.00% ${metricLabel} for pending removal using ${primaryReportDisplayName} only.`
-        : `Bulk removal decision: reviewed ${listType} SCFs at 0.00% ${metricLabel} using ${primaryReportDisplayName} only; matching SCFs were already not on the working list or none were found.`
+        ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) with zero mailed quantity for pending removal using ${primaryReportDisplayName} only.`
+        : `Bulk removal decision: reviewed ${listType} SCFs with zero mailed quantity using ${primaryReportDisplayName} only; matching SCFs were already not on the working list or none were found.`
     );
     invalidateComparisonReviewSummary();
     state.analysis.reviewBulkPreview = null;
@@ -10583,16 +10784,16 @@ function renderAnalysisComparisonReviewPanel() {
     setStatus(
       "analysis-comparison-selection-status",
       removalResult.removedCount
-        ? `${removalResult.removedCount} SCF(s) with 0.00% ${metricLabel} were marked for pending removal from the working ${listType} list using ${primaryReportDisplayName} only. They remain visible in the review list.`
-        : !removalResult.foundZeroRateScfs.length && visibleZeroRateScfs.length
-          ? `Zero-rate SCFs are visible in the report (${visibleZeroRateScfs.join(", ")}), but they could not be matched into the working ${listType} removal set yet. Refreshing review data may be needed.`
+        ? `${removalResult.removedCount} SCF(s) with zero mailed quantity were marked for pending removal from the working ${listType} list using ${primaryReportDisplayName} only.`
+        : !removalResult.foundZeroRateScfs.length && visibleZeroQuantityScfs.length
+          ? `Zero-quantity SCFs are visible in the report (${visibleZeroQuantityScfs.join(", ")}), but they could not be matched into the working ${listType} removal set yet.`
           : !removalResult.foundZeroRateScfs.length
-          ? `No zero-rate SCFs were found in ${primaryReportDisplayName} for ${metricLabel}.`
+          ? `No zero-quantity SCFs were found in ${primaryReportDisplayName}.`
           : removalResult.skippedDnmScfs.length && !removalResult.skippedAlreadyRemovedScfs.length
-            ? `Zero-rate SCFs were found, but they are already DNM and not on the working ${listType} list.`
+            ? `Zero-quantity SCFs were found, but they are already DNM and not on the working ${listType} list.`
             : removalResult.skippedAlreadyRemovedScfs.length && !removalResult.skippedDnmScfs.length
-              ? `Zero-rate SCFs were found, but they were already removed from the working ${listType} list.`
-              : `Zero-rate SCFs were found, but none needed removal because they were already not on the working ${listType} list and/or already DNM.`
+              ? `Zero-quantity SCFs were found, but they were already removed from the working ${listType} list.`
+              : `Zero-quantity SCFs were found, but none needed removal because they were already not on the working ${listType} list and/or already DNM.`
     );
   });
 
@@ -11227,6 +11428,7 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   state.analysis.reviewCompletedByName = String(setup.reviewState?.reviewCompletedByName || comparisonReview?.completedByName || "").trim();
   state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(setup.reviewState?.reviewCompletedOnDate || comparisonReview?.completedOnDate || "") || getTodayIsoDate();
+  hydrateAnalysisWorkspaceFromSavedReports();
   state.analysis.setupHydrated = true;
   state.analysis.lastSetupLoadSource = "persistent-storage";
   syncAnalysisMeta({
@@ -11284,6 +11486,7 @@ function loadRunIntoWorkspace(run) {
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   state.analysis.reviewCompletedByName = String(run.reviewState?.reviewCompletedByName || comparisonReview?.completedByName || "").trim();
   state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(run.reviewState?.reviewCompletedOnDate || comparisonReview?.completedOnDate || "") || getTodayIsoDate();
+  hydrateAnalysisWorkspaceFromSavedReports();
   syncAnalysisMeta({
     runName: run.runName || "",
     notes: run.notes ?? state.analysis.runNotes,
@@ -11451,47 +11654,7 @@ async function loadAnalysisReports() {
   const readOnly = isCurrentAnalysisReadOnly();
   state.analysis.reportScfMetricCache = {};
   state.analysis.savedReports = rows;
-  const savedReportIdByPullId = new Map(
-    ensureArray(rows)
-      .map((report) => [String(report?.pullId || report?.pull_id || "").trim(), String(report?.id || "").trim()])
-      .filter(([pullId, reportId]) => pullId && reportId)
-  );
-  state.analysis.reportPulls = ensureArray(state.analysis.reportPulls).map((pull) => {
-    const pullId = String(pull?.id || "").trim();
-    const savedReportId = String(pull?.savedReportId || savedReportIdByPullId.get(pullId) || "").trim();
-    if (!savedReportId || savedReportId === String(pull?.savedReportId || "").trim()) {
-      return pull;
-    }
-    return {
-      ...pull,
-      savedReportId,
-    };
-  });
-  const remapComparisonReportIds = (collection = []) => ensureArray(collection).map((entry, index) => {
-    const clonedEntry = entry && typeof entry === "object" ? { ...entry } : createComparisonLink(index);
-    const rawIds = Array.isArray(clonedEntry.selectedReportIds) && clonedEntry.selectedReportIds.length
-      ? clonedEntry.selectedReportIds
-      : Array.isArray(clonedEntry.reportIds) && clonedEntry.reportIds.length
-        ? clonedEntry.reportIds
-        : [clonedEntry.reportAId, clonedEntry.reportBId];
-    const remappedIds = Array.from(
-      new Set(
-        ensureArray(rawIds)
-          .map((reportId) => {
-            const normalizedId = String(reportId || "").trim();
-            return savedReportIdByPullId.get(normalizedId) || normalizedId;
-          })
-          .filter(Boolean)
-      )
-    ).slice(0, 5);
-    clonedEntry.selectedReportIds = remappedIds;
-    clonedEntry.reportIds = remappedIds;
-    clonedEntry.reportAId = remappedIds[0] || "";
-    clonedEntry.reportBId = remappedIds[1] || "";
-    return clonedEntry;
-  });
-  state.analysis.comparisonLinks = remapComparisonReportIds(state.analysis.comparisonLinks);
-  state.analysis.comparisonRequests = remapComparisonReportIds(state.analysis.comparisonRequests);
+  hydrateAnalysisWorkspaceFromSavedReports();
   recoverComparisonSetupFromWorkspace();
   const validReportIds = new Set(rows.map((report) => String(report.id || "").trim()).filter(Boolean));
   setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => validReportIds.has(id)));
@@ -11660,6 +11823,11 @@ async function loadAnalysisReports() {
   return rows;
 }
 
+async function fetchAnalysisSetupsPayload() {
+  const setupsPayload = await apiRequest("/api/analysis/setups");
+  return ensureArray(setupsPayload.setups).filter((entry) => shouldDisplayAnalysisHistoryEntry(entry));
+}
+
 function updateAnalysisReportSelectionUi() {
   const selectedIds = getSelectedAnalysisReportIds();
   const rows = ensureArray(state.analysis.savedReports);
@@ -11725,8 +11893,7 @@ async function deleteSelectedAnalysisReports() {
 async function loadAnalysisSetups() {
   const tbody = el("analysis-setup-body");
   if (!tbody) return;
-  const setupsPayload = await apiRequest("/api/analysis/setups");
-  const normalizedSetups = ensureArray(setupsPayload.setups).filter((entry) => shouldDisplayAnalysisHistoryEntry(entry));
+  const normalizedSetups = await fetchAnalysisSetupsPayload();
   const openSetups = normalizedSetups
     .filter((entry) => !entry.archived && !isCompletedAnalysisSetup(entry))
     .sort((left, right) => {
@@ -11932,28 +12099,39 @@ async function undoAnalysisSetupEntry(setupId) {
 }
 
 async function loadAnalysisSetupView() {
+  setStatus("analysis-setup-status", "Loading analysis...");
+  let normalizedSetups = [];
   try {
-    await loadAnalysisReports();
+    const [, setups] = await Promise.all([
+      loadAnalysisReports(),
+      fetchAnalysisSetupsPayload().catch(() => []),
+    ]);
+    normalizedSetups = ensureArray(setups);
   } catch (error) {
     setStatus("analysis-comparison-status", `Unable to load available reports: ${error.message}`);
   }
 
   const persistedSetupId = state.analysis.currentSetupId || readPersistedAnalysisSetupId();
-  if (persistedSetupId && !state.analysis.setupHydrated) {
+  const preferredSetup = choosePreferredAnalysisSetup(normalizedSetups, {
+    preferredId: persistedSetupId,
+  });
+  const targetSetupId = String(preferredSetup?.id || persistedSetupId || "").trim();
+  if (targetSetupId && (!state.analysis.setupHydrated || state.analysis.currentSetupId !== targetSetupId)) {
     try {
-      const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(persistedSetupId)}`);
+      const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(targetSetupId)}`);
       loadSetupIntoWorkspace(response.setup || {});
-      state.analysis.currentSetupId = persistedSetupId;
-      persistAnalysisSetupId(persistedSetupId);
+      state.analysis.currentSetupId = targetSetupId;
+      persistAnalysisSetupId(targetSetupId);
     } catch (error) {
       persistAnalysisSetupId("");
       setStatus("analysis-comparison-status", `Unable to restore saved comparison setup: ${error.message}`);
     }
-  } else if (!persistedSetupId && !state.analysis.setupHydrated) {
+  } else if (!targetSetupId && !state.analysis.setupHydrated) {
     restorePersistedAnalysisSetupDraft("");
   }
 
   state.analysis.setupHydrated = true;
+  setStatus("analysis-setup-status", targetSetupId ? `Loaded analysis ${targetSetupId}.` : "Analysis ready.");
   if (state.analysis.panel === "compare-review") {
     renderComparisonReviewPanelShell();
     try {
