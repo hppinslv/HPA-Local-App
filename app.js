@@ -6243,6 +6243,53 @@ function normalizeAnalysisMetricRow(row = {}) {
   return normalizedRow;
 }
 
+function mergePreferredNavigatorRow(baseRow = {}, candidateRow = {}) {
+  const mergedRow = {
+    ...(baseRow && typeof baseRow === "object" ? baseRow : {}),
+    ...(candidateRow && typeof candidateRow === "object" ? candidateRow : {}),
+  };
+
+  const metricLabels = [
+    "Sum of Mailed",
+    "Sum of Opp Count",
+    "Sum of In Force",
+    "Sum of Sold",
+    "Sum of Total Monthly Premium",
+    "Sum of In Force Monthly Premium",
+    "Sum of Total Converted Monthly Premiums",
+    "Sold Rate",
+    "In Force Rate",
+    "Converted Rate",
+  ];
+
+  metricLabels.forEach((label) => {
+    const baseValue = getRowMetricNumber(baseRow, label);
+    const candidateValue = getRowMetricNumber(candidateRow, label);
+    const candidateRaw = getRowMetricValue(candidateRow, label);
+    if (
+      (candidateRaw === "" || candidateRaw === null || candidateRaw === undefined || candidateValue === 0) &&
+      baseValue > 0
+    ) {
+      const baseRaw = getRowMetricValue(baseRow, label);
+      mergedRow[label] = baseRaw;
+      mergedRow[normalizeComparisonMetricKey(label)] = baseRaw;
+    }
+  });
+
+  const baseScf = getRowMetricValue(baseRow, "SCF Grouping");
+  if (baseScf) {
+    mergedRow["SCF Grouping"] = baseScf;
+    mergedRow["scf grouping"] = baseScf;
+  }
+  const baseKey = getRowMetricValue(baseRow, "Key");
+  if (baseKey) {
+    mergedRow["Key"] = baseKey;
+    mergedRow["key"] = baseKey;
+  }
+
+  return normalizeAnalysisMetricRow(mergedRow);
+}
+
 function buildSyntheticNavigatorRow({
   scf,
   mailed = 0,
@@ -6693,7 +6740,7 @@ function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs, options = {
       return entry;
     }
 
-    const normalizedRow = normalizeAnalysisMetricRow(cachedMetrics.row);
+    const normalizedRow = mergePreferredNavigatorRow(entry.row, cachedMetrics.row);
 
     return {
       scf: entry.scf,
