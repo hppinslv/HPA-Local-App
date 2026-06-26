@@ -1373,9 +1373,6 @@ function restorePersistedAnalysisSetupDraft(setupId = "") {
   if (draftSetupId && normalizedSetupId && draftSetupId !== normalizedSetupId) {
     return false;
   }
-  if (draftSetupId && !normalizedSetupId) {
-    return false;
-  }
 
   if (Array.isArray(draft.reportPulls) && draft.reportPulls.length) {
     state.analysis.reportPulls = draft.reportPulls.map((pull, index) => ({
@@ -6146,6 +6143,48 @@ function parseAnalysisMetricNumber(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function resolveNavigatorSoldCount(row = {}) {
+  const oppCount = getRowMetricNumber(row, "Opp Count");
+  if (oppCount > 0) {
+    return oppCount;
+  }
+  const explicitSold = getRowMetricNumber(row, "Sold");
+  return explicitSold > 0 ? explicitSold : 0;
+}
+
+function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = null) {
+  const convertedPremium = precomputedConvertedPremium === null
+    ? getRowMetricNumber(row, "Total Converted Monthly Premiums")
+    : Number(precomputedConvertedPremium || 0);
+  const explicitConvertedCount = getRowMetricNumber(row, "Sold");
+  if (convertedPremium > 0) {
+    return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
+  }
+  return 0;
+}
+
+function calculateNavigatorRates({
+  mailed = 0,
+  soldCount = 0,
+  inForceCount = 0,
+  convertedCount = 0,
+} = {}) {
+  const safeMailed = Number(mailed || 0);
+  if (!(safeMailed > 0)) {
+    return {
+      soldRate: 0,
+      inForceRate: 0,
+      convertedRate: 0,
+    };
+  }
+
+  return {
+    soldRate: (Number(soldCount || 0) / safeMailed) * 100,
+    inForceRate: (Number(inForceCount || 0) / safeMailed) * 100,
+    convertedRate: (Number(convertedCount || 0) / safeMailed) * 100,
+  };
+}
+
 function formatAnalysisCurrency(value) {
   return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
@@ -6170,35 +6209,30 @@ function normalizeAnalysisMetricRow(row = {}) {
   }
 
   const mailed = getRowMetricNumber(row, "Sum of Mailed");
-  if (!(mailed > 0)) {
-    return row;
-  }
-
+  const soldCount = resolveNavigatorSoldCount(row);
+  const inForceCount = getRowMetricNumber(row, "In Force");
   const totalMonthlyPremium = getRowMetricNumber(row, "Total Monthly Premium");
   const inForceMonthlyPremium = getRowMetricNumber(row, "In Force Monthly Premium");
   const totalConvertedMonthlyPremiums = getRowMetricNumber(row, "Total Converted Monthly Premiums");
-  const hasPremiumTotals =
-    totalMonthlyPremium > 0 || inForceMonthlyPremium > 0 || totalConvertedMonthlyPremiums > 0;
-  if (!hasPremiumTotals) {
-    return row;
-  }
-
-  const denominator = mailed * 14.86;
-  if (!(denominator > 0)) {
-    return row;
-  }
+  const convertedCount = resolveNavigatorConvertedCount(row, totalConvertedMonthlyPremiums);
+  const { soldRate, inForceRate, convertedRate } = calculateNavigatorRates({
+    mailed,
+    soldCount,
+    inForceCount,
+    convertedCount,
+  });
 
   const normalizedRow = { ...row };
-  const soldRate = (totalMonthlyPremium * 100) / denominator;
-  const inForceRate = (inForceMonthlyPremium * 100) / denominator;
-  const convertedRate = (totalConvertedMonthlyPremiums * 100) / denominator;
-
   normalizedRow["Sum of Total Monthly Premium"] = formatAnalysisCurrency(totalMonthlyPremium);
   normalizedRow["sum of total monthly premium"] = formatAnalysisCurrency(totalMonthlyPremium);
   normalizedRow["Sum of In Force Monthly Premium"] = formatAnalysisCurrency(inForceMonthlyPremium);
   normalizedRow["sum of in force monthly premium"] = formatAnalysisCurrency(inForceMonthlyPremium);
   normalizedRow["Sum of Total Converted Monthly Premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
   normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
+  normalizedRow["Sum of Opp Count"] = formatNavigatorCount(soldCount);
+  normalizedRow["sum of opp count"] = formatNavigatorCount(soldCount);
+  normalizedRow["Sum of Sold"] = formatNavigatorCount(convertedCount);
+  normalizedRow["sum of sold"] = formatNavigatorCount(convertedCount);
   normalizedRow["Sold Rate"] = soldRate.toFixed(10);
   normalizedRow["sold rate"] = soldRate.toFixed(10);
   normalizedRow["In Force Rate"] = inForceRate.toFixed(10);
@@ -6229,28 +6263,15 @@ function buildSyntheticNavigatorRow({
   const safeTotalMonthlyPremium = Number(totalMonthlyPremium || 0);
   const safeInForceMonthlyPremium = Number(inForceMonthlyPremium || 0);
   const safeTotalConvertedMonthlyPremiums = Number(totalConvertedMonthlyPremiums || 0);
-  const rateDenominator = safeMailed > 0 ? safeMailed * 14.86 : 0;
-  const safeSoldRate = rateDenominator > 0
-    ? (safeTotalMonthlyPremium * 100) / rateDenominator
-    : Number.isFinite(Number(soldRate))
-      ? Number(soldRate)
-      : safeMailed > 0
-        ? (safeSold / safeMailed) * 100
-        : 0;
-  const safeInForceRate = rateDenominator > 0
-    ? (safeInForceMonthlyPremium * 100) / rateDenominator
-    : Number.isFinite(Number(inForceRate))
-      ? Number(inForceRate)
-      : safeMailed > 0
-        ? (safeInForce / safeMailed) * 100
-        : 0;
-  const safeConvertedRate = rateDenominator > 0
-    ? (safeTotalConvertedMonthlyPremiums * 100) / rateDenominator
-    : Number.isFinite(Number(convertedRate))
-      ? Number(convertedRate)
-      : safeMailed > 0
-        ? (safeSold / safeMailed) * 100
-        : 0;
+  const rateFallbacks = calculateNavigatorRates({
+    mailed: safeMailed,
+    soldCount: safeOppCount,
+    inForceCount: safeInForce,
+    convertedCount: safeSold,
+  });
+  const safeSoldRate = Number.isFinite(Number(soldRate)) ? Number(soldRate) : rateFallbacks.soldRate;
+  const safeInForceRate = Number.isFinite(Number(inForceRate)) ? Number(inForceRate) : rateFallbacks.inForceRate;
+  const safeConvertedRate = Number.isFinite(Number(convertedRate)) ? Number(convertedRate) : rateFallbacks.convertedRate;
 
   return {
     "SCF Grouping": scf,
@@ -6339,37 +6360,16 @@ function buildExportScfAggregateMap(report) {
       totalMonthlyPremium: 0,
       inForceMonthlyPremium: 0,
       totalConvertedMonthlyPremiums: 0,
-      soldRateWeightedTotal: 0,
-      soldRateWeight: 0,
-      inForceRateWeightedTotal: 0,
-      inForceRateWeight: 0,
-      convertedRateWeightedTotal: 0,
-      convertedRateWeight: 0,
     };
 
+    const rowConvertedPremium = getRowMetricNumber(row, "Total Converted Monthly Premiums");
     current.mailed += getRowMetricNumber(row, "Mailed");
-    current.oppCount += getRowMetricNumber(row, "Opp Count");
+    current.oppCount += resolveNavigatorSoldCount(row);
     current.inForce += getRowMetricNumber(row, "In Force");
-    current.sold += getRowMetricNumber(row, "Sold");
+    current.sold += resolveNavigatorConvertedCount(row, rowConvertedPremium);
     current.totalMonthlyPremium += getRowMetricNumber(row, "Total Monthly Premium");
     current.inForceMonthlyPremium += getRowMetricNumber(row, "In Force Monthly Premium");
-    current.totalConvertedMonthlyPremiums += getRowMetricNumber(row, "Total Converted Monthly Premiums");
-    const mailed = getRowMetricNumber(row, "Mailed");
-    const soldRate = getRowMetricNumber(row, "Sold Rate");
-    const inForceRate = getRowMetricNumber(row, "In Force Rate");
-    const convertedRate = getRowMetricNumber(row, "Converted Rate");
-    if (mailed > 0 && Number.isFinite(soldRate)) {
-      current.soldRateWeightedTotal += soldRate * mailed;
-      current.soldRateWeight += mailed;
-    }
-    if (mailed > 0 && Number.isFinite(inForceRate)) {
-      current.inForceRateWeightedTotal += inForceRate * mailed;
-      current.inForceRateWeight += mailed;
-    }
-    if (mailed > 0 && Number.isFinite(convertedRate)) {
-      current.convertedRateWeightedTotal += convertedRate * mailed;
-      current.convertedRateWeight += mailed;
-    }
+    current.totalConvertedMonthlyPremiums += rowConvertedPremium;
     aggregateMap.set(scf, current);
   });
 
@@ -6390,33 +6390,21 @@ function getUnifiedReportScfEntries(report) {
   return combinedScfs.map((scf) => {
     const summaryEntry = summaryMap.get(scf);
     const aggregateEntry = exportAggregateMap.get(scf) || null;
-    if (summaryEntry && !isSparseAnalysisMetricRow(summaryEntry.row)) {
-      return {
-        scf,
-        row: normalizeAnalysisMetricRow(summaryEntry.row),
-        source: "summary",
-      };
-    }
-
     if (aggregateEntry) {
       return {
         scf,
         row: buildSyntheticNavigatorRow({
           ...aggregateEntry,
-          soldRate:
-            aggregateEntry.soldRateWeight > 0
-              ? aggregateEntry.soldRateWeightedTotal / aggregateEntry.soldRateWeight
-              : null,
-          inForceRate:
-            aggregateEntry.inForceRateWeight > 0
-              ? aggregateEntry.inForceRateWeightedTotal / aggregateEntry.inForceRateWeight
-              : null,
-          convertedRate:
-            aggregateEntry.convertedRateWeight > 0
-              ? aggregateEntry.convertedRateWeightedTotal / aggregateEntry.convertedRateWeight
-              : null,
         }),
         source: "export-aggregate",
+      };
+    }
+
+    if (summaryEntry && !isSparseAnalysisMetricRow(summaryEntry.row)) {
+      return {
+        scf,
+        row: normalizeAnalysisMetricRow(summaryEntry.row),
+        source: "summary",
       };
     }
 
@@ -12708,5 +12696,3 @@ if (document.readyState === "loading") {
 } else {
   init();
 }
-
-

@@ -15,7 +15,6 @@ const SALESFORCE_API_VERSION = "v61.0";
 const DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS = 45000;
 const salesforceDescribeCache = new Map();
 const ANALYSIS_DEBUG_FILE_PREFIX = "debug-analysis-salesforce-report";
-const ANALYSIS_PREMIUM_RATE_BASE = 14.86;
 
 function parseSalesforceRequestTimeoutMs(candidate) {
   const parsed = Number(candidate);
@@ -133,6 +132,55 @@ function hasAnalysisMetricValue(row = {}, labels = []) {
       (normalizedValue !== undefined && normalizedValue !== null && String(normalizedValue).trim() !== "")
     );
   });
+}
+
+function resolveAnalysisConvertedPremiumValue(row = {}, precomputedConvertedPremium = null) {
+  return precomputedConvertedPremium === null
+    ? parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0)
+    : parseNumber(precomputedConvertedPremium);
+}
+
+function resolveAnalysisSoldOpportunityCount(row = {}) {
+  applyAnalysisMetricAliases(row);
+  const oppCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.oppCount) ?? 0);
+  if (oppCount > 0) {
+    return oppCount;
+  }
+
+  const explicitSold = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
+  return explicitSold > 0 ? explicitSold : 0;
+}
+
+function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = null) {
+  applyAnalysisMetricAliases(row);
+  const explicitConvertedCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
+  const convertedPremium = resolveAnalysisConvertedPremiumValue(row, precomputedConvertedPremium);
+  if (convertedPremium > 0) {
+    return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
+  }
+  return 0;
+}
+
+function calculateAnalysisCountRates({
+  mailed = 0,
+  soldCount = 0,
+  inForceCount = 0,
+  convertedCount = 0,
+} = {}) {
+  const safeMailed = parseNumber(mailed);
+  if (!(safeMailed > 0)) {
+    return {
+      soldRate: 0,
+      inForceRate: 0,
+      convertedRate: 0,
+    };
+  }
+
+  return {
+    soldRate: (parseNumber(soldCount) / safeMailed) * 100,
+    inForceRate: (parseNumber(inForceCount) / safeMailed) * 100,
+    convertedRate: (parseNumber(convertedCount) / safeMailed) * 100,
+  };
 }
 
 function shouldPreferCandidateAnalysisMetric(currentValue, candidateValue) {
@@ -1849,108 +1897,49 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
 }
 
 function fillAnalysisRateFallbacks(row = {}) {
-  const hasExplicitSold = hasAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold);
   const hasExplicitSoldRate = hasAnalysisMetricValue(row, ["Sold Rate"]);
   const hasExplicitInForceRate = hasAnalysisMetricValue(row, ["In Force Rate"]);
   const hasExplicitConvertedRate = hasAnalysisMetricValue(row, ["Converted Rate"]);
   applyAnalysisMetricAliases(row);
   const mailed = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.mailed) ?? 0);
-  if (!(mailed > 0)) {
-    return row;
-  }
-
   const inForce = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
-  const oppCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.oppCount) ?? 0);
+  const soldCount = resolveAnalysisSoldOpportunityCount(row);
   const totalMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
-  const inForceMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium) ?? 0);
-  const totalConvertedMonthlyPremiums = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0);
-  const explicitSoldValue = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
-  const shouldOverrideExplicitSoldWithConvertedPremium =
-    hasExplicitSold &&
-    explicitSoldValue <= 0 &&
-    totalConvertedMonthlyPremiums > 0;
-  const sold = shouldOverrideExplicitSoldWithConvertedPremium
-    ? resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums)
-    : hasExplicitSold
-      ? explicitSoldValue
-      : resolveAnalysisSoldValue(row, totalConvertedMonthlyPremiums);
+  const totalConvertedMonthlyPremiums = resolveAnalysisConvertedPremiumValue(row);
+  const convertedCount = resolveAnalysisConvertedCount(row, totalConvertedMonthlyPremiums);
+  const nextRates = calculateAnalysisCountRates({
+    mailed,
+    soldCount,
+    inForceCount: inForce,
+    convertedCount,
+  });
 
-  if (!hasExplicitSold || shouldOverrideExplicitSoldWithConvertedPremium) {
-    setAnalysisMetricAliases(
-      row,
-      ANALYSIS_METRIC_LABELS.sold,
-      Math.round(sold).toLocaleString("en-US")
-    );
-  }
-  const premiumRateDivisor = mailed * ANALYSIS_PREMIUM_RATE_BASE;
-  const hasPremiumSoldBasis = premiumRateDivisor > 0 && hasAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium);
-  const hasPremiumInForceBasis = premiumRateDivisor > 0 && hasAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium);
-  const hasPremiumConvertedBasis = premiumRateDivisor > 0 && hasAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums);
-  const nextSoldRate = hasPremiumSoldBasis
-    ? (totalMonthlyPremium * 100) / premiumRateDivisor
-    : oppCount > 0
-      ? (oppCount / mailed) * 100
-      : 0;
-  const nextInForceRate = hasPremiumInForceBasis
-    ? (inForceMonthlyPremium * 100) / premiumRateDivisor
-    : inForce > 0
-      ? (inForce / mailed) * 100
-      : 0;
-  const nextConvertedRate = hasPremiumConvertedBasis
-    ? (totalConvertedMonthlyPremiums * 100) / premiumRateDivisor
-    : sold > 0
-      ? (sold / mailed) * 100
-      : 0;
+  setAnalysisMetricAliases(
+    row,
+    ANALYSIS_METRIC_LABELS.oppCount,
+    Math.round(soldCount).toLocaleString("en-US")
+  );
+  setAnalysisMetricAliases(
+    row,
+    ANALYSIS_METRIC_LABELS.sold,
+    Math.round(convertedCount).toLocaleString("en-US")
+  );
 
-  if (!hasExplicitSoldRate || hasPremiumSoldBasis) {
-    row["Sold Rate"] = nextSoldRate.toFixed(10);
-    row["sold rate"] = nextSoldRate.toFixed(10);
+  if (!hasExplicitSoldRate || Number.isFinite(nextRates.soldRate)) {
+    row["Sold Rate"] = nextRates.soldRate.toFixed(10);
+    row["sold rate"] = nextRates.soldRate.toFixed(10);
   }
-  if (!hasExplicitInForceRate || hasPremiumInForceBasis) {
-    row["In Force Rate"] = nextInForceRate.toFixed(10);
-    row["in force rate"] = nextInForceRate.toFixed(10);
+  if (!hasExplicitInForceRate || Number.isFinite(nextRates.inForceRate)) {
+    row["In Force Rate"] = nextRates.inForceRate.toFixed(10);
+    row["in force rate"] = nextRates.inForceRate.toFixed(10);
   }
-  if (!hasExplicitConvertedRate || hasPremiumConvertedBasis) {
-    row["Converted Rate"] = nextConvertedRate.toFixed(10);
-    row["converted rate"] = nextConvertedRate.toFixed(10);
+  if (!hasExplicitConvertedRate || Number.isFinite(nextRates.convertedRate)) {
+    row["Converted Rate"] = nextRates.convertedRate.toFixed(10);
+    row["converted rate"] = nextRates.convertedRate.toFixed(10);
   }
-  const averageMonthlyPremium = oppCount > 0 ? totalMonthlyPremium / oppCount : 0;
+  const averageMonthlyPremium = soldCount > 0 ? totalMonthlyPremium / soldCount : 0;
   row.averageMonthlyPremium = averageMonthlyPremium;
   return row;
-}
-
-function resolveAnalysisSoldValue(row = {}, precomputedConvertedPremium = null) {
-  applyAnalysisMetricAliases(row);
-  const baseSold = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
-  const inForce = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
-  const convertedPremium = precomputedConvertedPremium === null
-    ? parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0)
-    : precomputedConvertedPremium;
-
-  if (baseSold > 0) {
-    return baseSold;
-  }
-
-  if (convertedPremium > 0) {
-    return Math.max(inForce, 1);
-  }
-
-  return inForce;
-}
-
-function resolveAnalysisSoldCountFromDetailRow(row = {}, precomputedConvertedPremium = null) {
-  applyAnalysisMetricAliases(row);
-  const baseSold = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
-  const inForce = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
-  const convertedPremium = precomputedConvertedPremium === null
-    ? parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0)
-    : precomputedConvertedPremium;
-
-  if (baseSold > 0) {
-    return baseSold;
-  }
-
-  return convertedPremium > 0 ? Math.max(inForce, 1) : inForce;
 }
 
 function resolveFactMapGroupingKey(path = []) {
@@ -2440,6 +2429,8 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "Application Count",
       ]) ?? 0
     );
+    const rowSoldCount = rowOppCount > 0 ? rowOppCount : resolveAnalysisSoldOpportunityCount(row);
+    const rowConvertedCount = resolveAnalysisConvertedCount(row, rowConvertedPremium);
     const rowApplicationPremium = rowTotalMonthlyPremium > 0
       ? rowTotalMonthlyPremium
       : rowConvertedPremium > 0
@@ -2458,12 +2449,6 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       inForceMonthlyPremium: 0,
       totalConvertedMonthlyPremiums: 0,
       applicationPremiumTotal: 0,
-      soldRateWeightedTotal: 0,
-      soldRateWeight: 0,
-      inForceRateWeightedTotal: 0,
-      inForceRateWeight: 0,
-      convertedRateWeightedTotal: 0,
-      convertedRateWeight: 0,
       highPremium: null,
       lowPremium: null,
     };
@@ -2474,7 +2459,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "Sum of Mailed",
       ]) ?? 0
     );
-    current.oppCount += rowOppCount;
+    current.oppCount += rowSoldCount;
     current.inForce += parseNumber(
       getLikelyColumnValue(row, [
         "In Force",
@@ -2484,8 +2469,8 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     current.totalMonthlyPremium += rowTotalMonthlyPremium;
     current.inForceMonthlyPremium += rowInForceMonthlyPremium;
     current.totalConvertedMonthlyPremiums += rowConvertedPremium;
-    current.sold += resolveAnalysisSoldValue(row, rowConvertedPremium);
-    if (rowOppCount > 0 && rowApplicationPremium > 0) {
+    current.sold += rowConvertedCount;
+    if (rowSoldCount > 0 && rowApplicationPremium > 0) {
       current.applicationPremiumTotal += rowApplicationPremium;
       current.highPremium = current.highPremium === null
         ? rowApplicationPremium
@@ -2494,60 +2479,23 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         ? rowApplicationPremium
         : Math.min(current.lowPremium, rowApplicationPremium);
     }
-    const rowMailed = parseNumber(
-      getLikelyColumnValue(row, [
-        "Mailed",
-        "Sum of Mailed",
-      ]) ?? 0
-    );
-    const rowSold = resolveAnalysisSoldValue(row, rowConvertedPremium);
-    const premiumRateDivisor = rowMailed > 0 ? rowMailed * ANALYSIS_PREMIUM_RATE_BASE : 0;
-    const sourceSoldRate = premiumRateDivisor > 0 && rowTotalMonthlyPremium > 0
-      ? (rowTotalMonthlyPremium * 100) / premiumRateDivisor
-      : rowMailed > 0
-        ? (rowOppCount / rowMailed) * 100
-        : parseNumber(row["Sold Rate"] ?? row["sold rate"]);
-    const sourceInForceRate = premiumRateDivisor > 0 && rowInForceMonthlyPremium >= 0
-      ? (rowInForceMonthlyPremium * 100) / premiumRateDivisor
-      : rowMailed > 0
-        ? (parseNumber(getLikelyColumnValue(row, ["In Force", "Sum of In Force"]) ?? 0) / rowMailed) * 100
-        : parseNumber(row["In Force Rate"] ?? row["in force rate"]);
-    const sourceConvertedRate = premiumRateDivisor > 0 && rowConvertedPremium >= 0
-      ? (rowConvertedPremium * 100) / premiumRateDivisor
-      : rowMailed > 0
-        ? (rowSold / rowMailed) * 100
-        : parseNumber(row["Converted Rate"] ?? row["converted rate"]);
-    if (rowMailed > 0 && Number.isFinite(sourceSoldRate) && Math.abs(sourceSoldRate) > 0.000001) {
-      current.soldRateWeightedTotal += sourceSoldRate * rowMailed;
-      current.soldRateWeight += rowMailed;
-    }
-    if (rowMailed > 0 && Number.isFinite(sourceInForceRate) && Math.abs(sourceInForceRate) > 0.000001) {
-      current.inForceRateWeightedTotal += sourceInForceRate * rowMailed;
-      current.inForceRateWeight += rowMailed;
-    }
-    if (rowMailed > 0 && Number.isFinite(sourceConvertedRate) && Math.abs(sourceConvertedRate) > 0.000001) {
-      current.convertedRateWeightedTotal += sourceConvertedRate * rowMailed;
-      current.convertedRateWeight += rowMailed;
-    }
     aggregateMap.set(aggregateKey, current);
   });
 
   const rows = Array.from(aggregateMap.values())
     .sort((entryA, entryB) => {
-      const soldRateA = entryA.mailed > 0
-        ? (
-            entryA.totalMonthlyPremium > 0
-              ? (entryA.totalMonthlyPremium * 100) / (entryA.mailed * ANALYSIS_PREMIUM_RATE_BASE)
-              : (entryA.oppCount / entryA.mailed) * 100
-          )
-        : 0;
-      const soldRateB = entryB.mailed > 0
-        ? (
-            entryB.totalMonthlyPremium > 0
-              ? (entryB.totalMonthlyPremium * 100) / (entryB.mailed * ANALYSIS_PREMIUM_RATE_BASE)
-              : (entryB.oppCount / entryB.mailed) * 100
-          )
-        : 0;
+      const soldRateA = calculateAnalysisCountRates({
+        mailed: entryA.mailed,
+        soldCount: entryA.oppCount,
+        inForceCount: entryA.inForce,
+        convertedCount: entryA.sold,
+      }).soldRate;
+      const soldRateB = calculateAnalysisCountRates({
+        mailed: entryB.mailed,
+        soldCount: entryB.oppCount,
+        inForceCount: entryB.inForce,
+        convertedCount: entryB.sold,
+      }).soldRate;
       if (soldRateB !== soldRateA) {
         return soldRateB - soldRateA;
       }
@@ -2557,22 +2505,12 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       return entryA.keyCode.localeCompare(entryB.keyCode, undefined, { numeric: true });
     })
     .map((entry) => {
-      const premiumRateDivisor = entry.mailed > 0 ? entry.mailed * ANALYSIS_PREMIUM_RATE_BASE : 0;
-      const soldRate = premiumRateDivisor > 0 && entry.totalMonthlyPremium > 0
-        ? (entry.totalMonthlyPremium * 100) / premiumRateDivisor
-        : entry.mailed > 0
-          ? (entry.oppCount / entry.mailed) * 100
-          : 0;
-      const inForceRate = premiumRateDivisor > 0 && entry.inForceMonthlyPremium > 0
-        ? (entry.inForceMonthlyPremium * 100) / premiumRateDivisor
-        : entry.mailed > 0
-          ? (entry.inForce / entry.mailed) * 100
-          : 0;
-      const convertedRate = premiumRateDivisor > 0 && entry.totalConvertedMonthlyPremiums > 0
-        ? (entry.totalConvertedMonthlyPremiums * 100) / premiumRateDivisor
-        : entry.mailed > 0
-          ? (entry.sold / entry.mailed) * 100
-          : 0;
+      const { soldRate, inForceRate, convertedRate } = calculateAnalysisCountRates({
+        mailed: entry.mailed,
+        soldCount: entry.oppCount,
+        inForceCount: entry.inForce,
+        convertedCount: entry.sold,
+      });
       const averageSoldPremium = entry.oppCount > 0 ? entry.applicationPremiumTotal / entry.oppCount : 0;
 
       return {
@@ -4150,7 +4088,9 @@ async function fetchMonthlySalesforceReportData(
 }
 
 module.exports = {
+  buildFlatRowsFromDetailExport,
   buildFlatReportRows,
+  calculateAnalysisCountRates,
   buildDetailSoql,
   executeReport,
   executeAsyncReportWithDescribeMetadata,
@@ -4173,7 +4113,9 @@ module.exports = {
   normalizeLabel,
   parseDateValue,
   parseNumber,
+  resolveAnalysisConvertedCount,
   resolveAnalysisDateRange,
+  resolveAnalysisSoldOpportunityCount,
   runSoqlQuery,
   salesforceRequest,
   shouldFallbackToSoqlForReportPayload,

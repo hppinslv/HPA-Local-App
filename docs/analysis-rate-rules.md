@@ -26,17 +26,35 @@ A saved SCF row is considered sparse and must not be trusted as the final answer
 
 When that happens, the app must refetch scoped SCF metrics instead of displaying the sparse saved row as final.
 
-## Rate Formulas
+## Primary Report Rate Rules
 
-When premium totals are available, rates must be derived from premium totals and mailed count using the shared premium base.
+Primary Report Navigator rates must be calculated from SCF-level counts, not from premium dollars.
 
-- `Sold Rate = (Total Monthly Premium * 100) / (Mailed * 14.86)`
-- `In Force Rate = (In Force Monthly Premium * 100) / (Mailed * 14.86)`
-- `Converted Rate = (Total Converted Monthly Premiums * 100) / (Mailed * 14.86)`
+- `Mailed = sum of mailed pieces for the SCF`
+- `Sold Count = sum of sold/opportunity count rows for the SCF`
+- `In Force Count = sum of in force rows for the SCF`
+- `Converted Count = count of detail rows where Total Converted Monthly Premiums > 0`
+- `Sold Rate = Sold Count / Mailed * 100`
+- `In Force Rate = In Force Count / Mailed * 100`
+- `Converted Rate = Converted Count / Mailed * 100`
+
+### Converted Count Trust Rule
+
+- Salesforce converted rate/count fields are not trusted as the source of truth when they disagree with row-level converted premium data.
+- The app-derived converted count must come from row-level `Total Converted Monthly Premiums > 0`.
+- A detail row counts as converted only when converted premium is a positive numeric dollar amount.
+- Zero, blank, null, missing, or non-numeric converted premium does not count as converted.
+- Future changes must not calculate converted rate from the converted premium dollar total.
+
+### Example Logic
+
+- If an SCF has `166` mailed and exactly `1` detail row with `Total Converted Monthly Premiums > 0`, then converted rate must be `1 / 166 * 100 = 0.6024096386`.
+- If converted premium dollars are present on a row or SCF summary, that only proves whether a converted row should be counted. It must never be used directly as the converted rate numerator.
 
 ## Important Constraints
 
-- Do not trust Salesforce stored rate fields by themselves when premium totals disagree.
+- Do not trust Salesforce stored converted rate/count fields by themselves.
+- Do not trust converted premium dollar totals as a rate numerator.
 - Do not let the browser invent a different rate rule than the server.
 - Do not introduce a new fallback path for navigator rows unless it follows the same formulas above.
 - If a change touches Analysis rates, comparison metrics, or Primary Report Navigator rows, verify the values for a known SCF before shipping.

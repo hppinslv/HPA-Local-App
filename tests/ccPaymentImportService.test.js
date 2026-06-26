@@ -93,7 +93,7 @@ test("deleting a duplicate-only cc payment session revalidates the remaining ses
       transaction_id: "txn-123",
       certificate_number: "226560",
       matched_policy_id: "a00f400000QB7x2AAD",
-      matched_certificate_record_id: "cert-1",
+      matched_certificate_record_id: "001ABCDEF123456",
       manual_policy_id: "a00f400000QB7x2AAD",
       amount: "75.62",
       transaction_date: "2026-06-18",
@@ -119,7 +119,7 @@ test("deleting a duplicate-only cc payment session revalidates the remaining ses
       transaction_id: "txn-123",
       certificate_number: "226560",
       matched_policy_id: "a00f400000QB7x2AAD",
-      matched_certificate_record_id: "cert-1",
+      matched_certificate_record_id: "001ABCDEF123456",
       manual_policy_id: "a00f400000QB7x2AAD",
       amount: "75.62",
       transaction_date: "2026-06-18",
@@ -147,7 +147,7 @@ test("deleting a duplicate-only cc payment session revalidates the remaining ses
       {
         certificate_number: "226560",
         policy_id: "a00f400000QB7x2AAD",
-        certificate_record_id: "cert-1",
+        certificate_record_id: "001ABCDEF123456",
         policy_status: "In Force",
         p1: 75.62,
       },
@@ -246,7 +246,7 @@ test("cc payment revalidation prefers the active policy status for a certificate
       transaction_id: "txn-active",
       certificate_number: "226560",
       matched_policy_id: "",
-      matched_certificate_record_id: "stale-cert",
+      matched_certificate_record_id: "001STALEID12345",
       manual_policy_id: "",
       amount: "75.62",
       transaction_date: "2026-06-18",
@@ -273,14 +273,14 @@ test("cc payment revalidation prefers the active policy status for a certificate
         {
           certificate_number: "226560",
           policy_id: "policy-closed",
-          certificate_record_id: "cert-closed",
+          certificate_record_id: "001CLOSED123456",
           policy_status: "Cancelled",
           p1: 75.62,
         },
         {
           certificate_number: "226560",
           policy_id: "policy-active",
-          certificate_record_id: "cert-active",
+          certificate_record_id: "001ACTIVE123456",
           policy_status: "In Force",
           p1: 75.62,
         },
@@ -292,7 +292,7 @@ test("cc payment revalidation prefers the active policy status for a certificate
   assert.equal(session.error_count, 0);
   assert.equal(session.ready_count, 1);
   assert.equal(session.rows[0].matched_policy_id, "policy-active");
-  assert.equal(session.rows[0].matched_certificate_record_id, "cert-active");
+  assert.equal(session.rows[0].matched_certificate_record_id, "001ACTIVE123456");
   assert.equal(session.rows[0].matched_policy_status, "In Force");
 });
 
