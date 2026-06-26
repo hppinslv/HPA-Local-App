@@ -7398,10 +7398,10 @@ function calculateWorkingListEntriesBelowRatePreview(listType, rows = [], metric
 
   const currentItems = Array.isArray(list.items) ? list.items : [];
   const currentScfs = new Set(currentItems.map((entry) => normalizeScf(entry?.scf)).filter(Boolean));
-  const affectedScfs = rows
+  const matchingScfs = rows
     .filter((entry) => {
       const normalizedScf = normalizeScf(entry?.scf);
-      if (!normalizedScf || !currentScfs.has(normalizedScf)) {
+      if (!normalizedScf) {
         return false;
       }
       const metricValue = Number(entry?.[normalizedMetricKey] || 0);
@@ -7409,6 +7409,7 @@ function calculateWorkingListEntriesBelowRatePreview(listType, rows = [], metric
     })
     .map((entry) => normalizeScf(entry?.scf))
     .filter(Boolean);
+  const affectedScfs = matchingScfs.filter((scf) => currentScfs.has(scf));
 
   return {
     listType: normalizedListType,
@@ -7416,6 +7417,7 @@ function calculateWorkingListEntriesBelowRatePreview(listType, rows = [], metric
     thresholdValue: String(thresholdValue || "").trim(),
     parsedThreshold,
     currentCount: currentItems.length,
+    matchedCount: matchingScfs.length,
     affectedCount: affectedScfs.length,
     affectedScfs,
   };
@@ -9437,7 +9439,11 @@ function renderAnalysisComparisonReviewPanel() {
         <div class="analysis-review-bulk-remove">
           <p>
             ${bulkPreview
-              ? `This will remove ${bulkPreview.affectedCount} of the current ${bulkPreview.currentCount} SCFs in the working ${listType} mailing list below ${bulkPreview.parsedThreshold.displayLabel} ${esc(getReviewMetricDisplayName(bulkPreview.metricKey))}.`
+              ? bulkPreview.affectedCount > 0
+                ? `This will remove ${bulkPreview.affectedCount} of the current ${bulkPreview.currentCount} SCFs in the working ${listType} mailing list at or below ${bulkPreview.parsedThreshold.displayLabel} ${esc(getReviewMetricDisplayName(bulkPreview.metricKey))}.`
+                : bulkPreview.matchedCount > 0
+                  ? `There are ${bulkPreview.matchedCount} SCFs at or below ${bulkPreview.parsedThreshold.displayLabel} ${esc(getReviewMetricDisplayName(bulkPreview.metricKey))}, but they are already not on the working ${listType} mailing list.`
+                  : `There are no SCFs at or below ${bulkPreview.parsedThreshold.displayLabel} ${esc(getReviewMetricDisplayName(bulkPreview.metricKey))} in ${esc(primaryReportDisplayName)}.`
               : "Enter a threshold, then click Calculate to preview how many SCFs would be marked for pending removal."}
           </p>
           <div class="action-row">
@@ -9852,7 +9858,11 @@ function renderAnalysisComparisonReviewPanel() {
     broadcastAnalysisReviewState("bulk-calculate");
     setStatus(
       "analysis-comparison-selection-status",
-      `Calculated bulk removal preview: ${preview.affectedCount} of ${preview.currentCount} SCF(s) would be marked for pending removal.`
+      preview.affectedCount > 0
+        ? `Calculated bulk removal preview: ${preview.affectedCount} of ${preview.currentCount} SCF(s) would be marked for pending removal.`
+        : preview.matchedCount > 0
+          ? `Calculated bulk removal preview: ${preview.matchedCount} SCF(s) match the threshold, but they are already not on the working ${listType} list.`
+          : `Calculated bulk removal preview: no SCFs in ${primaryReportDisplayName} are at or below the selected threshold.`
     );
   });
 
@@ -9877,7 +9887,9 @@ function renderAnalysisComparisonReviewPanel() {
     appendAnalysisReviewNote(
       removalResult.removedCount
         ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) below ${thresholdLabel} ${metricLabel} for pending removal using ${primaryReportDisplayName} only.`
-        : `Bulk removal decision: reviewed ${listType} SCFs below ${thresholdLabel} ${metricLabel} using ${primaryReportDisplayName} only; no items were removed.`
+        : preview.matchedCount > 0
+          ? `Bulk removal decision: reviewed ${listType} SCFs at or below ${thresholdLabel} ${metricLabel} using ${primaryReportDisplayName} only; matching SCFs were already not on the working list.`
+          : `Bulk removal decision: reviewed ${listType} SCFs at or below ${thresholdLabel} ${metricLabel} using ${primaryReportDisplayName} only; no matching items were found.`
     );
     invalidateComparisonReviewSummary();
     state.analysis.reviewBulkPreview = null;
@@ -9888,8 +9900,10 @@ function renderAnalysisComparisonReviewPanel() {
     setStatus(
       "analysis-comparison-selection-status",
       removalResult.removedCount
-        ? `${removalResult.removedCount} SCF(s) were marked for pending removal from the working ${listType} list for falling below ${thresholdLabel} ${metricLabel} in ${primaryReportDisplayName} only. They remain visible in the review list.`
-        : `No SCFs were removed from the working ${listType} list below ${thresholdLabel} ${metricLabel} in ${primaryReportDisplayName}.`
+        ? `${removalResult.removedCount} SCF(s) were marked for pending removal from the working ${listType} list for falling at or below ${thresholdLabel} ${metricLabel} in ${primaryReportDisplayName} only. They remain visible in the review list.`
+        : preview.matchedCount > 0
+          ? `Matching SCFs at or below ${thresholdLabel} ${metricLabel} were already not on the working ${listType} list, so nothing else was removed.`
+          : `No SCFs in ${primaryReportDisplayName} matched the selected at-or-below ${thresholdLabel} ${metricLabel} threshold.`
     );
   });
 
@@ -9904,7 +9918,7 @@ function renderAnalysisComparisonReviewPanel() {
     appendAnalysisReviewNote(
       removalResult.removedCount
         ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) at 0.00% ${metricLabel} for pending removal using ${primaryReportDisplayName} only.`
-        : `Bulk removal decision: reviewed ${listType} SCFs at 0.00% ${metricLabel} using ${primaryReportDisplayName} only; no items were removed.`
+        : `Bulk removal decision: reviewed ${listType} SCFs at 0.00% ${metricLabel} using ${primaryReportDisplayName} only; matching SCFs were already not on the working list or none were found.`
     );
     invalidateComparisonReviewSummary();
     state.analysis.reviewBulkPreview = null;
@@ -9915,7 +9929,7 @@ function renderAnalysisComparisonReviewPanel() {
       "analysis-comparison-selection-status",
       removalResult.removedCount
         ? `${removalResult.removedCount} SCF(s) with 0.00% ${metricLabel} were marked for pending removal from the working ${listType} list using ${primaryReportDisplayName} only. They remain visible in the review list.`
-        : `No SCFs with 0.00% ${metricLabel} were removed from the working ${listType} list in ${primaryReportDisplayName}.`
+        : `No additional SCFs with 0.00% ${metricLabel} were removed from the working ${listType} list. Any matching SCFs are already marked Not on working list, or none were found in ${primaryReportDisplayName}.`
     );
   });
 
