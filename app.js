@@ -5463,8 +5463,13 @@ function focusComparisonReviewSummary() {
 }
 
 function invalidateComparisonReviewSummary() {
-  state.analysis.reviewSummary = null;
+  try {
+    state.analysis.reviewSummary = buildComparisonReviewSummaryFromClient();
+  } catch {
+    state.analysis.reviewSummary = null;
+  }
   state.analysis.reviewSummaryMode = "review";
+  state.analysis.reviewSummaryApproved = false;
 }
 
 function getReviewBaselineListMap() {
