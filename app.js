@@ -7141,8 +7141,12 @@ function buildComparisonReviewReportMap() {
       report_name: reportName,
       reportName,
       status: String(pull?.status || "complete").trim(),
-      result_count: Number(pull?.resultCount || pull?.result_count || pull?.rawRowCount || 0),
-      resultCount: Number(pull?.resultCount || pull?.result_count || pull?.rawRowCount || 0),
+      result_count: Number(pull?.rawRowCount || pull?.resultCount || pull?.result_count || 0),
+      resultCount: Number(pull?.rawRowCount || pull?.resultCount || pull?.result_count || 0),
+      input_row_count: Number(pull?.rawRowCount || 0),
+      inputRowCount: Number(pull?.rawRowCount || 0),
+      export_row_count: Number(pull?.exportRowCount || 0),
+      exportRowCount: Number(pull?.exportRowCount || 0),
       rows: ensureArray(pull?.rows),
       columns: ensureArray(pull?.columns),
       summaryValues,
@@ -7755,9 +7759,7 @@ function legacyRenderAnalysisComparePanel() {
         .map((report) => {
           const selectedA = report.id === link.reportAId ? " selected" : "";
           const selectedB = report.id === link.reportBId ? " selected" : "";
-          const label = `${getAnalysisReportDisplayName(report)} (${report.status || "complete"}, ${Number(
-            report.result_count || report.resultCount || 0
-          )} rows)`;
+          const label = `${getAnalysisReportDisplayName(report)} (${report.status || "complete"}, ${getAnalysisReportRowCount(report)} rows)`;
           return {
             a: `<option value="${esc(report.id)}"${selectedA}>${esc(label)}</option>`,
             b: `<option value="${esc(report.id)}"${selectedB}>${esc(label)}</option>`,
@@ -7846,7 +7848,15 @@ function legacyRenderAnalysisComparisonReviewPanel() {
 function getAvailableAnalysisReports() {
   const reports = Array.isArray(state.analysis.savedReports) ? state.analysis.savedReports : [];
   return reports.map((report) => {
-    const rowCount = Number(report.result_count || report.resultCount || 0);
+    const rowCount = Number(
+      report.input_row_count ||
+      report.inputRowCount ||
+      report.result_count ||
+      report.resultCount ||
+      report.export_row_count ||
+      report.exportRowCount ||
+      0
+    );
     const rawStatus = String(report.status || "").trim().toLowerCase();
     const keyCodeGroup = getAnalysisReportKeyCodeGroup(report);
     let status = "not_imported";
@@ -7882,6 +7892,18 @@ function getAvailableAnalysisReports() {
 
 function getAvailableAnalysisReportMap() {
   return new Map(getAvailableAnalysisReports().map((report) => [report.id, report]));
+}
+
+function getAnalysisReportRowCount(report = {}) {
+  return Number(
+    report.input_row_count ||
+    report.inputRowCount ||
+    report.result_count ||
+    report.resultCount ||
+    report.export_row_count ||
+    report.exportRowCount ||
+    0
+  );
 }
 
 function setComparisonSetupNextButtonsDisabled(disabled) {
@@ -9745,8 +9767,8 @@ function renderAnalysisSavedReport(report = null) {
     ${renderPullResultCard(report, {
       title: getAnalysisReportDisplayName(report) || "Saved Analysis Report",
       status: report.status || "",
-      inputRowCount: report.result_count || report.resultCount || 0,
-      exportRowCount: report.result_count || report.resultCount || 0,
+      inputRowCount: report.input_row_count || report.inputRowCount || report.result_count || report.resultCount || 0,
+      exportRowCount: report.export_row_count || report.exportRowCount || report.result_count || report.resultCount || 0,
       reportId: report.parameters?.report_id || "",
       parameters: report.parameters || {},
       tableId: report.id || report.report_name || "analysis-report",
@@ -10135,7 +10157,7 @@ async function loadAnalysisReports() {
       <td>${titleCell}</td>
       <td>${formatDate(report.created_at || report.createdAt)}</td>
       <td>${esc(report.status || "idle")}</td>
-      <td>${Number(report.result_count || report.resultCount || 0)}</td>
+      <td>${getAnalysisReportRowCount(report)}</td>
       <td>${downloadMarkup}</td>
       <td class="action-row">
         <button class="secondary-button table-action-button" data-view-report="${esc(report.id)}">View</button>

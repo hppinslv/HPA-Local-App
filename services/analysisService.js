@@ -899,7 +899,7 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
     updated_at: options.updatedAt || timestamp,
     completed_at: options.completedAt || timestamp,
     status: options.status || "complete",
-    result_count: exportRowCount,
+    result_count: inputRowCount || exportRowCount,
     export_row_count: exportRowCount,
     input_row_count: inputRowCount,
     export_file_name: exportFile?.fileName || null,
@@ -3031,7 +3031,9 @@ async function rebuildAnalysisReport(reportId) {
   const effectiveListType = resolveAnalysisReferenceListTypeFromPull(pull);
   const effectiveClientType = effectiveListType === "nhcl" ? "NHCL" : effectiveListType === "rfc" ? "RFC" : pull.clientType;
   const rows = padAnalysisRowsWithReferenceList(result.rows, result.columns, effectiveClientType);
-  const exportRows = ensureArray(result.exportRows || result.rows);
+  const exportRows = ensureArray(result.exportRows).length
+    ? ensureArray(result.exportRows)
+    : ensureArray(result.rows);
   const exportRowCount = Number(result.exportRowCount || exportRows.length || 0);
   let zeroReason = "";
   if (inputRows === 0) {
@@ -3358,7 +3360,9 @@ async function executeAnalysisRun(runId) {
           result.columns,
           effectiveClientType
         );
-        const savedExportRows = ensureArray(result.exportRows || result.rows);
+        const savedExportRows = ensureArray(result.exportRows).length
+          ? ensureArray(result.exportRows)
+          : ensureArray(result.rows);
         const exportRowCount = Number(result.exportRowCount || savedExportRows.length || 0);
         console.log("Input rows:", inputRows);
         console.log("Summary rows:", displayRows.length);
