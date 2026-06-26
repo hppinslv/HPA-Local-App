@@ -151,6 +151,15 @@ function summarizeAnalysisRateRow(row = {}) {
   const soldRate = getAnalysisMetricNumber(row, ["Sold Rate"]);
   const inForceRate = getAnalysisMetricNumber(row, ["In Force Rate"]);
   const convertedRate = getAnalysisMetricNumber(row, ["Converted Rate"]);
+  const salesforceSoldRate = Number.isFinite(Number(row.salesforceSoldRate))
+    ? Number(row.salesforceSoldRate)
+    : soldRate;
+  const salesforceInForceRate = Number.isFinite(Number(row.salesforceInForceRate))
+    ? Number(row.salesforceInForceRate)
+    : inForceRate;
+  const appConvertedRate = Number.isFinite(Number(row.appConvertedRate))
+    ? Number(row.appConvertedRate)
+    : convertedRate;
 
   return {
     mailed,
@@ -161,6 +170,9 @@ function summarizeAnalysisRateRow(row = {}) {
     soldRate,
     inForceRate,
     convertedRate,
+    salesforceSoldRate,
+    salesforceInForceRate,
+    appConvertedRate,
   };
 }
 

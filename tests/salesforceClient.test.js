@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   buildFlatRowsFromDetailExport,
   calculateAnalysisCountRates,
+  calculateAnalysisConvertedRate,
   hasAnalysisDetailExportRows,
   normalizeScf,
   resolveAnalysisConvertedCount,
@@ -42,46 +43,69 @@ function getAggregateRow(dataset, scf) {
   return (dataset.rows || []).find((row) => String(row["SCF Grouping"] || "") === scf);
 }
 
-test("primary report rates use mailed counts with converted premium derived counts", () => {
+test("SCF 893 keeps the Salesforce sold and in-force rates instead of recalculating from counts", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
-      "SCF Grouping": "166",
-      Key: "A",
+      "SCF Grouping": "893",
+      Key: "N",
       Mailed: 166,
       "Opp Count": 1,
       "In Force": 1,
       "Sum of Sold": 0,
+      "Sold Rate": 3.082991454,
+      "In Force Rate": 3.082991454,
       "Total Converted Monthly Premiums": "$75.62",
     },
   ]);
 
-  const row = getAggregateRow(dataset, "166");
+  const row = getAggregateRow(dataset, "893");
   assert.equal(row["Sum of Opp Count"], "1");
   assert.equal(row["Sum of Sold"], "1");
-  assert.equal(row["Sold Rate"], "0.6024096386");
-  assert.equal(row["In Force Rate"], "0.6024096386");
-  assert.equal(row["Converted Rate"], "0.6024096386");
+  assert.equal(row["Sold Rate"], "3.0829914540");
+  assert.equal(row["In Force Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], "3.0829914540");
 });
 
-test("primary report rates stay zero-safe and do not count zero converted premium", () => {
+test("SCF 903 keeps the Salesforce sold rate instead of recalculating from mailed count", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
-      "SCF Grouping": "260",
-      Key: "B",
+      "SCF Grouping": "903",
+      Key: "N",
       Mailed: 260,
       "Opp Count": 1,
       "In Force": 0,
       "Sum of Sold": 4,
+      "Sold Rate": 2.94776892,
+      "In Force Rate": 0,
       "Total Converted Monthly Premiums": 0,
     },
   ]);
 
-  const row = getAggregateRow(dataset, "260");
+  const row = getAggregateRow(dataset, "903");
   assert.equal(row["Sum of Opp Count"], "1");
   assert.equal(row["Sum of Sold"], "0");
-  assert.equal(row["Sold Rate"], "0.3846153846");
+  assert.equal(row["Sold Rate"], "2.9477689200");
   assert.equal(row["In Force Rate"], "0.0000000000");
   assert.equal(row["Converted Rate"], "0.0000000000");
+});
+
+test("SCF 143 keeps the Salesforce sold rate instead of count divided by mailed", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "143",
+      Key: "N",
+      Mailed: 489,
+      "Opp Count": 4,
+      "In Force": 2,
+      "Sold Rate": 2.299856603,
+      "In Force Rate": 1.1499283015,
+      "Total Converted Monthly Premiums": 0,
+    },
+  ]);
+
+  const row = getAggregateRow(dataset, "143");
+  assert.equal(row["Sold Rate"], "2.2998566030");
+  assert.equal(row["In Force Rate"], "1.1499283015");
 });
 
 test("converted count is derived from positive converted premium even when Salesforce converted count is blank or zero", () => {
@@ -102,22 +126,43 @@ test("converted count is derived from positive converted premium even when Sales
   );
 });
 
-test("converted rate never uses converted premium dollars as the numerator", () => {
+test("in-force rate displays the Salesforce in-force rate column exactly", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "812",
+      Key: "N",
+      Mailed: 100,
+      "Opp Count": 2,
+      "In Force": 1,
+      "Sold Rate": 5.5,
+      "In Force Rate": 4.125,
+      "Total Converted Monthly Premiums": 0,
+    },
+  ]);
+
+  const row = getAggregateRow(dataset, "812");
+  assert.equal(row["In Force Rate"], "4.1250000000");
+});
+
+test("converted rate uses app converted logic with the Salesforce rate basis when detail rows exist", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
       "SCF Grouping": "999",
-      Key: "C",
+      Key: "N",
       Mailed: 166,
-      "Opp Count": 1,
+      "Opp Count": 2,
       "In Force": 1,
       "Sum of Sold": 0,
+      "Sold Rate": 6.165982908,
+      "In Force Rate": 3.082991454,
       "Total Converted Monthly Premiums": 100,
     },
   ]);
 
   const row = getAggregateRow(dataset, "999");
-  assert.equal(row["Converted Rate"], "0.6024096386");
-  assert.notEqual(row["Converted Rate"], "60.2409638554");
+  assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Converted Rate"], "3.0829914540");
+  assert.notEqual(row["Converted Rate"], "100.0000000000");
 });
 
 test("zero mailed rows return zero rates without dividing by zero", () => {
@@ -139,13 +184,14 @@ test("normalizeScf preserves leading zeros and pads short numeric values", () =>
   assert.equal(normalizeScf(10), "010");
   assert.equal(normalizeScf("10"), "010");
   assert.equal(normalizeScf("010"), "010");
+  assert.equal(normalizeScf("033"), "033");
   assert.equal(normalizeScf(893), "893");
 });
 
 test("rows with SCF 10, 010, and numeric 10 aggregate together under 010", () => {
   const dataset = buildFlatRowsFromDetailExport([
-    { "SCF Grouping": "10", Key: "N", Mailed: 100, "Opp Count": 1, "In Force": 0, "Total Converted Monthly Premiums": 0 },
-    { "SCF Grouping": "010", Key: "N", Mailed: 50, "Opp Count": 0, "In Force": 1, "Total Converted Monthly Premiums": 15 },
+    { "SCF Grouping": "10", Key: "N", Mailed: 100, "Opp Count": 1, "In Force": 0, "Sold Rate": 3.082991454, "In Force Rate": 0, "Total Converted Monthly Premiums": 0 },
+    { "SCF Grouping": "010", Key: "N", Mailed: 50, "Opp Count": 0, "In Force": 1, "Sold Rate": 3.082991454, "In Force Rate": 3.082991454, "Total Converted Monthly Premiums": 15 },
     { "SCF Grouping": 10, Key: "N", Mailed: 16, "Opp Count": 0, "In Force": 0, "Total Converted Monthly Premiums": 0 },
   ]);
 
@@ -154,9 +200,9 @@ test("rows with SCF 10, 010, and numeric 10 aggregate together under 010", () =>
   assert.equal(row["Sum of Opp Count"], "1");
   assert.equal(row["Sum of In Force"], "1");
   assert.equal(row["Sum of Sold"], "1");
-  assert.equal(row["Sold Rate"], "0.6024096386");
-  assert.equal(row["In Force Rate"], "0.6024096386");
-  assert.equal(row["Converted Rate"], "0.6024096386");
+  assert.equal(row["Sold Rate"], "3.0829914540");
+  assert.equal(row["In Force Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], "3.0829914540");
 });
 
 test("aggregate-shaped saved rows are not mistaken for detail export rows", () => {
@@ -183,5 +229,20 @@ test("aggregate-shaped saved rows are not mistaken for detail export rows", () =
       },
     ]),
     true
+  );
+});
+
+test("calculateAnalysisConvertedRate falls back safely when Salesforce rate fields are missing", () => {
+  assert.equal(
+    calculateAnalysisConvertedRate({
+      convertedCount: 1,
+      soldCount: 0,
+      inForceCount: 0,
+      soldRate: null,
+      inForceRate: null,
+      convertedRate: null,
+      mailed: 166,
+    }),
+    0.6024096385542169
   );
 });

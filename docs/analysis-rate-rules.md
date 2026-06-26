@@ -28,15 +28,15 @@ When that happens, the app must refetch scoped SCF metrics instead of displaying
 
 ## Primary Report Rate Rules
 
-Primary Report Navigator rates must be calculated from SCF-level counts, not from premium dollars.
+Primary Report Navigator rates must preserve the Salesforce summary report rate columns for Sold Rate and In Force Rate.
 
 - `Mailed = sum of mailed pieces for the SCF`
 - `Sold Count = sum of sold/opportunity count rows for the SCF`
 - `In Force Count = sum of in force rows for the SCF`
 - `Converted Count = count of detail rows where Total Converted Monthly Premiums > 0`
-- `Sold Rate = Sold Count / Mailed * 100`
-- `In Force Rate = In Force Count / Mailed * 100`
-- `Converted Rate = Converted Count / Mailed * 100`
+- `Sold Rate = Salesforce report Sold Rate column`
+- `In Force Rate = Salesforce report In Force Rate column`
+- `Converted Rate = app-corrected converted rate when detail rows exist, otherwise Salesforce Converted Rate fallback`
 
 ### Converted Count Trust Rule
 
@@ -45,10 +45,12 @@ Primary Report Navigator rates must be calculated from SCF-level counts, not fro
 - A detail row counts as converted only when converted premium is a positive numeric dollar amount.
 - Zero, blank, null, missing, or non-numeric converted premium does not count as converted.
 - Future changes must not calculate converted rate from the converted premium dollar total.
+- Do not recalculate Sold Rate or In Force Rate from counts unless the Salesforce rate fields are completely missing.
 
 ### Example Logic
 
-- If an SCF has `166` mailed and exactly `1` detail row with `Total Converted Monthly Premiums > 0`, then converted rate must be `1 / 166 * 100 = 0.6024096386`.
+- If Salesforce reports `Sold Rate = 3.082991454` for SCF `893`, the app must display `3.082991454` even when `Sum of Opp Count = 1` and `Mailed = 166`.
+- If an SCF has detail rows and exactly `1` converted row, the app must recalculate only `Converted Rate` from the app-derived converted count using the same Salesforce-style rate basis when possible.
 - If converted premium dollars are present on a row or SCF summary, that only proves whether a converted row should be counted. It must never be used directly as the converted rate numerator.
 
 ## Important Constraints
@@ -63,7 +65,7 @@ Primary Report Navigator rates must be calculated from SCF-level counts, not fro
 
 - If most rates are zero, check SCF key normalization first, especially leading-zero matches like `010`, `011`, and `012`.
 - Keep SCF values as strings, trim whitespace, and left-pad numeric values shorter than three digits.
-- Do not change the formula unless the counts are already correct and only the final math is wrong.
+- Do not change Sold Rate or In Force Rate formulas unless the Salesforce rate fields are missing. Debug field sourcing first.
 - Debug counts before rates: confirm mailed, sold/opportunity count, in-force count, converted count, and converted premium totals for the SCF.
 - Detail row aggregation is the source of truth whenever detail/export rows exist for that SCF.
 - Saved summary rows are only a fallback when detail rows are unavailable.

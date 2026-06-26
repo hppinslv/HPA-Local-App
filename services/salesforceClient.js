@@ -87,13 +87,13 @@ function sanitizeDebugToken(value) {
 }
 
 const ANALYSIS_METRIC_LABELS = {
-  mailed: ["Sum of Mailed", "Mailed"],
+  mailed: ["Sum of Mailed", "Sum of Mail", "Mailed"],
   oppCount: ["Sum of Opp Count", "Applications Received", "Opp Count", "Application Count"],
   inForce: ["Sum of In Force", "Inforce (policy currently in effect)", "In Force"],
   sold: ["Sum of Sold", "Sum of Converted", "Sold", "Converted"],
   totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
   inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
-  totalConvertedMonthlyPremiums: ["Sum of Total Converted Monthly Premiums", "Total Converted Monthly Premiums"],
+  totalConvertedMonthlyPremiums: ["Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium"],
 };
 
 function getAnalysisMetricValue(row = {}, labels = []) {
@@ -161,6 +161,15 @@ function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = n
   return 0;
 }
 
+function resolveAnalysisExplicitRate(row = {}, labels = []) {
+  applyAnalysisMetricAliases(row);
+  if (!hasAnalysisMetricValue(row, labels)) {
+    return null;
+  }
+  const numericValue = parseNumber(getAnalysisMetricValue(row, labels) ?? 0);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
 function calculateAnalysisCountRates({
   mailed = 0,
   soldCount = 0,
@@ -181,6 +190,43 @@ function calculateAnalysisCountRates({
     inForceRate: (parseNumber(inForceCount) / safeMailed) * 100,
     convertedRate: (parseNumber(convertedCount) / safeMailed) * 100,
   };
+}
+
+function calculateAnalysisConvertedRate({
+  convertedCount = 0,
+  soldCount = 0,
+  inForceCount = 0,
+  soldRate = null,
+  inForceRate = null,
+  convertedRate = null,
+  mailed = 0,
+} = {}) {
+  const safeConvertedCount = parseNumber(convertedCount);
+  if (!(safeConvertedCount > 0)) {
+    return 0;
+  }
+
+  const soldRateNumber = Number(soldRate);
+  const soldCountNumber = parseNumber(soldCount);
+  if (soldCountNumber > 0 && Number.isFinite(soldRateNumber) && soldRateNumber > 0) {
+    return (safeConvertedCount / soldCountNumber) * soldRateNumber;
+  }
+
+  const inForceRateNumber = Number(inForceRate);
+  const inForceCountNumber = parseNumber(inForceCount);
+  if (inForceCountNumber > 0 && Number.isFinite(inForceRateNumber) && inForceRateNumber > 0) {
+    return (safeConvertedCount / inForceCountNumber) * inForceRateNumber;
+  }
+
+  const explicitConvertedRate = Number(convertedRate);
+  if (Number.isFinite(explicitConvertedRate) && explicitConvertedRate > 0) {
+    return explicitConvertedRate;
+  }
+
+  return calculateAnalysisCountRates({
+    mailed,
+    convertedCount: safeConvertedCount,
+  }).convertedRate;
 }
 
 function shouldPreferCandidateAnalysisMetric(currentValue, candidateValue) {
@@ -1950,11 +1996,25 @@ function fillAnalysisRateFallbacks(row = {}) {
   const totalMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
   const totalConvertedMonthlyPremiums = resolveAnalysisConvertedPremiumValue(row);
   const convertedCount = resolveAnalysisConvertedCount(row, totalConvertedMonthlyPremiums);
-  const nextRates = calculateAnalysisCountRates({
+  const explicitSoldRate = resolveAnalysisExplicitRate(row, ["Sold Rate"]);
+  const explicitInForceRate = resolveAnalysisExplicitRate(row, ["In Force Rate"]);
+  const explicitConvertedRate = resolveAnalysisExplicitRate(row, ["Converted Rate"]);
+  const fallbackCountRates = calculateAnalysisCountRates({
     mailed,
     soldCount,
     inForceCount: inForce,
     convertedCount,
+  });
+  const nextSoldRate = explicitSoldRate ?? fallbackCountRates.soldRate;
+  const nextInForceRate = explicitInForceRate ?? fallbackCountRates.inForceRate;
+  const nextConvertedRate = calculateAnalysisConvertedRate({
+    convertedCount,
+    soldCount,
+    inForceCount: inForce,
+    soldRate: explicitSoldRate,
+    inForceRate: explicitInForceRate,
+    convertedRate: explicitConvertedRate,
+    mailed,
   });
 
   setAnalysisMetricAliases(
@@ -1967,18 +2027,22 @@ function fillAnalysisRateFallbacks(row = {}) {
     ANALYSIS_METRIC_LABELS.sold,
     Math.round(convertedCount).toLocaleString("en-US")
   );
+  row.salesforceSoldRate = explicitSoldRate;
+  row.salesforceInForceRate = explicitInForceRate;
+  row.salesforceConvertedRate = explicitConvertedRate;
+  row.appConvertedRate = nextConvertedRate;
 
-  if (!hasExplicitSoldRate || Number.isFinite(nextRates.soldRate)) {
-    row["Sold Rate"] = nextRates.soldRate.toFixed(10);
-    row["sold rate"] = nextRates.soldRate.toFixed(10);
+  if (!hasExplicitSoldRate) {
+    row["Sold Rate"] = nextSoldRate.toFixed(10);
+    row["sold rate"] = nextSoldRate.toFixed(10);
   }
-  if (!hasExplicitInForceRate || Number.isFinite(nextRates.inForceRate)) {
-    row["In Force Rate"] = nextRates.inForceRate.toFixed(10);
-    row["in force rate"] = nextRates.inForceRate.toFixed(10);
+  if (!hasExplicitInForceRate) {
+    row["In Force Rate"] = nextInForceRate.toFixed(10);
+    row["in force rate"] = nextInForceRate.toFixed(10);
   }
-  if (!hasExplicitConvertedRate || Number.isFinite(nextRates.convertedRate)) {
-    row["Converted Rate"] = nextRates.convertedRate.toFixed(10);
-    row["converted rate"] = nextRates.convertedRate.toFixed(10);
+  if (!hasExplicitConvertedRate || Number.isFinite(nextConvertedRate)) {
+    row["Converted Rate"] = nextConvertedRate.toFixed(10);
+    row["converted rate"] = nextConvertedRate.toFixed(10);
   }
   const averageMonthlyPremium = soldCount > 0 ? totalMonthlyPremium / soldCount : 0;
   row.averageMonthlyPremium = averageMonthlyPremium;
@@ -2406,23 +2470,6 @@ function buildFlatReportRows(reportPayload) {
 
 function buildFlatRowsFromDetailExport(exportRows = []) {
   const aggregateMap = new Map();
-  const hasPremiumFieldValues = exportRows.some((row) => {
-    const premiumValue =
-      row["Total Monthly Premium"] ??
-      row["total monthly premium"] ??
-      row["Sum of Total Monthly Premium"] ??
-      row["sum of total monthly premium"] ??
-      row["In Force Monthly Premium"] ??
-      row["in force monthly premium"] ??
-      row["Sum of In Force Monthly Premium"] ??
-      row["sum of in force monthly premium"] ??
-      row["Total Converted Monthly Premiums"] ??
-      row["total converted monthly premiums"] ??
-      row["Sum of Total Converted Monthly Premiums"] ??
-      row["sum of total converted monthly premiums"] ??
-      "";
-    return parseNumber(premiumValue) !== 0;
-  });
   exportRows.forEach((row) => {
     const scf = normalizeScf(
       row["SCF Grouping"] ??
@@ -2474,6 +2521,9 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     );
     const rowSoldCount = rowOppCount > 0 ? rowOppCount : resolveAnalysisSoldOpportunityCount(row);
     const rowConvertedCount = resolveAnalysisConvertedCount(row, rowConvertedPremium);
+    const rowSalesforceSoldRate = resolveAnalysisExplicitRate(row, ["Sold Rate"]);
+    const rowSalesforceInForceRate = resolveAnalysisExplicitRate(row, ["In Force Rate"]);
+    const rowSalesforceConvertedRate = resolveAnalysisExplicitRate(row, ["Converted Rate"]);
     const rowApplicationPremium = rowTotalMonthlyPremium > 0
       ? rowTotalMonthlyPremium
       : rowConvertedPremium > 0
@@ -2494,6 +2544,9 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       applicationPremiumTotal: 0,
       highPremium: null,
       lowPremium: null,
+      salesforceSoldRate: null,
+      salesforceInForceRate: null,
+      salesforceConvertedRate: null,
     };
 
     current.mailed += parseNumber(
@@ -2513,6 +2566,15 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     current.inForceMonthlyPremium += rowInForceMonthlyPremium;
     current.totalConvertedMonthlyPremiums += rowConvertedPremium;
     current.sold += rowConvertedCount;
+    if ((current.salesforceSoldRate === null || current.salesforceSoldRate === 0) && Number.isFinite(rowSalesforceSoldRate) && rowSalesforceSoldRate !== 0) {
+      current.salesforceSoldRate = rowSalesforceSoldRate;
+    }
+    if ((current.salesforceInForceRate === null || current.salesforceInForceRate === 0) && Number.isFinite(rowSalesforceInForceRate) && rowSalesforceInForceRate !== 0) {
+      current.salesforceInForceRate = rowSalesforceInForceRate;
+    }
+    if ((current.salesforceConvertedRate === null || current.salesforceConvertedRate === 0) && Number.isFinite(rowSalesforceConvertedRate) && rowSalesforceConvertedRate !== 0) {
+      current.salesforceConvertedRate = rowSalesforceConvertedRate;
+    }
     if (rowSoldCount > 0 && rowApplicationPremium > 0) {
       current.applicationPremiumTotal += rowApplicationPremium;
       current.highPremium = current.highPremium === null
@@ -2527,18 +2589,22 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
 
   const rows = Array.from(aggregateMap.values())
     .sort((entryA, entryB) => {
-      const soldRateA = calculateAnalysisCountRates({
-        mailed: entryA.mailed,
-        soldCount: entryA.oppCount,
-        inForceCount: entryA.inForce,
-        convertedCount: entryA.sold,
-      }).soldRate;
-      const soldRateB = calculateAnalysisCountRates({
-        mailed: entryB.mailed,
-        soldCount: entryB.oppCount,
-        inForceCount: entryB.inForce,
-        convertedCount: entryB.sold,
-      }).soldRate;
+      const soldRateA = Number.isFinite(entryA.salesforceSoldRate)
+        ? entryA.salesforceSoldRate
+        : calculateAnalysisCountRates({
+            mailed: entryA.mailed,
+            soldCount: entryA.oppCount,
+            inForceCount: entryA.inForce,
+            convertedCount: entryA.sold,
+          }).soldRate;
+      const soldRateB = Number.isFinite(entryB.salesforceSoldRate)
+        ? entryB.salesforceSoldRate
+        : calculateAnalysisCountRates({
+            mailed: entryB.mailed,
+            soldCount: entryB.oppCount,
+            inForceCount: entryB.inForce,
+            convertedCount: entryB.sold,
+          }).soldRate;
       if (soldRateB !== soldRateA) {
         return soldRateB - soldRateA;
       }
@@ -2548,11 +2614,22 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       return entryA.keyCode.localeCompare(entryB.keyCode, undefined, { numeric: true });
     })
     .map((entry) => {
-      const { soldRate, inForceRate, convertedRate } = calculateAnalysisCountRates({
+      const fallbackRates = calculateAnalysisCountRates({
         mailed: entry.mailed,
         soldCount: entry.oppCount,
         inForceCount: entry.inForce,
         convertedCount: entry.sold,
+      });
+      const soldRate = Number.isFinite(entry.salesforceSoldRate) ? entry.salesforceSoldRate : fallbackRates.soldRate;
+      const inForceRate = Number.isFinite(entry.salesforceInForceRate) ? entry.salesforceInForceRate : fallbackRates.inForceRate;
+      const convertedRate = calculateAnalysisConvertedRate({
+        convertedCount: entry.sold,
+        soldCount: entry.oppCount,
+        inForceCount: entry.inForce,
+        soldRate: entry.salesforceSoldRate,
+        inForceRate: entry.salesforceInForceRate,
+        convertedRate: entry.salesforceConvertedRate,
+        mailed: entry.mailed,
       });
       const averageSoldPremium = entry.oppCount > 0 ? entry.applicationPremiumTotal / entry.oppCount : 0;
 
@@ -2578,6 +2655,10 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         averageMonthlyPremium: averageSoldPremium,
         highPremium: entry.highPremium,
         lowPremium: entry.lowPremium,
+        salesforceSoldRate: Number.isFinite(entry.salesforceSoldRate) ? entry.salesforceSoldRate : null,
+        salesforceInForceRate: Number.isFinite(entry.salesforceInForceRate) ? entry.salesforceInForceRate : null,
+        salesforceConvertedRate: Number.isFinite(entry.salesforceConvertedRate) ? entry.salesforceConvertedRate : null,
+        appConvertedRate: convertedRate,
         "Sold Rate": soldRate.toFixed(10),
         "sold rate": soldRate.toFixed(10),
         "In Force Rate": inForceRate.toFixed(10),
@@ -4139,6 +4220,7 @@ module.exports = {
   buildFlatRowsFromDetailExport,
   buildFlatReportRows,
   calculateAnalysisCountRates,
+  calculateAnalysisConvertedRate,
   buildDetailSoql,
   executeReport,
   executeAsyncReportWithDescribeMetadata,
