@@ -2298,6 +2298,15 @@ function ensureComparisonReviewWorkingLists() {
   state.analysis.reviewWorkingLists = cloneData(baseline);
 }
 
+function hasReviewWorkingListSeedData() {
+  return (
+    Array.isArray(state.analysis.reviewBaselineLists)
+    && state.analysis.reviewBaselineLists.length > 0
+    && Array.isArray(state.analysis.reviewWorkingLists)
+    && state.analysis.reviewWorkingLists.length > 0
+  );
+}
+
 async function loadReferenceLists() {
   const payload = await apiRequest("/api/analysis/reference-lists");
   state.referenceLists = payload.lists || [];
@@ -9324,9 +9333,12 @@ function renderAnalysisComparisonSummaryView() {
     scheduleReviewStateAutosave("summary-back");
     broadcastAnalysisReviewState("summary-back");
     setStatus("analysis-comparison-selection-status", "Reloading comparison review...");
-    loadAnalysisReports()
+    Promise.all([loadAnalysisReports(), loadReferenceLists()])
       .catch(() => null)
       .finally(() => {
+        if (!hasReviewWorkingListSeedData()) {
+          ensureComparisonReviewWorkingLists();
+        }
         renderAnalysisComparisonReviewPanel();
         scheduleAnalysisComparisonReviewRender(20);
       });
@@ -9464,6 +9476,19 @@ function renderAnalysisComparisonReviewPanel() {
 
   if (!comparisons.length) {
     container.innerHTML = '<div class="empty-state-block">No comparisons yet.</div>';
+    return;
+  }
+
+  if (!hasReviewWorkingListSeedData()) {
+    container.innerHTML = '<div class="empty-state-block">Loading current mailing lists for review...</div>';
+    void loadReferenceLists()
+      .then(() => {
+        ensureComparisonReviewWorkingLists();
+      })
+      .catch(() => null)
+      .finally(() => {
+        scheduleAnalysisComparisonReviewRender(40);
+      });
     return;
   }
 
