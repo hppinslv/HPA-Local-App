@@ -555,6 +555,34 @@ test("deleting a completed analysis restores list history and keeps normalized s
   assert.ok(rfcAfterDelete.history.some((entry) => entry.actionType === "restore-analysis-delete"));
 });
 
+test("saving a new open analysis archives older open analyses so only one stays active", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const older = service.saveAnalysisSetup(createComparisonPayload({
+    runName: "Older Open Analysis",
+    status: "draft",
+  }));
+  const newest = service.saveAnalysisSetup(createComparisonPayload({
+    id: undefined,
+    runName: "Newest Open Analysis",
+    status: "draft",
+  }));
+
+  const setups = service.listAnalysisSetups();
+  const olderReloaded = setups.find((entry) => entry.id === older.id);
+  const newestReloaded = setups.find((entry) => entry.id === newest.id);
+
+  assert.equal(newestReloaded?.archived, false);
+  assert.equal(olderReloaded?.archived, true);
+  assert.equal(setups.filter((entry) => !entry.archived && entry.status === "draft").length, 1);
+});
+
 test("only the most recent completed analysis can be undone", (t) => {
   const tempDir = createTempAnalysisDir();
   t.after(() => {

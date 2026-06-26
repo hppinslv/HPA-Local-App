@@ -1526,6 +1526,11 @@ function normalizeArchivedValue(value) {
   return false;
 }
 
+function isOpenAnalysisStatus(status) {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  return normalizedStatus !== "complete" && normalizedStatus !== "reverted";
+}
+
 function normalizeAnalysisReviewState(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   const normalizeMap = (entries) => {
@@ -2770,7 +2775,26 @@ function listAnalysisReports() {
 }
 
 function listAnalysisSetups() {
-  return readAnalysisSetups().map(serializeAnalysisSetup);
+  const serialized = readAnalysisSetups().map(serializeAnalysisSetup);
+  const latestOpenId = serialized
+    .filter((entry) => !entry.archived && isOpenAnalysisStatus(entry.status || ""))
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.updatedAt || left.createdAt || "") || 0;
+      const rightTime = Date.parse(right.updatedAt || right.createdAt || "") || 0;
+      return rightTime - leftTime;
+    })[0]?.id || "";
+
+  return serialized.map((entry) => (
+    !entry.archived
+    && isOpenAnalysisStatus(entry.status || "")
+    && latestOpenId
+    && String(entry.id || "").trim() !== String(latestOpenId).trim()
+      ? {
+          ...entry,
+          archived: true,
+        }
+      : entry
+  ));
 }
 
 function getAnalysisSetup(setupId) {
@@ -2851,6 +2875,19 @@ function saveAnalysisSetup(body = {}) {
     setups[index] = setup;
   } else {
     setups.unshift(setup);
+  }
+
+  if (isOpenAnalysisStatus(request.status || setup.status || "")) {
+    setups.forEach((entry) => {
+      if (String(entry.id || "").trim() === String(setup.id || "").trim()) {
+        entry.archived = false;
+        return;
+      }
+      if (!entry.archived && isOpenAnalysisStatus(entry.status || "")) {
+        entry.archived = true;
+        entry.updatedAt = timestamp;
+      }
+    });
   }
 
   const normalizedStatus = String(request.status || setup.status || "").trim().toLowerCase();
