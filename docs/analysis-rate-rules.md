@@ -75,3 +75,38 @@ Primary Report Navigator rates must preserve the Salesforce summary report rate 
 ## Known Expectation
 
 The comparison cards and the Primary Report Navigator should agree for the same SCF once exact metrics are loaded.
+
+## Comparison Setup Persistence
+
+Committed comparison setup data must live in persistent Analysis storage, not only in browser memory.
+
+- The `Save` action on Set Up Comparison writes the committed setup to the backend Analysis setup record.
+- Review Analysis must hydrate from the saved setup record first, not from `sessionStorage`, `localStorage`, or other temporary UI state.
+- Refreshing the browser, reopening the page, or restarting the app service must preserve saved comparisons.
+- Temporary local draft state can help with unsaved edits, but it must never overwrite a committed saved setup with empty comparison values.
+- Only an explicit remove or delete action is allowed to remove a saved comparison setup.
+
+### Persisted Comparison Fields
+
+Each saved comparison setup must keep:
+
+- setup `id`
+- parent analysis setup/session id
+- `comparisonName`
+- `selectedReportIds`
+- `primaryReportId`
+- `keyCodeGroup`
+- `selectedScf`
+- review state linkage such as selected comparison and per-comparison review mappings
+- `createdAt`
+- `updatedAt`
+
+### Review Load Rule
+
+When Review Analysis opens, the app should treat persistent storage as the source of truth and log:
+
+- current analysis id
+- saved comparison setup id
+- selected primary report id
+- selected comparison ids
+- whether the page was hydrated from persistent storage or only a temporary local draft

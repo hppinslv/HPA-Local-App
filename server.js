@@ -28,6 +28,7 @@ const {
   deleteAnalysisReport,
   deleteAnalysisReports,
   deleteAnalysisRun,
+  deleteAnalysisComparisonSetup,
   deleteAnalysisSetup,
   writeReferenceListExport,
   getAnalysisArtifactPath,
@@ -37,6 +38,8 @@ const {
   getAnalysisReportExportPath,
   getAnalysisRun,
   getAnalysisSetup,
+  getAnalysisComparisonSetup,
+  getAnalysisComparisonSetups,
   getReferenceListByType,
   importReferenceList,
   listAnalysisReports,
@@ -296,6 +299,26 @@ const server = http.createServer((request, response) => {
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to save analysis setup." });
       });
+    return;
+  }
+
+  const analysisSetupComparisonMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)\/comparisons$/);
+  if (analysisSetupComparisonMatch && request.method === "GET") {
+    sendJson(response, 200, { comparisonSetups: getAnalysisComparisonSetups(analysisSetupComparisonMatch[1]) });
+    return;
+  }
+
+  const analysisSetupSingleComparisonMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)\/comparisons\/([^/]+)$/);
+  if (analysisSetupSingleComparisonMatch && request.method === "GET") {
+    const comparisonSetup = getAnalysisComparisonSetup(
+      analysisSetupSingleComparisonMatch[1],
+      analysisSetupSingleComparisonMatch[2]
+    );
+    if (!comparisonSetup) {
+      sendJson(response, 404, { error: "Comparison setup not found." });
+      return;
+    }
+    sendJson(response, 200, { comparisonSetup });
     return;
   }
 
@@ -1072,6 +1095,21 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (analysisSetupMatch && request.method === "PUT") {
+    collectRequestBody(request)
+      .then((body) => {
+        const setup = saveAnalysisSetup({
+          ...body,
+          id: analysisSetupMatch[1],
+        });
+        sendJson(response, 200, { setup, setups: listAnalysisSetups() });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to save analysis setup." });
+      });
+    return;
+  }
+
   if (analysisSetupMatch && request.method === "DELETE") {
     try {
       deleteAnalysisSetup(analysisSetupMatch[1]);
@@ -1101,6 +1139,19 @@ const server = http.createServer((request, response) => {
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to delete analysis setup." });
       });
+    return;
+  }
+
+  if (analysisSetupSingleComparisonMatch && request.method === "DELETE") {
+    try {
+      const setup = deleteAnalysisComparisonSetup(
+        analysisSetupSingleComparisonMatch[1],
+        analysisSetupSingleComparisonMatch[2]
+      );
+      sendJson(response, 200, { setup, comparisonSetups: getAnalysisComparisonSetups(analysisSetupSingleComparisonMatch[1]) });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to delete comparison setup." });
+    }
     return;
   }
 

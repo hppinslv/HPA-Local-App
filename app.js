@@ -112,6 +112,7 @@ const state = {
     selectedReportIds: [],
     collapsedPullIds: {},
     setupHydrated: false,
+    lastSetupLoadSource: "",
     reviewFloatingPanel: {
       x: 16,
       y: 16,
@@ -1413,7 +1414,27 @@ function restorePersistedAnalysisSetupDraft(setupId = "") {
   }
   state.analysis.selectedComparisonId = String(draft.selectedComparisonId || state.analysis.selectedComparisonId || "").trim();
   state.analysis.lastEditedComparisonId = String(draft.lastEditedComparisonId || state.analysis.lastEditedComparisonId || "").trim();
+  state.analysis.lastSetupLoadSource = "local-draft";
   return true;
+}
+
+function logComparisonSetupPersistenceContext(reason = "compare-review-open") {
+  const selectedComparisonIds = ensureArray(state.analysis.comparisonRequests)
+    .map((entry) => String(entry?.id || "").trim())
+    .filter(Boolean);
+  const selectedComparisonId = String(state.analysis.selectedComparisonId || "").trim();
+  const selectedPrimaryReportId = selectedComparisonId
+    ? String(state.analysis.reviewPrimaryReportIds?.[selectedComparisonId] || "").trim()
+    : "";
+  console.info("[analysis-comparison-persistence]", {
+    reason,
+    analysisId: String(state.analysis.currentRunId || state.analysis.currentSetupId || "").trim(),
+    setupId: String(state.analysis.currentSetupId || "").trim(),
+    savedComparisonSetupId: selectedComparisonId,
+    selectedPrimaryReportId,
+    selectedComparisonIds,
+    loadSource: String(state.analysis.lastSetupLoadSource || "runtime-state").trim() || "runtime-state",
+  });
 }
 
 function persistUiState() {
@@ -5032,6 +5053,7 @@ function showAnalysisPanel(panelName) {
 
   if (panelName === "compare-review") {
     try {
+      logComparisonSetupPersistenceContext("enter-review-analysis");
       renderComparisonReviewPanelShell();
       renderAnalysisComparisonReviewPanel();
     } catch (error) {
@@ -5600,6 +5622,7 @@ async function completeComparisonReview() {
       body: {
         ...buildAnalysisPayload("complete"),
         id: state.analysis.currentSetupId || undefined,
+        commitComparisonSetup: true,
         completedAt: completionTimestamp,
         referenceListChanges: changes,
         referenceListActor: "Local User",
@@ -9416,8 +9439,13 @@ function syncComparisonRequestsFromLinks() {
 }
 
 async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
+  const validation = validateAnalysisComparisonSetup();
+  if (!validation.isValid) {
+    throw new Error(validation.summaryErrors.join(" ").trim() || "Fix the comparison setup before saving.");
+  }
   syncComparisonRequestsFromLinks();
   const payload = buildAnalysisPayload("draft");
+  payload.commitComparisonSetup = true;
   const response = await apiRequest("/api/analysis/setups", {
     method: "POST",
     body: payload,
@@ -9436,6 +9464,7 @@ async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
   setStatus("analysis-status-detail", "Analysis setup saved.");
   setStatus("analysis-comparison-status", statusMessage);
   state.analysis.setupHydrated = true;
+  state.analysis.lastSetupLoadSource = "persistent-storage";
   return setup;
 }
 
@@ -9845,6 +9874,7 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   state.analysis.reviewSummaryMode = "review";
   state.analysis.reviewSummaryNotes = "";
   state.analysis.setupHydrated = false;
+  state.analysis.lastSetupLoadSource = "";
   if (clearPersistedSetup) {
     persistAnalysisSetupId("");
   }
@@ -9896,12 +9926,12 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.reviewBaselineLists = [];
   state.analysis.reviewWorkingLists = [];
   state.analysis.reviewBulkPreview = null;
-  restorePersistedAnalysisSetupDraft(state.analysis.currentSetupId);
   const comparisonReview = getComparisonReviewResultFromEntry(setup);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
   state.analysis.reviewSummaryMode = "review";
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   state.analysis.setupHydrated = true;
+  state.analysis.lastSetupLoadSource = "persistent-storage";
   syncAnalysisMeta({
     runName: setup.run_name || setup.runName || "",
     notes: setup.notes ?? state.analysis.runNotes,
@@ -10122,6 +10152,31 @@ async function loadAnalysisReports() {
       savedReportId,
     };
   });
+  const remapComparisonReportIds = (collection = []) => ensureArray(collection).map((entry, index) => {
+    const clonedEntry = entry && typeof entry === "object" ? { ...entry } : createComparisonLink(index);
+    const rawIds = Array.isArray(clonedEntry.selectedReportIds) && clonedEntry.selectedReportIds.length
+      ? clonedEntry.selectedReportIds
+      : Array.isArray(clonedEntry.reportIds) && clonedEntry.reportIds.length
+        ? clonedEntry.reportIds
+        : [clonedEntry.reportAId, clonedEntry.reportBId];
+    const remappedIds = Array.from(
+      new Set(
+        ensureArray(rawIds)
+          .map((reportId) => {
+            const normalizedId = String(reportId || "").trim();
+            return savedReportIdByPullId.get(normalizedId) || normalizedId;
+          })
+          .filter(Boolean)
+      )
+    ).slice(0, 5);
+    clonedEntry.selectedReportIds = remappedIds;
+    clonedEntry.reportIds = remappedIds;
+    clonedEntry.reportAId = remappedIds[0] || "";
+    clonedEntry.reportBId = remappedIds[1] || "";
+    return clonedEntry;
+  });
+  state.analysis.comparisonLinks = remapComparisonReportIds(state.analysis.comparisonLinks);
+  state.analysis.comparisonRequests = remapComparisonReportIds(state.analysis.comparisonRequests);
   const validReportIds = new Set(rows.map((report) => String(report.id || "").trim()).filter(Boolean));
   setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => validReportIds.has(id)));
   if (!tbody) {
@@ -10814,7 +10869,7 @@ function bindAnalysisButtons() {
     const validation = validateAnalysisComparisonSetup();
     renderAnalysisSetupHome();
     if (!validation.isValid) {
-      setStatus("analysis-comparison-status", "Fix the comparison errors before continuing.");
+      setStatus("analysis-comparison-status", validation.summaryErrors.join(" ").trim() || "Fix the comparison errors before continuing.");
       return;
     }
 

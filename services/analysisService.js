@@ -12,9 +12,12 @@ const {
 const { loadStateObject, queueStateSync } = require("./supabasePersistence");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
-const ANALYSIS_RUNS_PATH = path.join(DATA_DIR, "analysis-runs.json");
-const ANALYSIS_SETUPS_PATH = path.join(DATA_DIR, "analysis-setups.json");
-const ANALYSIS_REPORTS_PATH = path.join(DATA_DIR, "analysis-reports.json");
+const ANALYSIS_STORAGE_DIR = process.env.HPA_ANALYSIS_DATA_DIR
+  ? path.resolve(process.env.HPA_ANALYSIS_DATA_DIR)
+  : DATA_DIR;
+const ANALYSIS_RUNS_PATH = path.join(ANALYSIS_STORAGE_DIR, "analysis-runs.json");
+const ANALYSIS_SETUPS_PATH = path.join(ANALYSIS_STORAGE_DIR, "analysis-setups.json");
+const ANALYSIS_REPORTS_PATH = path.join(ANALYSIS_STORAGE_DIR, "analysis-reports.json");
 const SCF_REFERENCE_LISTS_PATH = path.join(DATA_DIR, "scf-reference-lists.json");
 const ANALYSIS_REFERENCE_LIST_EXPORT_DIR = path.join(os.tmpdir(), "hpa-reference-list-exports");
 const ANALYSIS_REPORT_EXPORT_DIR = path.join(os.tmpdir(), "hpa-analysis-report-exports");
@@ -1506,6 +1509,53 @@ function normalizeAnalysisReviewState(value = {}) {
   };
 }
 
+function buildPersistedComparisonSetups(
+  setupId,
+  comparisonRequests = [],
+  reviewState = {},
+  existingComparisonSetups = [],
+  timestamp = new Date().toISOString()
+) {
+  const existingById = new Map(
+    ensureArray(existingComparisonSetups)
+      .map((entry) => [String(entry?.id || "").trim(), entry])
+      .filter(([id]) => id)
+  );
+  const normalizedReviewState = normalizeAnalysisReviewState(reviewState);
+
+  return ensureArray(comparisonRequests).map((entry, index) => {
+    const comparisonId = String(entry?.id || `comparison_${index + 1}`).trim() || `comparison_${index + 1}`;
+    const existing = existingById.get(comparisonId) || null;
+    const reportIds = ensureArray(entry?.selectedReportIds).length
+      ? ensureArray(entry.selectedReportIds)
+      : ensureArray(entry?.reportIds).length
+        ? ensureArray(entry.reportIds)
+        : [entry?.reportAId, entry?.reportBId];
+    const selectedReportIds = Array.from(
+      new Set(
+        reportIds
+          .map((reportId) => String(reportId || "").trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 5);
+    const comparisonName = String(entry?.comparisonName || entry?.name || entry?.label || "").trim();
+
+    return {
+      id: comparisonId,
+      analysisSetupId: String(setupId || "").trim(),
+      comparisonName,
+      selectedReportIds,
+      primaryReportId: String(normalizedReviewState.reviewPrimaryReportIds?.[comparisonId] || "").trim(),
+      keyCodeGroup: String(entry?.keyCodeGroup || entry?.key_code_group || "NHCL").trim(),
+      selectedScf: String(normalizedReviewState.reviewSelectedScfs?.[comparisonId] || "").trim(),
+      reviewStatus: String(existing?.reviewStatus || "").trim(),
+      reviewProgress: existing?.reviewProgress || null,
+      createdAt: entry?.createdAt || entry?.created_at || existing?.createdAt || timestamp,
+      updatedAt: entry?.updatedAt || entry?.updated_at || timestamp,
+    };
+  });
+}
+
 function normalizeAnalysisRequest(body = {}) {
   const reportPulls = ensureArray(body.reportPulls).map(normalizePullRequest);
 
@@ -1558,6 +1608,8 @@ function normalizeAnalysisRequest(body = {}) {
     ).trim(),
     referenceListReason: String(body.referenceListReason || "").trim(),
     referenceListChangesAppliedAt: body.referenceListChangesAppliedAt || null,
+    commitComparisonSetup: body.commitComparisonSetup === true,
+    clearComparisonSetup: body.clearComparisonSetup === true,
   };
 }
 
@@ -1577,6 +1629,7 @@ function serializeAnalysisSetup(setup) {
     reportPulls: setup.reportPulls,
     notes: setup.notes || "",
     comparisonRequests: setup.comparisonRequests || [],
+    comparisonSetups: ensureArray(setup.comparisonSetups),
     reviewState: normalizeAnalysisReviewState(setup.reviewState),
     results: setup.results || null,
     referenceListsSnapshot: setup.referenceListsSnapshot || null,
@@ -2646,15 +2699,44 @@ function getAnalysisSetup(setupId) {
   return setup ? serializeAnalysisSetup(setup) : null;
 }
 
+function getAnalysisComparisonSetups(setupId) {
+  const setup = readAnalysisSetups().find((entry) => entry.id === setupId);
+  return setup ? ensureArray(setup.comparisonSetups).map((entry) => clone(entry)) : [];
+}
+
+function getAnalysisComparisonSetup(setupId, comparisonId) {
+  const comparisonSetups = getAnalysisComparisonSetups(setupId);
+  return comparisonSetups.find((entry) => String(entry.id || "").trim() === String(comparisonId || "").trim()) || null;
+}
+
 function saveAnalysisSetup(body = {}) {
   const request = normalizeAnalysisRequest(body);
   const setups = readAnalysisSetups();
   const setupId = String(body.id || "").trim();
   const existingSetup = setupId ? setups.find((entry) => entry.id === setupId) : null;
   const timestamp = new Date().toISOString();
+  const existingComparisonRequests = ensureArray(existingSetup?.comparisonRequests);
+  const incomingComparisonRequests = ensureArray(request.comparisonRequests);
+  const shouldPreserveExistingComparisonSetup =
+    !!existingSetup
+    && !request.clearComparisonSetup
+    && !incomingComparisonRequests.length
+    && existingComparisonRequests.length;
+
+  if (request.commitComparisonSetup && shouldPreserveExistingComparisonSetup) {
+    throw new Error("Saved comparison setup cannot be overwritten with an empty draft. Remove it explicitly instead.");
+  }
+
+  const comparisonRequests = shouldPreserveExistingComparisonSetup
+    ? existingComparisonRequests
+    : incomingComparisonRequests;
+  const reviewState = shouldPreserveExistingComparisonSetup
+    ? normalizeAnalysisReviewState(existingSetup?.reviewState)
+    : request.reviewState;
+  const nextSetupId = existingSetup?.id || createSetupId();
 
   const setup = {
-    id: existingSetup?.id || createSetupId(),
+    id: nextSetupId,
     runName: request.runName,
     status: request.status || existingSetup?.status || "idle",
     createdAt: request.createdAt || existingSetup?.createdAt || timestamp,
@@ -2662,8 +2744,15 @@ function saveAnalysisSetup(body = {}) {
     completedAt: request.completedAt || existingSetup?.completedAt || null,
     archived: request.archived !== undefined ? request.archived : existingSetup?.archived || false,
     reportPulls: request.reportPulls,
-    comparisonRequests: request.comparisonRequests,
-    reviewState: request.reviewState || existingSetup?.reviewState || null,
+    comparisonRequests,
+    comparisonSetups: buildPersistedComparisonSetups(
+      nextSetupId,
+      comparisonRequests,
+      reviewState,
+      existingSetup?.comparisonSetups,
+      timestamp
+    ),
+    reviewState: reviewState || existingSetup?.reviewState || null,
     notes: request.notes || "",
     results: request.results || existingSetup?.results || null,
     referenceListsSnapshot: request.referenceListsSnapshot || existingSetup?.referenceListsSnapshot || null,
@@ -2806,6 +2895,53 @@ function deleteAnalysisSetup(setupId, options = {}) {
     deletedReportIds: relatedReports.map((entry) => String(entry.id || "").trim()).filter(Boolean),
     revertedLists,
   };
+}
+
+function deleteAnalysisComparisonSetup(setupId, comparisonId) {
+  const normalizedSetupId = String(setupId || "").trim();
+  const normalizedComparisonId = String(comparisonId || "").trim();
+  if (!normalizedSetupId || !normalizedComparisonId) {
+    throw new Error("Both setup ID and comparison ID are required.");
+  }
+
+  const setups = readAnalysisSetups();
+  const setupIndex = setups.findIndex((entry) => String(entry.id || "").trim() === normalizedSetupId);
+  if (setupIndex === -1) {
+    throw new Error("Analysis setup not found.");
+  }
+
+  const setup = clone(setups[setupIndex]);
+  const nextComparisonRequests = ensureArray(setup.comparisonRequests).filter(
+    (entry) => String(entry?.id || "").trim() !== normalizedComparisonId
+  );
+  if (nextComparisonRequests.length === ensureArray(setup.comparisonRequests).length) {
+    throw new Error("Comparison setup not found.");
+  }
+
+  const nextReviewState = normalizeAnalysisReviewState(setup.reviewState);
+  delete nextReviewState.reviewPrimaryReportIds[normalizedComparisonId];
+  delete nextReviewState.reviewSelectedScfs[normalizedComparisonId];
+  if (nextReviewState.selectedComparisonId === normalizedComparisonId) {
+    nextReviewState.selectedComparisonId = String(nextComparisonRequests[0]?.id || "").trim();
+  }
+  if (nextReviewState.lastEditedComparisonId === normalizedComparisonId) {
+    nextReviewState.lastEditedComparisonId = String(nextComparisonRequests[0]?.id || "").trim();
+  }
+
+  const timestamp = new Date().toISOString();
+  setup.comparisonRequests = nextComparisonRequests;
+  setup.reviewState = nextReviewState;
+  setup.comparisonSetups = buildPersistedComparisonSetups(
+    normalizedSetupId,
+    nextComparisonRequests,
+    nextReviewState,
+    setup.comparisonSetups,
+    timestamp
+  );
+  setup.updatedAt = timestamp;
+  setups[setupIndex] = setup;
+  writeAnalysisSetups(setups);
+  return serializeAnalysisSetup(setup);
 }
 
 function getAnalysisRun(runId) {
@@ -4588,6 +4724,7 @@ module.exports = {
   deleteAnalysisReport,
   deleteAnalysisReports,
   deleteAnalysisSetup,
+  deleteAnalysisComparisonSetup,
   deleteAnalysisRun,
   compareAnalysisReports,
   getAnalysisArtifactPath,
@@ -4597,6 +4734,8 @@ module.exports = {
   getAnalysisReportExportPath,
   getAnalysisRun,
   getAnalysisSetup,
+  getAnalysisComparisonSetup,
+  getAnalysisComparisonSetups,
   getReferenceListByType,
   importReferenceList,
   isDoNotMailScf,
@@ -4608,6 +4747,7 @@ module.exports = {
   buildAnalysisOverwriteProtection,
   choosePreferredAnalysisScfRow,
   mergeAnalysisMetricRowsPreferNonZero,
+  buildPersistedComparisonSetups,
   renameAnalysisReport,
   rebuildAnalysisReport,
   removeDnmStateGroup,
