@@ -5856,12 +5856,38 @@ function getManualAnalysisReviewNotes(value = state.analysis.reviewSummaryNotes)
     .join("\n");
 }
 
+function buildZeroRateRemovalReviewNotesText() {
+  const zeroRateSummary = buildZeroRateRemovalSummary();
+  if (!zeroRateSummary.actions.length) {
+    return "";
+  }
+
+  const lines = [
+    `Pending zero-rate working-copy removals: ${zeroRateSummary.totalRemovedCount} SCF(s) across ${zeroRateSummary.totalActionCount} action(s).`,
+  ];
+
+  zeroRateSummary.actions.forEach((action) => {
+    lines.push(
+      [
+        action.comparisonName || action.comparisonId || "Comparison",
+        action.primaryReportName || action.primaryReportId || "Primary report",
+        `${String(action.listType || "").toUpperCase()} list`,
+        getReviewMetricDisplayName(action.metricKey),
+        `${Number(action.activeRemovedCount || 0)} removed`,
+        action.activeRemovedScfs.join(", "),
+      ]
+        .filter(Boolean)
+        .join(" | ")
+    );
+  });
+
+  return lines.join("\n");
+}
+
 function getEffectiveAnalysisReviewNotes() {
   const manualNotes = getManualAnalysisReviewNotes(state.analysis.reviewSummaryNotes);
-  if (manualNotes) {
-    return manualNotes;
-  }
-  return String(state.analysis.runNotes || "").trim();
+  const zeroRateNotes = buildZeroRateRemovalReviewNotesText();
+  return [manualNotes, zeroRateNotes].filter(Boolean).join("\n\n");
 }
 
 function ensureComparisonReviewPanelToolbar() {
@@ -7957,6 +7983,19 @@ function getComparisonReviewReports(comparison) {
     .filter(Boolean);
 }
 
+function reportHasReviewScfData(report) {
+  if (!report || typeof report !== "object") {
+    return false;
+  }
+  if (getReportRowsWithScf(report).length) {
+    return true;
+  }
+  if (getReportExportRowsWithScf(report).length) {
+    return true;
+  }
+  return false;
+}
+
 function ensureComparisonReviewSelection() {
   const comparisons = Array.isArray(state.analysis.comparisonRequests)
     ? state.analysis.comparisonRequests
@@ -9211,7 +9250,6 @@ function renderReviewSummaryPrintListMarkup(title, rows = []) {
 
 function buildAnalysisReviewPrintWindowDocument() {
   const summary = getEffectiveComparisonReviewSummary();
-  const zeroRateSummary = buildZeroRateRemovalSummary();
   const listSummary = summary.lists || {};
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
   const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
@@ -9318,19 +9356,6 @@ function buildAnalysisReviewPrintWindowDocument() {
   ${reviewNotes
     ? `<section class="analysis-print-card"><h2>Review Notes</h2><div class="analysis-print-notes">${esc(reviewNotes)}</div></section>`
     : ""}
-  <section class="analysis-print-card">
-    <h2>Pending Zero-Rate Working Copy Removals</h2>
-    <p>${zeroRateSummary.totalRemovedCount} SCF(s) currently removed in the working copy across ${zeroRateSummary.totalActionCount} action(s).</p>
-    ${zeroRateSummary.actions.length
-      ? zeroRateSummary.actions.map((action) => `
-        <section class="analysis-print-section">
-          <h3>${esc(action.comparisonName || action.comparisonId || "Comparison")} - ${esc(action.primaryReportName || action.primaryReportId || "Primary Report")}</h3>
-          <p>${esc(String(action.listType || "").toUpperCase())} list, ${esc(getReviewMetricDisplayName(action.metricKey))}, pending working-copy only.</p>
-          <p>${esc(action.activeRemovedScfs.join(", "))}</p>
-        </section>
-      `).join("")
-      : "<p>No pending zero-rate removals.</p>"}
-  </section>
 
   ${renderReviewSummaryPrintListMarkup("NHCL - Added", nhcl.added)}
   ${renderReviewSummaryPrintListMarkup("NHCL - Removed", nhcl.removed)}
@@ -9408,27 +9433,6 @@ function renderAnalysisComparisonSummaryView() {
         </div>
       </article>
 
-      <article class="panel analysis-review-summary-card">
-        <h4>Pending Zero-Rate Working Copy Removals</h4>
-        <p>${zeroRateSummary.totalRemovedCount} SCF(s) are currently removed in the working copy only.</p>
-        ${zeroRateSummary.actions.length
-          ? `<div class="analysis-review-summary-list analysis-review-summary-list-rows">
-            ${zeroRateSummary.actions.map((action) => `
-              <div class="analysis-review-summary-row-item">
-                <strong>${esc(action.comparisonName || action.comparisonId || "Comparison")}</strong>
-                <span>${esc(action.primaryReportName || action.primaryReportId || "Primary report")}</span>
-                <span>${esc(String(action.listType || "").toUpperCase())} list</span>
-                <span>${esc(getReviewMetricDisplayName(action.metricKey))}</span>
-                <span>Pending working-copy only</span>
-                <span>${Number(action.activeRemovedCount || 0)} removed</span>
-                <span>${esc(action.activeRemovedScfs.join(", "))}</span>
-                ${readOnly ? "" : `<button class="secondary-button table-action-button" data-zero-rate-undo-action="${esc(action.id)}">Undo</button>`}
-              </div>
-            `).join("")}
-          </div>`
-          : `<p class="analysis-review-summary-empty">No pending zero-rate removals.</p>`}
-      </article>
-
       ${runNotesMarkup}
 
       <article class="panel analysis-review-finalize-card">
@@ -9451,6 +9455,27 @@ function renderAnalysisComparisonSummaryView() {
         <div class="field-stack">
           <label class="field-label" for="analysis-review-summary-notes">Review Notes</label>
           <textarea id="analysis-review-summary-notes" class="field-input multiline-input" rows="3"${readOnly ? " disabled" : ""}>${esc(reviewNotesValue)}</textarea>
+          ${zeroRateSummary.actions.length
+            ? `<div class="analysis-comparison-helper">
+                <strong>Pending zero-rate working-copy removals</strong><br />
+                ${esc(buildZeroRateRemovalReviewNotesText()).replace(/\n/g, "<br />")}
+              </div>`
+            : ""}
+          ${zeroRateSummary.actions.length && !readOnly
+            ? `<div class="analysis-review-summary-list analysis-review-summary-list-rows">
+                ${zeroRateSummary.actions.map((action) => `
+                  <div class="analysis-review-summary-row-item">
+                    <strong>${esc(action.comparisonName || action.comparisonId || "Comparison")}</strong>
+                    <span>${esc(action.primaryReportName || action.primaryReportId || "Primary report")}</span>
+                    <span>${esc(String(action.listType || "").toUpperCase())} list</span>
+                    <span>${esc(getReviewMetricDisplayName(action.metricKey))}</span>
+                    <span>${Number(action.activeRemovedCount || 0)} removed</span>
+                    <span>${esc(action.activeRemovedScfs.join(", "))}</span>
+                    <button class="secondary-button table-action-button" data-zero-rate-undo-action="${esc(action.id)}">Undo</button>
+                  </div>
+                `).join("")}
+              </div>`
+            : ""}
         </div>
         ${summary.completedAt
           ? `<p class="analysis-comparison-helper">Completed by ${esc(summary.completedByName || reviewerName || "Unknown")} on ${esc(formatDateOnly(summary.completedOnDate || reviewerDate) || "Not set")}.</p>`
@@ -9648,6 +9673,19 @@ function renderAnalysisComparisonReviewPanel() {
   }
 
   const { comparison, reports, primaryReport, primaryRows, selectedScf } = context;
+  if (
+    primaryReport
+    && !reportHasReviewScfData(primaryReport)
+    && (!Array.isArray(state.analysis.savedReports) || !state.analysis.savedReports.length)
+  ) {
+    container.innerHTML = '<div class="empty-state-block">Reloading comparison reports...</div>';
+    void loadAnalysisReports()
+      .catch(() => null)
+      .finally(() => {
+        scheduleAnalysisComparisonReviewRender(40);
+      });
+    return;
+  }
   if (!reports.length || !primaryReport) {
     if (recoverComparisonSetupFromWorkspace()) {
       scheduleAnalysisComparisonReviewRender(20);
