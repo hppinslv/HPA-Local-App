@@ -1621,6 +1621,184 @@ function buildPersistedComparisonSetups(
   });
 }
 
+function inferComparisonKeyCodeGroupFromPull(pull = {}) {
+  const directSources = [
+    ...(ensureArray(pull?.keyCodes)),
+    pull?.keyCodeGroup,
+    pull?.key_code_group,
+    pull?.clientType,
+    pull?.client_type,
+  ];
+  for (const source of directSources) {
+    const normalized = String(source || "").trim().toUpperCase();
+    if (normalized === "RFC" || normalized === "REFINANCE") {
+      return "RFC";
+    }
+    if (normalized === "N" || normalized === "NHCL" || normalized === "NEW HOME") {
+      return "NHCL";
+    }
+  }
+
+  const nameSources = [
+    pull?.title,
+    pull?.analysisLabel,
+    pull?.reportName,
+    pull?.report_name,
+  ];
+  for (const source of nameSources) {
+    const normalized = String(source || "").trim().toUpperCase();
+    if (normalized.startsWith("RFC") || normalized.startsWith("REFINANCE")) {
+      return "RFC";
+    }
+    if (normalized.startsWith("NHCL") || normalized.startsWith("NEW HOME")) {
+      return "NHCL";
+    }
+  }
+
+  return "";
+}
+
+function resolveAnalysisComparisonNameFromGroup(keyCodeGroup = "") {
+  return String(keyCodeGroup || "").trim().toUpperCase() === "RFC" ? "Refinance" : "New Home";
+}
+
+function recoverComparisonRequestsFromSetup(setup = {}) {
+  const existingRequests = ensureArray(setup?.comparisonRequests);
+  if (existingRequests.length) {
+    return existingRequests;
+  }
+
+  const persistedComparisonSetups = ensureArray(setup?.comparisonSetups);
+  if (persistedComparisonSetups.length) {
+    return persistedComparisonSetups.map((entry, index) => {
+      const selectedReportIds = Array.from(
+        new Set(
+          ensureArray(entry?.selectedReportIds)
+            .map((reportId) => String(reportId || "").trim())
+            .filter(Boolean)
+        )
+      ).slice(0, 5);
+      const comparisonName = String(entry?.comparisonName || "").trim()
+        || resolveAnalysisComparisonNameFromGroup(entry?.keyCodeGroup || "");
+      return {
+        id: String(entry?.id || `comparison_${index + 1}`).trim() || `comparison_${index + 1}`,
+        name: comparisonName,
+        comparisonName,
+        keyCodeGroup: String(entry?.keyCodeGroup || "NHCL").trim().toUpperCase() === "RFC" ? "RFC" : "NHCL",
+        reportIds: selectedReportIds,
+        selectedReportIds,
+        reportAId: selectedReportIds[0] || "",
+        reportBId: selectedReportIds[1] || "",
+        createdAt: entry?.createdAt || null,
+        updatedAt: entry?.updatedAt || null,
+        matchField: String(entry?.matchField || "SCF").trim() || "SCF",
+        metricColumns: ensureArray(entry?.metricColumns),
+      };
+    });
+  }
+
+  const pullsByGroup = new Map();
+  ensureArray(setup?.reportPulls).forEach((pull) => {
+    const keyCodeGroup = inferComparisonKeyCodeGroupFromPull(pull);
+    if (!keyCodeGroup) {
+      return;
+    }
+    const selectedReportId = String(pull?.savedReportId || pull?.id || "").trim();
+    if (!selectedReportId) {
+      return;
+    }
+    const existing = pullsByGroup.get(keyCodeGroup) || [];
+    existing.push(selectedReportId);
+    pullsByGroup.set(keyCodeGroup, existing);
+  });
+
+  return Array.from(pullsByGroup.entries())
+    .map(([keyCodeGroup, reportIds], index) => {
+      const selectedReportIds = Array.from(new Set(reportIds.filter(Boolean))).slice(0, 5);
+      if (selectedReportIds.length < 2) {
+        return null;
+      }
+      const comparisonName = resolveAnalysisComparisonNameFromGroup(keyCodeGroup);
+      return {
+        id: `comparison_${String(keyCodeGroup || index + 1).trim().toLowerCase()}`,
+        name: comparisonName,
+        comparisonName,
+        keyCodeGroup,
+        reportIds: selectedReportIds,
+        selectedReportIds,
+        reportAId: selectedReportIds[0] || "",
+        reportBId: selectedReportIds[1] || "",
+        createdAt: setup?.updatedAt || setup?.createdAt || new Date().toISOString(),
+        updatedAt: setup?.updatedAt || setup?.createdAt || new Date().toISOString(),
+        matchField: "SCF",
+        metricColumns: [],
+      };
+    })
+    .filter(Boolean);
+}
+
+function recoverAnalysisReviewStateFromSetup(setup = {}, comparisonRequests = []) {
+  const normalizedReviewState = normalizeAnalysisReviewState(setup?.reviewState);
+  const currentPrimaryIds = normalizedReviewState.reviewPrimaryReportIds || {};
+  if (Object.keys(currentPrimaryIds).length) {
+    return normalizedReviewState;
+  }
+
+  const primaryReportIds = {};
+  ensureArray(comparisonRequests).forEach((entry) => {
+    const selectedIds = ensureArray(entry?.selectedReportIds).length
+      ? ensureArray(entry.selectedReportIds)
+      : ensureArray(entry?.reportIds);
+    const primaryReportId = String(selectedIds[0] || "").trim();
+    if (!primaryReportId) {
+      return;
+    }
+    primaryReportIds[String(entry?.id || "").trim()] = primaryReportId;
+  });
+
+  if (!Object.keys(primaryReportIds).length) {
+    return normalizedReviewState;
+  }
+
+  return {
+    ...normalizedReviewState,
+    reviewPrimaryReportIds: primaryReportIds,
+    selectedComparisonId:
+      normalizedReviewState.selectedComparisonId || String(comparisonRequests[0]?.id || "").trim(),
+    lastEditedComparisonId:
+      normalizedReviewState.lastEditedComparisonId || String(comparisonRequests[0]?.id || "").trim(),
+  };
+}
+
+function backfillSavedReportIds(reportPulls = []) {
+  const reportsByPullId = new Map(
+    readAnalysisReports()
+      .map((report) => [String(report?.pullId || "").trim(), String(report?.id || "").trim()])
+      .filter(([pullId, reportId]) => pullId && reportId)
+  );
+  let changed = false;
+  const nextPulls = ensureArray(reportPulls).map((pull) => {
+    const currentSavedReportId = String(pull?.savedReportId || "").trim();
+    if (currentSavedReportId) {
+      return pull;
+    }
+    const inferredSavedReportId = String(reportsByPullId.get(String(pull?.id || "").trim()) || "").trim();
+    if (!inferredSavedReportId) {
+      return pull;
+    }
+    changed = true;
+    return {
+      ...pull,
+      savedReportId: inferredSavedReportId,
+    };
+  });
+
+  return {
+    changed,
+    reportPulls: nextPulls,
+  };
+}
+
 function normalizeAnalysisRequest(body = {}) {
   const reportPulls = ensureArray(body.reportPulls).map(normalizePullRequest);
 
@@ -1679,6 +1857,15 @@ function normalizeAnalysisRequest(body = {}) {
 }
 
 function serializeAnalysisSetup(setup) {
+  const recoveredComparisonRequests = recoverComparisonRequestsFromSetup(setup);
+  const recoveredReviewState = recoverAnalysisReviewStateFromSetup(setup, recoveredComparisonRequests);
+  const comparisonSetups = buildPersistedComparisonSetups(
+    setup.id,
+    recoveredComparisonRequests,
+    recoveredReviewState,
+    setup.comparisonSetups,
+    setup.updatedAt || setup.createdAt || new Date().toISOString()
+  );
   const latestCompleted = getLatestCompletedAnalysisSetup();
   const canUndoLatestCompletion =
     !!latestCompleted && String(latestCompleted.id || "").trim() === String(setup?.id || "").trim();
@@ -1702,9 +1889,9 @@ function serializeAnalysisSetup(setup) {
     completed_at: setup.completedAt || null,
     reportPulls: setup.reportPulls,
     notes: setup.notes || "",
-    comparisonRequests: setup.comparisonRequests || [],
-    comparisonSetups: ensureArray(setup.comparisonSetups),
-    reviewState: normalizeAnalysisReviewState(setup.reviewState),
+    comparisonRequests: recoveredComparisonRequests,
+    comparisonSetups,
+    reviewState: recoveredReviewState,
     results: setup.results
       ? {
           ...setup.results,
@@ -2818,6 +3005,8 @@ function saveAnalysisSetup(body = {}) {
   const setupId = String(body.id || "").trim();
   const existingSetup = setupId ? setups.find((entry) => entry.id === setupId) : null;
   const timestamp = new Date().toISOString();
+  const savedReportBackfill = backfillSavedReportIds(request.reportPulls);
+  request.reportPulls = savedReportBackfill.reportPulls;
   const existingComparisonRequests = ensureArray(existingSetup?.comparisonRequests);
   const incomingComparisonRequests = ensureArray(request.comparisonRequests);
   const shouldPreserveExistingComparisonSetup =
@@ -2836,6 +3025,20 @@ function saveAnalysisSetup(body = {}) {
   const reviewState = shouldPreserveExistingComparisonSetup
     ? normalizeAnalysisReviewState(existingSetup?.reviewState)
     : request.reviewState;
+  const recoveredComparisonRequests = comparisonRequests.length
+    ? comparisonRequests
+    : recoverComparisonRequestsFromSetup({
+        ...existingSetup,
+        reportPulls: request.reportPulls,
+        comparisonRequests,
+      });
+  const recoveredReviewState = recoverAnalysisReviewStateFromSetup(
+    {
+      ...existingSetup,
+      reviewState,
+    },
+    recoveredComparisonRequests
+  );
   const nextSetupId = existingSetup?.id || createSetupId();
 
   const setup = {
@@ -2847,15 +3050,15 @@ function saveAnalysisSetup(body = {}) {
     completedAt: request.completedAt || existingSetup?.completedAt || null,
     archived: request.archived !== undefined ? request.archived : existingSetup?.archived || false,
     reportPulls: request.reportPulls,
-    comparisonRequests,
+    comparisonRequests: recoveredComparisonRequests,
     comparisonSetups: buildPersistedComparisonSetups(
       nextSetupId,
-      comparisonRequests,
-      reviewState,
+      recoveredComparisonRequests,
+      recoveredReviewState,
       existingSetup?.comparisonSetups,
       timestamp
     ),
-    reviewState: reviewState || existingSetup?.reviewState || null,
+    reviewState: recoveredReviewState || existingSetup?.reviewState || null,
     notes: request.notes || "",
     results: request.results || existingSetup?.results || null,
     referenceListsSnapshot: request.referenceListsSnapshot || existingSetup?.referenceListsSnapshot || null,

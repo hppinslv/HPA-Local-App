@@ -269,6 +269,85 @@ test("saving a comparison setup writes it to persistent storage and reload survi
   assert.equal(reloaded.reviewState.reviewCompletedByName, "Melinda Harris");
 });
 
+test("older saved setups recover comparison groups from report pulls and backfill saved report ids", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-reports.json"),
+    JSON.stringify(
+      [
+        {
+          id: "report_nhcl_current",
+          pullId: "pull_nhcl_current",
+          status: "complete",
+          result_count: 256,
+          report_name: "New Home - Jan 2026 - May 2026 (06/26/2026)",
+          parameters: { client_type: "NHCL", key_codes: ["N"] },
+        },
+        {
+          id: "report_nhcl_old",
+          pullId: "pull_nhcl_old",
+          status: "complete",
+          result_count: 796,
+          report_name: "New Home - Jan 2013 - Dec 2025 (06/26/2026)",
+          parameters: { client_type: "NHCL", key_codes: ["N"] },
+        },
+        {
+          id: "report_rfc_current",
+          pullId: "pull_rfc_current",
+          status: "complete",
+          result_count: 466,
+          report_name: "Refinance - Jan 2026 - May 2026 (06/26/2026)",
+          parameters: { client_type: "RFC", key_codes: ["RFC"] },
+        },
+        {
+          id: "report_rfc_old",
+          pullId: "pull_rfc_old",
+          status: "complete",
+          result_count: 890,
+          report_name: "Refinance - Jan 2013 - Dec 2025 (06/26/2026)",
+          parameters: { client_type: "RFC", key_codes: ["RFC"] },
+        },
+      ],
+      null,
+      2
+    )
+  );
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const saved = service.saveAnalysisSetup({
+    runName: "June 2026",
+    status: "draft",
+    reportPulls: [
+      { id: "pull_nhcl_current", reportName: "NHCL - Jan 2026 - May 2026", reportId: "00OQm000003PIxhMAG", keyCodes: ["N"] },
+      { id: "pull_nhcl_old", reportName: "NHCL - Jan 2013 - Dec 2025", reportId: "00OQm000003PIxhMAG", keyCodes: ["N"] },
+      { id: "pull_rfc_current", reportName: "RFC - Jan 2026 - May 2026", reportId: "00OQm000003PIxhMAG", keyCodes: ["RFC"] },
+      { id: "pull_rfc_old", reportName: "RFC - Jan 2013 - Dec 2025", reportId: "00OQm000003PIxhMAG", keyCodes: ["RFC"] },
+    ],
+    comparisonRequests: [],
+    reviewState: {},
+  });
+
+  assert.deepEqual(
+    saved.reportPulls.map((pull) => pull.savedReportId),
+    ["report_nhcl_current", "report_nhcl_old", "report_rfc_current", "report_rfc_old"]
+  );
+  assert.equal(saved.comparisonRequests.length, 2);
+  assert.deepEqual(
+    saved.comparisonRequests.map((entry) => entry.comparisonName),
+    ["New Home", "Refinance"]
+  );
+  assert.deepEqual(saved.comparisonRequests[0].selectedReportIds, ["report_nhcl_current", "report_nhcl_old"]);
+  assert.deepEqual(saved.comparisonRequests[1].selectedReportIds, ["report_rfc_current", "report_rfc_old"]);
+  assert.equal(saved.reviewState.reviewPrimaryReportIds.comparison_nhcl, "report_nhcl_current");
+  assert.equal(saved.reviewState.reviewPrimaryReportIds.comparison_rfc, "report_rfc_current");
+});
+
 test("review working-list changes persist before completion and reload with the setup", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);
