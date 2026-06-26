@@ -10653,16 +10653,21 @@ async function loadAnalysisReports() {
       setStatus("analysis-status-detail", `Loading analysis report ${id}...`);
       const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`);
       const report = response.report || {};
-      state.analysis.currentReportId = report.id || "";
+      let run = null;
       if (report.run_id || report.runId) {
         const runResponse = await apiRequest(
           `/api/analysis/runs/${encodeURIComponent(report.run_id || report.runId)}`
         );
-        loadRunIntoWorkspace(runResponse.run || {});
+        run = runResponse.run || null;
       }
-      renderAnalysisSavedReport(report);
+      if (run) {
+        loadRunIntoWorkspace(run);
+      }
+      state.analysis.currentReportId = report.id || "";
       state.analysis.subtab = "runs";
       showAnalysisPanel("workspace");
+      renderAnalysisSavedReport(report);
+      setStatus("analysis-status-detail", `Opened saved analysis report ${getAnalysisReportDisplayName(report) || id}.`);
     });
   });
 

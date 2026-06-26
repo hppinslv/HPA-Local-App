@@ -8,6 +8,7 @@ const {
   hasAnalysisDetailExportRows,
   normalizeScf,
   resolveAnalysisConvertedCount,
+  summarizeAnalysisExportRows,
   shouldFallbackToSoqlForReportPayload,
 } = require("../services/salesforceClient");
 
@@ -230,6 +231,36 @@ test("aggregate-shaped saved rows are not mistaken for detail export rows", () =
     ]),
     true
   );
+});
+
+test("summary-shaped export rows keep Salesforce formula rates instead of being rebuilt from counts", () => {
+  const dataset = summarizeAnalysisExportRows(
+    [
+      {
+        "SCF Grouping": "893",
+        Key: "N",
+        "Sum of Mailed": "166",
+        "Sum of Opp Count": "1",
+        "Sum of In Force": "1",
+        "Sum of Sold": "1",
+        "Sold Rate": "3.0829914540",
+        "In Force Rate": "3.0829914540",
+        "Converted Rate": "3.0829914540",
+      },
+    ],
+    [
+      { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
+      { key: "Key", label: "Key", normalized: "key", dataType: "string" },
+      { key: "Sum of Mailed", label: "Sum of Mailed", normalized: "sum of mailed", dataType: "double" },
+      { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
+      { key: "Sold Rate", label: "Sold Rate", normalized: "sold rate", dataType: "double" },
+    ]
+  );
+
+  const row = getAggregateRow(dataset, "893");
+  assert.equal(row["Sold Rate"], "3.0829914540");
+  assert.equal(row["In Force Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], "3.0829914540");
 });
 
 test("calculateAnalysisConvertedRate falls back safely when Salesforce rate fields are missing", () => {

@@ -2696,6 +2696,30 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
   };
 }
 
+function summarizeAnalysisExportRows(rows = [], columns = []) {
+  const normalizedRows = Array.isArray(rows)
+    ? rows.map((row) => applyAnalysisMetricAliases({ ...(row || {}) }))
+    : [];
+
+  if (!normalizedRows.length) {
+    return {
+      columns: Array.isArray(columns) ? columns : [],
+      rows: [],
+      summaryValues: [],
+    };
+  }
+
+  if (hasAnalysisDetailExportRows(normalizedRows)) {
+    return buildFlatRowsFromDetailExport(normalizedRows);
+  }
+
+  return {
+    columns: Array.isArray(columns) ? columns : [],
+    rows: normalizedRows,
+    summaryValues: buildAnalysisSummaryValuesFromRows(normalizedRows),
+  };
+}
+
 function getAnalysisSummaryRowKey(row = {}) {
   const scf = normalizeScf(
     row["SCF Grouping"] ??
@@ -3128,7 +3152,7 @@ async function fetchMergedAnalysisRowsForScopedFilters(tokenRecord, reportId, de
   const groupedDataset = buildGroupedReportRows(executed.reportPayload) || { columns: [], rows: [], summaryValues: [] };
   const detailDataset = buildDetailExportRows(executed.reportPayload);
   const detailSummary = Array.isArray(detailDataset?.rows) && detailDataset.rows.length
-    ? buildFlatRowsFromDetailExport(detailDataset.rows)
+    ? summarizeAnalysisExportRows(detailDataset.rows, detailDataset.columns)
     : { columns: [], rows: [], summaryValues: [] };
   const mergedDataset = mergeAnalysisSummaryDatasets(
     groupedDataset.rows.length || groupedDataset.columns.length ? groupedDataset : detailSummary,
@@ -3454,14 +3478,14 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
       };
     }
     payloadDetailSummary = reportPayloadDetailExport.rows.length
-      ? buildFlatRowsFromDetailExport(reportPayloadDetailExport.rows)
+      ? summarizeAnalysisExportRows(reportPayloadDetailExport.rows, reportPayloadDetailExport.columns)
       : { columns: [], rows: [], summaryValues: [] };
     preferredExport = choosePreferredAnalysisExportRows(
       fullDetailExport,
       reportPayloadDetailExport
     );
     preferredExportSummary = preferredExport.rows.length
-      ? buildFlatRowsFromDetailExport(preferredExport.rows)
+      ? summarizeAnalysisExportRows(preferredExport.rows, preferredExport.columns)
       : { columns: [], rows: [], summaryValues: [] };
     opportunityAggregateSummary = await fetchAnalysisOpportunityAggregateRows(tokenRecord, normalizedFilters);
     normalizedDetailSummary = mergeAnalysisSummaryDatasets(
@@ -4220,6 +4244,7 @@ async function fetchMonthlySalesforceReportData(
 
 module.exports = {
   buildFlatRowsFromDetailExport,
+  summarizeAnalysisExportRows,
   buildFlatReportRows,
   calculateAnalysisCountRates,
   calculateAnalysisConvertedRate,
