@@ -52,6 +52,7 @@ const ANALYSIS_REVIEW_POPUP_QUERY_PARAM = "analysisReviewPopup";
 const IMPORT_SESSION_POPUP_QUERY_PARAM = "importSessionPopup";
 const ANALYSIS_REVIEW_SYNC_CHANNEL_NAME = "hpa-analysis-review-sync-v1";
 const ANALYSIS_REVIEW_SYNC_STORAGE_KEY = "hpa.analysis.review.syncState";
+const ANALYSIS_HISTORY_VISIBLE_FROM = "2026-06-15T00:00:00.000Z";
 let comparisonSetupAutosaveHandle = null;
 let comparisonSetupAutosaveInFlight = null;
 let analysisReviewPopupWindowRef = null;
@@ -1180,7 +1181,11 @@ function setRoute(route) {
     ensureVisibleAnalysisPanel();
     const activeAnalysisPanel = state.analysis.panel || "home";
     const activeAnalysisSubtab = state.analysis.subtab || "runs";
-    if (
+    if (activeAnalysisPanel === "previous") {
+      loadAnalysisSetups().catch((error) => {
+        setStatus("analysis-setup-status", `Unable to load analysis list: ${error.message}`);
+      });
+    } else if (
       activeAnalysisPanel === "compare"
       || activeAnalysisPanel === "compare-review"
       || (activeAnalysisPanel === "workspace" && activeAnalysisSubtab === "runs")
@@ -1507,6 +1512,16 @@ function isCurrentAnalysisReadOnly() {
 function isCompletedAnalysisSetup(entry = {}) {
   return String(entry?.status || "").trim().toLowerCase() === "complete"
     && !String(entry?.completionUndoneAt || entry?.completion_undone_at || "").trim();
+}
+
+function shouldDisplayAnalysisHistoryEntry(entry = {}) {
+  if (!entry?.archived) {
+    return true;
+  }
+  const createdAt = entry?.created_at || entry?.createdAt || "";
+  const createdTime = Date.parse(createdAt) || 0;
+  const visibleFromTime = Date.parse(ANALYSIS_HISTORY_VISIBLE_FROM) || 0;
+  return createdTime >= visibleFromTime;
 }
 
 function persistUiState() {
@@ -5242,6 +5257,15 @@ function showAnalysisPanel(panelName) {
   if (panelName === "home") {
     renderAnalysisSetupHome();
     homePanel?.scrollIntoView({ behavior: "auto", block: "start" });
+  }
+
+  if (panelName === "previous") {
+    loadAnalysisSetups().catch((error) => {
+      setStatus("analysis-setup-status", `Unable to load analysis list: ${error.message}`);
+    });
+    previousPanel?.scrollIntoView({ behavior: "auto", block: "start" });
+    ensureVisibleAnalysisPanel();
+    return;
   }
 
   if (panelName === "workspace") {
@@ -10737,9 +10761,9 @@ async function loadAnalysisSetups() {
   const tbody = el("analysis-setup-body");
   if (!tbody) return;
   const setupsPayload = await apiRequest("/api/analysis/setups");
-  const normalizedSetups = ensureArray(setupsPayload.setups).filter((entry) => !entry.archived);
+  const normalizedSetups = ensureArray(setupsPayload.setups).filter((entry) => shouldDisplayAnalysisHistoryEntry(entry));
   const openSetups = normalizedSetups
-    .filter((entry) => !isCompletedAnalysisSetup(entry))
+    .filter((entry) => !entry.archived && !isCompletedAnalysisSetup(entry))
     .sort((left, right) => {
       const leftTime = Date.parse(left.updated_at || left.updatedAt || left.created_at || left.createdAt || "") || 0;
       const rightTime = Date.parse(right.updated_at || right.updatedAt || right.created_at || right.createdAt || "") || 0;
@@ -10760,9 +10784,10 @@ async function loadAnalysisSetups() {
         id: setup.id,
         sourceType: "setup",
         name: String(setup.run_name || setup.runName || getDefaultAnalysisName()).trim() || getDefaultAnalysisName(),
-        stage: isCompletedAnalysisSetup(setup) ? "Completed" : "Open",
+        stage: isCompletedAnalysisSetup(setup) ? "Completed" : setup.archived ? "History" : "Open",
         status: setup.status || "draft",
         isCompleted: isCompletedAnalysisSetup(setup),
+        isArchived: setup.archived === true,
         createdAt: setup.created_at || setup.createdAt || null,
         updatedAt: setup.updated_at || setup.updatedAt || null,
         completedAt: setup.completed_at || setup.completedAt || null,
