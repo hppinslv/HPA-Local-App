@@ -3011,23 +3011,29 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
     throw new Error("SCF is required.");
   }
 
-  const tokenRecord = await getConnectedSalesforceToken();
-  const describePayload = await fetchReportDescribe(tokenRecord, normalizedReportId);
-  const detailRows = await fetchMergedAnalysisRowsForScopedFilters(
-    tokenRecord,
-    normalizedReportId,
-    describePayload,
-    {
-      scf: normalizedScf,
-      keyCodes: filters.keyCodes,
-      dateRange: filters.dateRange,
-    }
-  );
+  const exactDataset = await fetchFlexibleSalesforceReportData(normalizedReportId, {
+    scf: normalizedScf,
+    keyCodes: filters.keyCodes,
+    dateRange: filters.dateRange,
+    years: filters.years,
+  });
   const normalizedKeys = Array.isArray(filters.keyCodes)
     ? filters.keyCodes.map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase()).filter(Boolean)
     : [];
-  const matchingDetailRows = detailRows.filter((row) => {
-    const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row["scf"] ?? "");
+  const candidateRows = [
+    ...(Array.isArray(exactDataset?.rows) ? exactDataset.rows : []),
+    ...(Array.isArray(exactDataset?.exportRows) ? exactDataset.exportRows : []),
+  ];
+  const rowMap = new Map();
+  candidateRows.forEach((row) => {
+    const cacheKey = getAnalysisSummaryRowKey(row);
+    if (!cacheKey || rowMap.has(cacheKey)) {
+      return;
+    }
+    rowMap.set(cacheKey, row);
+  });
+  const matchingDetailRows = Array.from(rowMap.values()).filter((row) => {
+    const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row.scf ?? "");
     if (rowScf !== normalizedScf) {
       return false;
     }
@@ -3040,7 +3046,7 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
   return {
     reportId: normalizedReportId,
     scf: normalizedScf,
-    row: matchingDetailRows[0] || null,
+    row: matchingDetailRows.find((row) => !shouldRepairAnalysisRowWithScopedRefetch(row)) || matchingDetailRows[0] || null,
     rows: matchingDetailRows,
   };
 }
