@@ -2849,6 +2849,9 @@ function normalizeListItems(items = []) {
 }
 
 function serializeAnalysisRun(run) {
+  const linkedSetup = run?.setupId
+    ? readAnalysisSetups().find((entry) => String(entry?.id || "").trim() === String(run.setupId || "").trim()) || null
+    : null;
   return {
     id: run.id,
     runName: run.runName,
@@ -2860,6 +2863,9 @@ function serializeAnalysisRun(run) {
     statusDetail: run.statusDetail,
     errorMessage: run.errorMessage || "",
     setupId: run.setupId || null,
+    setupStatus: linkedSetup?.status || null,
+    setupCompletedAt: linkedSetup?.completedAt || null,
+    setupCompletionUndoneAt: linkedSetup?.completionUndoneAt || null,
     reviewState: normalizeAnalysisReviewState(run.reviewState),
     referenceListsSnapshot: run.referenceListsSnapshot || null,
     reference_lists_snapshot: run.referenceListsSnapshot || null,

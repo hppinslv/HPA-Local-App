@@ -1515,8 +1515,27 @@ function isCompletedAnalysisSetup(entry = {}) {
 }
 
 function syncAnalysisReadOnlyState(entry = {}) {
-  state.analysis.currentSetupStatus = String(entry?.status || "").trim();
-  state.analysis.readOnlyReview = isCompletedAnalysisSetup(entry);
+  const setupLikeEntry = {
+    ...entry,
+    status:
+      entry?.setupStatus !== undefined && entry?.setupStatus !== null
+        ? entry.setupStatus
+        : entry?.status,
+    completedAt:
+      entry?.setupCompletedAt !== undefined && entry?.setupCompletedAt !== null
+        ? entry.setupCompletedAt
+        : entry?.completedAt,
+    completionUndoneAt:
+      entry?.setupCompletionUndoneAt !== undefined && entry?.setupCompletionUndoneAt !== null
+        ? entry.setupCompletionUndoneAt
+        : entry?.completionUndoneAt,
+    completion_undone_at:
+      entry?.setupCompletionUndoneAt !== undefined && entry?.setupCompletionUndoneAt !== null
+        ? entry.setupCompletionUndoneAt
+        : entry?.completion_undone_at,
+  };
+  state.analysis.currentSetupStatus = String(setupLikeEntry?.status || "").trim();
+  state.analysis.readOnlyReview = isCompletedAnalysisSetup(setupLikeEntry);
 }
 
 function shouldDisplayAnalysisHistoryEntry(entry = {}) {
