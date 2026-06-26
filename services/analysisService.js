@@ -859,10 +859,12 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
   const rows = relabelAnalysisRows(rawRows, rawColumns);
   const exportColumns = relabelAnalysisColumns(rawExportColumns);
   const exportRows = relabelAnalysisRows(rawExportRows, rawExportColumns);
+  const inputRowCount = Number(options.inputRowCount || 0);
+  const exportRowCount = Number(options.exportRowCount || exportRows.length || 0);
   const summaryValues = relabelAnalysisSummaryValues(options.summaryValues);
   const zeroReason =
     options.zeroReason ||
-    (options.inputRowCount === 0
+    (inputRowCount === 0
       ? "No matching source rows were returned from Salesforce."
       : "Filters removed all rows for this report.");
 
@@ -897,7 +899,9 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
     updated_at: options.updatedAt || timestamp,
     completed_at: options.completedAt || timestamp,
     status: options.status || "complete",
-    result_count: exportRows.length,
+    result_count: exportRowCount,
+    export_row_count: exportRowCount,
+    input_row_count: inputRowCount,
     export_file_name: exportFile?.fileName || null,
     export_file_path: exportFile?.filePath || null,
     download_url: exportFile ? `/api/analysis/reports/${reportId}/export` : null,
@@ -913,8 +917,8 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
       notes: pull.notes || "",
     },
     results_summary: buildAnalysisReportSummary({
-      inputRowCount: Number(options.inputRowCount || 0),
-      exportRowCount: exportRows.length,
+      inputRowCount,
+      exportRowCount,
       zeroReason,
       reportId: pull.reportId,
     }),
@@ -2570,6 +2574,10 @@ function serializeAnalysisReport(report) {
     status: report.status,
     resultCount: Number(report.result_count || 0),
     result_count: Number(report.result_count || 0),
+    exportRowCount: Number(report.export_row_count || report.result_count || 0),
+    export_row_count: Number(report.export_row_count || report.result_count || 0),
+    inputRowCount: Number(report.input_row_count || 0),
+    input_row_count: Number(report.input_row_count || 0),
     exportFileName: report.export_file_name || null,
     export_file_name: report.export_file_name || null,
     exportFilePath: report.export_file_path || null,
@@ -3023,11 +3031,8 @@ async function rebuildAnalysisReport(reportId) {
   const effectiveListType = resolveAnalysisReferenceListTypeFromPull(pull);
   const effectiveClientType = effectiveListType === "nhcl" ? "NHCL" : effectiveListType === "rfc" ? "RFC" : pull.clientType;
   const rows = padAnalysisRowsWithReferenceList(result.rows, result.columns, effectiveClientType);
-  const exportRows = padAnalysisRowsWithReferenceList(
-    result.exportRows || result.rows,
-    result.exportColumns || result.columns,
-    effectiveClientType
-  );
+  const exportRows = ensureArray(result.exportRows || result.rows);
+  const exportRowCount = Number(result.exportRowCount || exportRows.length || 0);
   let zeroReason = "";
   if (inputRows === 0) {
     zeroReason = "No matching source rows were returned from Salesforce.";
@@ -3054,7 +3059,7 @@ async function rebuildAnalysisReport(reportId) {
     summaryValues: result.summaryValues || [],
     exportColumns: result.exportColumns || [],
     exportRows,
-    exportRowCount: exportRows.length,
+    exportRowCount,
     inputRowCount: inputRows,
     zeroReason,
   });
@@ -3348,18 +3353,16 @@ async function executeAnalysisRun(runId) {
         const inputRows = Number(result.unfilteredRowCount || 0);
         const effectiveListType = resolveAnalysisReferenceListTypeFromPull(pull);
         const effectiveClientType = effectiveListType === "nhcl" ? "NHCL" : effectiveListType === "rfc" ? "RFC" : pull.clientType;
-        const exportRows = padAnalysisRowsWithReferenceList(
+        const displayRows = padAnalysisRowsWithReferenceList(
           result.rows,
           result.columns,
           effectiveClientType
         );
-        const savedExportRows = padAnalysisRowsWithReferenceList(
-          result.exportRows || result.rows,
-          result.exportColumns || result.columns,
-          effectiveClientType
-        );
+        const savedExportRows = ensureArray(result.exportRows || result.rows);
+        const exportRowCount = Number(result.exportRowCount || savedExportRows.length || 0);
         console.log("Input rows:", inputRows);
-        console.log("Export rows:", exportRows.length);
+        console.log("Summary rows:", displayRows.length);
+        console.log("Export rows:", exportRowCount);
         if (diagnostics) {
           console.log("Field names:", diagnostics.availableFieldNames);
           console.log("Premium samples:", diagnostics.samplePremiumValues);
@@ -3374,18 +3377,18 @@ async function executeAnalysisRun(runId) {
           zeroReason = "Missing selected report type.";
         } else if (inputRows === 0) {
           zeroReason = "No matching source rows were returned from Salesforce.";
-        } else if (exportRows.length === 0) {
+        } else if (displayRows.length === 0) {
           zeroReason = "Filters removed all rows for this report.";
         }
         if (
-          exportRows.length === 0 &&
+          displayRows.length === 0 &&
           Array.isArray(result.availableKeyValues) &&
           result.availableKeyValues.length > 0 &&
           buildSalesforceFilterValues(pull).keyCodes.length > 0
         ) {
           zeroReason = `No rows matched the selected Key filter. Available Key values in this report: ${result.availableKeyValues.join(", ")}.`;
         }
-        if (exportRows.length === 0) {
+        if (displayRows.length === 0) {
           console.log("Zero-row reason:", zeroReason || "No rows found after processing.");
         }
 
@@ -3394,12 +3397,12 @@ async function executeAnalysisRun(runId) {
           updatedAt: new Date().toISOString(),
           completedAt: new Date().toISOString(),
           status: "complete",
-          rows: exportRows,
+          rows: displayRows,
           columns: result.columns,
           summaryValues: result.summaryValues || [],
           exportColumns: result.exportColumns || [],
           exportRows: savedExportRows,
-          exportRowCount: savedExportRows.length,
+          exportRowCount,
           inputRowCount: inputRows,
           zeroReason,
           warningMessage: diagnostics?.warningMessage || "",
@@ -3416,7 +3419,7 @@ async function executeAnalysisRun(runId) {
 
         const displayColumns = relabelAnalysisColumns(result.columns);
         const displaySummaryValues = relabelAnalysisSummaryValues(result.summaryValues || []);
-        const displayRows = relabelAnalysisRows(exportRows, result.columns);
+        const renderedRows = relabelAnalysisRows(displayRows, result.columns);
 
         results.push({
           ...pull,
@@ -3424,9 +3427,9 @@ async function executeAnalysisRun(runId) {
           error: "",
           columns: displayColumns,
           summaryValues: displaySummaryValues,
-          rows: displayRows,
+          rows: renderedRows,
           rawRowCount: result.unfilteredRowCount,
-          exportRowCount: savedExportRows.length,
+          exportRowCount,
           executedAt: new Date().toISOString(),
           savedReportId: savedReport.id,
           reportName: savedReport.report_name,
