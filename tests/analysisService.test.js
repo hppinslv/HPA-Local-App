@@ -269,6 +269,49 @@ test("saving a comparison setup writes it to persistent storage and reload survi
   assert.equal(reloaded.reviewState.reviewCompletedByName, "Melinda Harris");
 });
 
+test("review working-list changes persist before completion and reload with the setup", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  let service = loadAnalysisServiceWithTempDir(tempDir);
+  const saved = service.saveAnalysisSetup(createComparisonPayload({
+    reviewState: {
+      selectedComparisonId: "comparison_nhcl",
+      lastEditedComparisonId: "comparison_nhcl",
+      reviewPrimaryReportIds: { comparison_nhcl: "report_a" },
+      reviewSelectedScfs: { comparison_nhcl: "010" },
+      reviewCompletedByName: "",
+      reviewCompletedOnDate: "2026-06-26",
+      reviewExcludedScfs: { comparison_nhcl: "010,011" },
+      reviewBaselineLists: [
+        { type: "nhcl", items: [{ scf: "010", state: "" }] },
+        { type: "rfc", items: [{ scf: "143", state: "" }] },
+      ],
+      reviewWorkingLists: [
+        { type: "nhcl", items: [{ scf: "010", state: "" }, { scf: "011", state: "" }] },
+        { type: "rfc", items: [] },
+      ],
+    },
+  }));
+
+  service = loadAnalysisServiceWithTempDir(tempDir);
+  const reloaded = service.getAnalysisSetup(saved.id);
+
+  assert.deepEqual(reloaded.reviewState.reviewExcludedScfs, { comparison_nhcl: "010,011" });
+  assert.deepEqual(reloaded.reviewState.reviewBaselineLists, [
+    { type: "nhcl", name: "", sourceName: "", updatedAt: "", items: [{ scf: "010", state: "" }] },
+    { type: "rfc", name: "", sourceName: "", updatedAt: "", items: [{ scf: "143", state: "" }] },
+  ]);
+  assert.deepEqual(reloaded.reviewState.reviewWorkingLists, [
+    { type: "nhcl", name: "", sourceName: "", updatedAt: "", items: [{ scf: "010", state: "" }, { scf: "011", state: "" }] },
+    { type: "rfc", name: "", sourceName: "", updatedAt: "", items: [] },
+  ]);
+});
+
 test("empty local draft style saves cannot overwrite a committed comparison setup", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);

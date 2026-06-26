@@ -1535,6 +1535,20 @@ function normalizeAnalysisReviewState(value = {}) {
       return accumulator;
     }, {});
   };
+  const normalizeListSnapshots = (lists) =>
+    ensureArray(lists).map((entry) => {
+      const type = String(entry?.type || "").trim().toLowerCase();
+      if (!type) {
+        return null;
+      }
+      return {
+        type,
+        name: String(entry?.name || "").trim(),
+        sourceName: String(entry?.sourceName || "").trim(),
+        updatedAt: String(entry?.updatedAt || "").trim(),
+        items: normalizeReferenceListSnapshotItems(entry?.items || []),
+      };
+    }).filter(Boolean);
 
   return {
     selectedComparisonId: String(source.selectedComparisonId || "").trim(),
@@ -1543,6 +1557,9 @@ function normalizeAnalysisReviewState(value = {}) {
     reviewSelectedScfs: normalizeMap(source.reviewSelectedScfs),
     reviewCompletedByName: String(source.reviewCompletedByName || "").trim(),
     reviewCompletedOnDate: String(source.reviewCompletedOnDate || "").trim(),
+    reviewExcludedScfs: normalizeMap(source.reviewExcludedScfs),
+    reviewBaselineLists: normalizeListSnapshots(source.reviewBaselineLists),
+    reviewWorkingLists: normalizeListSnapshots(source.reviewWorkingLists),
   };
 }
 

@@ -1740,6 +1740,20 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
   };
 }
 
+function scheduleReviewStateAutosave(reason = "review-state-change") {
+  persistAnalysisSetupDraft();
+  const hasSetupContext =
+    String(state.analysis.currentSetupId || "").trim()
+    || (Array.isArray(state.analysis.reportPulls) && state.analysis.reportPulls.length > 0);
+  if (!hasSetupContext) {
+    return;
+  }
+  scheduleComparisonSetupAutosave({
+    delayMs: 600,
+    statusMessage: "Review changes saved automatically.",
+  });
+}
+
 function applyAnalysisReviewSync(message) {
   if (!message || typeof message !== "object" || message.source === analysisReviewWindowId) return;
   if (!message.type || message.type !== "analysis-review-sync") return;
@@ -7505,6 +7519,7 @@ function updateWorkingReferenceListEntry(listType, scf, shouldAdd, stateValue = 
     list.count = list.items.length;
     list.updatedAt = new Date().toISOString();
     invalidateComparisonReviewSummary();
+    scheduleReviewStateAutosave("working-list-added");
     broadcastAnalysisReviewState("working-list-added");
     return;
   }
@@ -7513,6 +7528,7 @@ function updateWorkingReferenceListEntry(listType, scf, shouldAdd, stateValue = 
   list.count = list.items.length;
   list.updatedAt = new Date().toISOString();
   invalidateComparisonReviewSummary();
+  scheduleReviewStateAutosave("working-list-removed");
   broadcastAnalysisReviewState("working-list-removed");
 }
 
@@ -8630,6 +8646,7 @@ function renderAnalysisComparisonSummaryView() {
   el("analysis-review-summary-back-button")?.addEventListener("click", () => {
     state.analysis.reviewSummaryMode = "review";
     state.analysis.reviewSummaryApproved = false;
+    scheduleReviewStateAutosave("summary-back");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("summary-back");
   });
@@ -8647,6 +8664,7 @@ function renderAnalysisComparisonSummaryView() {
           : "This summary has blocked Do Not Mail additions. Resolve before completing."
         : "Click to complete this review and save the summary.";
     }
+    scheduleReviewStateAutosave("summary-approval");
     broadcastAnalysisReviewState("summary-approval");
   });
 
@@ -8655,7 +8673,7 @@ function renderAnalysisComparisonSummaryView() {
     notesInput.value = state.analysis.reviewSummaryNotes || "";
     notesInput.addEventListener("input", () => {
       state.analysis.reviewSummaryNotes = notesInput.value || "";
-      persistAnalysisSetupDraft();
+      scheduleReviewStateAutosave("summary-notes");
       broadcastAnalysisReviewState("summary-notes");
     });
   }
@@ -8665,7 +8683,7 @@ function renderAnalysisComparisonSummaryView() {
     reviewerNameInput.value = reviewerName;
     reviewerNameInput.addEventListener("input", () => {
       state.analysis.reviewCompletedByName = reviewerNameInput.value || "";
-      persistAnalysisSetupDraft();
+      scheduleReviewStateAutosave("summary-reviewer-name");
       broadcastAnalysisReviewState("summary-reviewer-name");
     });
   }
@@ -8675,7 +8693,7 @@ function renderAnalysisComparisonSummaryView() {
     reviewerDateInput.value = reviewerDate;
     reviewerDateInput.addEventListener("input", () => {
       state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(reviewerDateInput.value || "") || getTodayIsoDate();
-      persistAnalysisSetupDraft();
+      scheduleReviewStateAutosave("summary-reviewer-date");
       broadcastAnalysisReviewState("summary-reviewer-date");
     });
   }
@@ -9228,7 +9246,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.selectedComparisonId = nextId;
     state.analysis.lastEditedComparisonId = nextId;
     state.analysis.reviewPageNumber = 1;
-    persistAnalysisSetupDraft();
+    scheduleReviewStateAutosave("comparison-select");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("comparison-select");
   });
@@ -9238,7 +9256,7 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.reviewPrimaryReportIds[comparison.id] = nextReportId;
     state.analysis.reviewSelectedScfs[comparison.id] = "";
     state.analysis.reviewPageNumber = 1;
-    persistAnalysisSetupDraft();
+    scheduleReviewStateAutosave("primary-report-select");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("primary-report-select");
     focusComparisonReviewSummary();
@@ -9479,6 +9497,7 @@ function renderAnalysisComparisonReviewPanel() {
     invalidateComparisonReviewSummary();
     state.analysis.reviewBulkPreview = null;
 
+    scheduleReviewStateAutosave("bulk-remove");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("bulk-remove");
     setStatus(
@@ -9512,6 +9531,7 @@ function renderAnalysisComparisonReviewPanel() {
       effectiveSelectedStateValue
     );
     appendAnalysisReviewNote(`Review decision: added SCF ${effectiveSelectedScf} to the working ${listType} list.`);
+    scheduleReviewStateAutosave("manual-add");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("manual-add");
     setStatus(
@@ -9538,6 +9558,7 @@ function renderAnalysisComparisonReviewPanel() {
     }
     updateWorkingReferenceListEntry(targetListType, effectiveSelectedScf, false);
     appendAnalysisReviewNote(`Review decision: removed SCF ${effectiveSelectedScf} from the working ${listType} list.`);
+    scheduleReviewStateAutosave("manual-remove");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("manual-remove");
     setStatus(
@@ -9569,6 +9590,7 @@ function renderAnalysisComparisonReviewPanel() {
     stripAutoAnalysisReviewNotes();
     appendAnalysisReviewNote("Review reset: restored working lists to the live start point.");
     invalidateComparisonReviewSummary();
+    scheduleReviewStateAutosave("restore-working-lists");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("restore-working-lists");
     setStatus(
@@ -10096,8 +10118,9 @@ function loadSetupIntoWorkspace(setup) {
   collapseAnalysisPullsByDefault(state.analysis.reportPulls);
   state.analysis.reviewPrimaryReportIds = normalizeReviewSyncMap(setup.reviewState?.reviewPrimaryReportIds || {});
   state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(setup.reviewState?.reviewSelectedScfs || {});
-  state.analysis.reviewBaselineLists = [];
-  state.analysis.reviewWorkingLists = [];
+  state.analysis.reviewExcludedScfs = normalizeReviewSyncScfMap(setup.reviewState?.reviewExcludedScfs || {});
+  state.analysis.reviewBaselineLists = normalizeReviewSyncLists(setup.reviewState?.reviewBaselineLists || []);
+  state.analysis.reviewWorkingLists = normalizeReviewSyncLists(setup.reviewState?.reviewWorkingLists || []);
   state.analysis.reviewBulkPreview = null;
   const comparisonReview = getComparisonReviewResultFromEntry(setup);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
@@ -10149,8 +10172,9 @@ function loadRunIntoWorkspace(run) {
   state.analysis.collapsedPullIds = {};
   state.analysis.reviewPrimaryReportIds = normalizeReviewSyncMap(run.reviewState?.reviewPrimaryReportIds || {});
   state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(run.reviewState?.reviewSelectedScfs || {});
-  state.analysis.reviewBaselineLists = [];
-  state.analysis.reviewWorkingLists = [];
+  state.analysis.reviewExcludedScfs = normalizeReviewSyncScfMap(run.reviewState?.reviewExcludedScfs || {});
+  state.analysis.reviewBaselineLists = normalizeReviewSyncLists(run.reviewState?.reviewBaselineLists || []);
+  state.analysis.reviewWorkingLists = normalizeReviewSyncLists(run.reviewState?.reviewWorkingLists || []);
   state.analysis.reviewBulkPreview = null;
   const comparisonReview = getComparisonReviewResultFromEntry(run);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
@@ -10213,6 +10237,9 @@ function buildAnalysisPayload(statusOverride) {
       reviewSelectedScfs: normalizeReviewSyncMap(state.analysis.reviewSelectedScfs),
       reviewCompletedByName: String(state.analysis.reviewCompletedByName || "").trim(),
       reviewCompletedOnDate: normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate(),
+      reviewExcludedScfs: normalizeReviewSyncScfMap(state.analysis.reviewExcludedScfs),
+      reviewBaselineLists: normalizeReviewSyncLists(state.analysis.reviewBaselineLists),
+      reviewWorkingLists: normalizeReviewSyncLists(state.analysis.reviewWorkingLists),
     },
     results: state.analysis.reviewSummary
         ? {
