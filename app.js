@@ -5645,6 +5645,26 @@ function setComparisonSummaryNotes(notes = "") {
   state.analysis.reviewSummaryNotes = String(notes || "").trim();
 }
 
+function isAutoAnalysisReviewNote(note = "") {
+  return /^Bulk removal decision:|^Review decision:|^Review reset:/i.test(String(note || "").trim());
+}
+
+function getManualAnalysisReviewNotes(value = state.analysis.reviewSummaryNotes) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((entry) => String(entry || "").trim())
+    .filter((entry) => entry && !isAutoAnalysisReviewNote(entry))
+    .join("\n");
+}
+
+function getEffectiveAnalysisReviewNotes() {
+  const manualNotes = getManualAnalysisReviewNotes(state.analysis.reviewSummaryNotes);
+  if (manualNotes) {
+    return manualNotes;
+  }
+  return String(state.analysis.runNotes || "").trim();
+}
+
 function ensureComparisonReviewPanelToolbar() {
   const panel = el("analysis-comparison-review-panel");
   if (!panel) {
@@ -7464,20 +7484,17 @@ function calculateWorkingListEntriesBelowRatePreview(listType, rows = [], metric
 function appendAnalysisReviewNote(note) {
   const normalizedNote = String(note || "").trim();
   if (!normalizedNote) return;
-  const currentNotes = String(state.analysis.reviewSummaryNotes || "").trim();
+  if (isAutoAnalysisReviewNote(normalizedNote)) {
+    return;
+  }
+  const currentNotes = getManualAnalysisReviewNotes(state.analysis.reviewSummaryNotes);
   state.analysis.reviewSummaryNotes = currentNotes
     ? `${currentNotes}\n${normalizedNote}`
     : normalizedNote;
 }
 
 function stripAutoAnalysisReviewNotes() {
-  const noteLines = String(state.analysis.reviewSummaryNotes || "")
-    .split(/\r?\n/)
-    .map((entry) => String(entry || "").trim())
-    .filter(Boolean);
-  state.analysis.reviewSummaryNotes = noteLines
-    .filter((entry) => !/^Bulk removal decision:|^Review decision:|^Review reset:/i.test(entry))
-    .join("\n");
+  state.analysis.reviewSummaryNotes = getManualAnalysisReviewNotes(state.analysis.reviewSummaryNotes);
 }
 
 function getComparisonReviewComparisonById(comparisonId) {
@@ -8822,7 +8839,7 @@ function buildAnalysisReviewPrintWindowDocument() {
   const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
   const reviewerName = String(state.analysis.reviewCompletedByName || "").trim();
   const reviewerDate = normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate();
-  const reviewNotes = String(state.analysis.reviewSummaryNotes || "").trim();
+  const reviewNotes = getEffectiveAnalysisReviewNotes();
   const runNotes = String(summary.runNotes || state.analysis.runNotes || "").trim();
   const analysisName = String(state.analysis.runName || "Analysis Review").trim() || "Analysis Review";
 
@@ -8966,6 +8983,7 @@ function renderAnalysisComparisonSummaryView() {
   const reviewerName = String(state.analysis.reviewCompletedByName || "").trim();
   const reviewerDate = normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate();
   const canUndoMostRecent = Boolean(summary.canUndoLatestCompletion);
+  const reviewNotesValue = getEffectiveAnalysisReviewNotes();
   const runNotesMarkup = runNotes
     ? `<article class="panel analysis-review-summary-notes-card">
         <h4>Run Notes</h4>
@@ -9019,7 +9037,7 @@ function renderAnalysisComparisonSummaryView() {
         </div>
         <div class="field-stack">
           <label class="field-label" for="analysis-review-summary-notes">Review Notes</label>
-          <textarea id="analysis-review-summary-notes" class="field-input multiline-input" rows="3"${readOnly ? " disabled" : ""}>${esc(state.analysis.reviewSummaryNotes || "")}</textarea>
+          <textarea id="analysis-review-summary-notes" class="field-input multiline-input" rows="3"${readOnly ? " disabled" : ""}>${esc(reviewNotesValue)}</textarea>
         </div>
         ${summary.completedAt
           ? `<p class="analysis-comparison-helper">Completed by ${esc(summary.completedByName || reviewerName || "Unknown")} on ${esc(formatDateOnly(summary.completedOnDate || reviewerDate) || "Not set")}.</p>`
@@ -9082,12 +9100,12 @@ function renderAnalysisComparisonSummaryView() {
 
   const notesInput = el("analysis-review-summary-notes");
   if (notesInput instanceof HTMLTextAreaElement) {
-    notesInput.value = state.analysis.reviewSummaryNotes || "";
+    notesInput.value = reviewNotesValue;
     notesInput.addEventListener("input", () => {
       if (readOnly) {
         return;
       }
-      state.analysis.reviewSummaryNotes = notesInput.value || "";
+      state.analysis.reviewSummaryNotes = String(notesInput.value || "").trim();
       scheduleReviewStateAutosave("summary-notes");
       broadcastAnalysisReviewState("summary-notes");
     });
