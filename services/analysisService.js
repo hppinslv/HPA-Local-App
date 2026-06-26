@@ -671,18 +671,55 @@ function formatReportDateStamp(value) {
   return `${year}.${month}.${day}`;
 }
 
+function formatReportRunDateLabel(value) {
+  const date = value ? new Date(value) : new Date();
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const month = String(safeDate.getMonth() + 1).padStart(2, "0");
+  const day = String(safeDate.getDate()).padStart(2, "0");
+  const year = safeDate.getFullYear();
+  return `${month}/${day}/${year}`;
+}
+
+function resolveAnalysisReportTitlePrefix(value = "") {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "RFC" || normalized === "REFINANCE") {
+    return "Refinance";
+  }
+  if (normalized === "NHCL" || normalized === "N" || normalized === "NEW HOME") {
+    return "New Home";
+  }
+  return "";
+}
+
+function buildAnalysisTitleLabel(prefixValue, startDate, endDate, runDate) {
+  const prefix = resolveAnalysisReportTitlePrefix(prefixValue);
+  const startLabel = formatAutoAnalysisMonthPart(startDate);
+  const endLabel = formatAutoAnalysisMonthPart(endDate);
+  const runDateLabel = formatReportRunDateLabel(runDate);
+  if (prefix && startLabel && endLabel) {
+    return `${prefix} - ${startLabel} - ${endLabel} (${runDateLabel})`;
+  }
+  if (prefix) {
+    return `${prefix} (${runDateLabel})`;
+  }
+  return "";
+}
+
 function buildAnalysisReportName(run, pull) {
+  const runDate = run.createdAt || run.created_at || new Date().toISOString();
+  const titleLabel = buildAnalysisTitleLabel(
+    ensureArray(pull.keyCodes)[0] || pull.clientType || "",
+    pull.dateRange?.startDate || "",
+    pull.dateRange?.endDate || "",
+    runDate
+  );
+  if (titleLabel) {
+    return titleLabel;
+  }
+
   const label =
     String(pull.analysisLabel || pull.clientType || pull.reportId || "Analysis Report").trim() ||
     "Analysis Report";
-  const prefixMatch = label.match(/^(RFC|NHCL)\b[\s-]*(.*)$/i);
-  if (prefixMatch) {
-    const prefix = String(prefixMatch[1] || "").trim().toUpperCase();
-    const remainder = String(prefixMatch[2] || "").replace(/^\s*-\s*/, "").trim();
-    const dateStamp = formatReportDateStamp(run.createdAt || run.created_at || new Date().toISOString());
-    return remainder ? `${prefix} ${dateStamp} - ${remainder}` : `${prefix} ${dateStamp}`;
-  }
-
   const runName = String(run.runName || "").trim();
   return runName ? `${label} - ${runName}` : label;
 }
@@ -1396,17 +1433,15 @@ function buildAutoAnalysisLabel(rawPull = {}, index = 0) {
   const keyCode = String(ensureArray(rawPull.keyCodes)[0] || rawPull.clientType || "").trim().toUpperCase();
   const startDate = normalizeIsoDateForLabel(rawPull.dateRange?.startDate || "");
   const endDate = normalizeIsoDateForLabel(rawPull.dateRange?.endDate || "");
+  const titleLabel = buildAnalysisTitleLabel(keyCode, startDate, endDate, new Date().toISOString());
 
-  if (keyCode && startDate && endDate) {
-    const startLabel = formatAutoAnalysisMonthPart(startDate);
-    const endLabel = formatAutoAnalysisMonthPart(endDate);
-    if (startLabel && endLabel) {
-      return `${keyCode} - ${startLabel} - ${endLabel}`;
-    }
+  if (titleLabel) {
+    return titleLabel;
   }
 
-  if (keyCode) {
-    return keyCode;
+  const titlePrefix = resolveAnalysisReportTitlePrefix(keyCode);
+  if (titlePrefix) {
+    return titlePrefix;
   }
 
   return "Choose Key Code and dates";
@@ -4745,6 +4780,7 @@ module.exports = {
   listReferenceLists,
   normalizeScf,
   buildAnalysisOverwriteProtection,
+  buildAnalysisReportName,
   choosePreferredAnalysisScfRow,
   mergeAnalysisMetricRowsPreferNonZero,
   buildPersistedComparisonSetups,

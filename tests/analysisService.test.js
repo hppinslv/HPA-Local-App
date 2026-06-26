@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const {
   buildAnalysisOverwriteProtection,
+  buildAnalysisReportName,
   buildPersistedComparisonSetups,
   choosePreferredAnalysisScfRow,
   mergeAnalysisMetricRowsPreferNonZero,
@@ -154,6 +155,44 @@ test("live fallback can supplement zero saved summary values without clobbering 
   assert.equal(merged["Sum of Mailed"], "748");
   assert.equal(merged["Sum of Opp Count"], "1");
   assert.equal(merged["Sold Rate"], "0.1336898396");
+});
+
+test("analysis report names use Refinance title format with run date", () => {
+  const reportName = buildAnalysisReportName(
+    {
+      createdAt: "2026-06-26T15:30:00.000Z",
+      runName: "June 2026",
+    },
+    {
+      keyCodes: ["RFC"],
+      dateRange: {
+        startDate: "2013-01-01",
+        endDate: "2025-12-31",
+      },
+      analysisLabel: "RFC - Jan 2013 - Dec 2025",
+    }
+  );
+
+  assert.equal(reportName, "Refinance - Jan 2013 - Dec 2025 (06/26/2026)");
+});
+
+test("analysis report names use New Home title format with run date", () => {
+  const reportName = buildAnalysisReportName(
+    {
+      createdAt: "2026-06-26T15:30:00.000Z",
+      runName: "June 2026",
+    },
+    {
+      keyCodes: ["N"],
+      dateRange: {
+        startDate: "2026-01-01",
+        endDate: "2026-05-31",
+      },
+      analysisLabel: "NHCL - Jan 2026 - May 2026",
+    }
+  );
+
+  assert.equal(reportName, "New Home - Jan 2026 - May 2026 (06/26/2026)");
 });
 
 test("buildPersistedComparisonSetups stores primary report and selected scf per comparison", () => {

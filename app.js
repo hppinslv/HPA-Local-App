@@ -361,7 +361,49 @@ const formatReportDateStamp = (value) => {
   return `${safeDate.getFullYear()}.${String(safeDate.getMonth() + 1).padStart(2, "0")}.${String(safeDate.getDate()).padStart(2, "0")}`;
 };
 
+const formatReportRunDateLabel = (value) => {
+  const d = value ? new Date(value) : new Date();
+  const safeDate = Number.isNaN(d.getTime()) ? new Date() : d;
+  return `${String(safeDate.getMonth() + 1).padStart(2, "0")}/${String(safeDate.getDate()).padStart(2, "0")}/${safeDate.getFullYear()}`;
+};
+
+function resolveAnalysisReportTitlePrefix(value = "") {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "RFC" || normalized === "REFINANCE") {
+    return "Refinance";
+  }
+  if (normalized === "NHCL" || normalized === "N" || normalized === "NEW HOME") {
+    return "New Home";
+  }
+  return "";
+}
+
+function buildAnalysisTitleLabel(prefixValue, startDate, endDate, runDate) {
+  const prefix = resolveAnalysisReportTitlePrefix(prefixValue);
+  const startLabel = formatAutoAnalysisMonthPart(startDate);
+  const endLabel = formatAutoAnalysisMonthPart(endDate);
+  const runDateLabel = formatReportRunDateLabel(runDate);
+  if (prefix && startLabel && endLabel) {
+    return `${prefix} - ${startLabel} - ${endLabel} (${runDateLabel})`;
+  }
+  if (prefix) {
+    return `${prefix} (${runDateLabel})`;
+  }
+  return "";
+}
+
 function getAnalysisReportDisplayName(report) {
+  const parameters = report?.parameters || {};
+  const derivedLabel = buildAnalysisTitleLabel(
+    getAnalysisReportKeyCodeGroup(report) || report?.clientType || parameters.client_type || "",
+    parameters.start_date || parameters.startDate || report?.dateRange?.startDate || "",
+    parameters.end_date || parameters.endDate || report?.dateRange?.endDate || "",
+    report?.created_at || report?.createdAt || ""
+  );
+  if (derivedLabel) {
+    return derivedLabel;
+  }
+
   const rawName = String(report?.report_name || report?.reportName || report?.id || "Report").trim();
   const prefixMatch = rawName.match(/^(RFC|NHCL)\b[\s-]*(.*)$/i);
   if (!prefixMatch) {
@@ -450,17 +492,15 @@ function buildAutoAnalysisLabel(pull = {}, index = 0) {
   const keyCode = rawKeyCode === "N" ? "NHCL" : rawKeyCode;
   const startDate = normalizeIsoDateInput(pull.dateRange?.startDate || "");
   const endDate = normalizeIsoDateInput(pull.dateRange?.endDate || "");
+  const titleLabel = buildAnalysisTitleLabel(keyCode, startDate, endDate, new Date().toISOString());
 
-  if (keyCode && startDate && endDate) {
-    const startLabel = formatAutoAnalysisMonthPart(startDate);
-    const endLabel = formatAutoAnalysisMonthPart(endDate);
-    if (startLabel && endLabel) {
-      return `${keyCode} - ${startLabel} - ${endLabel}`;
-    }
+  if (titleLabel) {
+    return titleLabel;
   }
 
-  if (keyCode) {
-    return keyCode;
+  const titlePrefix = resolveAnalysisReportTitlePrefix(keyCode);
+  if (titlePrefix) {
+    return titlePrefix;
   }
 
   return "Choose Key Code and dates";
