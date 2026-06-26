@@ -103,6 +103,7 @@ const state = {
     reviewExcludedScfs: {},
     reviewBaselineLists: [],
     reviewWorkingLists: [],
+    reviewZeroRateRemovals: [],
     reviewSummary: null,
     reviewSummaryMode: "review",
     reviewSummaryNotes: "",
@@ -1386,6 +1387,7 @@ function persistAnalysisSetupDraft() {
       lastEditedComparisonId: String(state.analysis.lastEditedComparisonId || "").trim(),
       reviewPrimaryReportIds: cloneData(state.analysis.reviewPrimaryReportIds || {}),
       reviewSelectedScfs: cloneData(state.analysis.reviewSelectedScfs || {}),
+      reviewZeroRateRemovals: cloneData(state.analysis.reviewZeroRateRemovals || []),
       reviewCompletedByName: String(state.analysis.reviewCompletedByName || "").trim(),
       reviewCompletedOnDate: String(state.analysis.reviewCompletedOnDate || "").trim(),
       updatedAt: new Date().toISOString(),
@@ -1468,6 +1470,9 @@ function restorePersistedAnalysisSetupDraft(setupId = "") {
   }
   if (draft.reviewSelectedScfs && typeof draft.reviewSelectedScfs === "object") {
     state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(draft.reviewSelectedScfs);
+  }
+  if (Array.isArray(draft.reviewZeroRateRemovals)) {
+    state.analysis.reviewZeroRateRemovals = normalizeReviewZeroRateRemovals(draft.reviewZeroRateRemovals);
   }
   if (draft.reviewCompletedByName !== undefined) {
     state.analysis.reviewCompletedByName = String(draft.reviewCompletedByName || "").trim();
@@ -1721,6 +1726,45 @@ function normalizeReviewSyncScfMap(source) {
   return output;
 }
 
+function normalizeReviewZeroRateRemovals(source) {
+  return ensureArray(source).map((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return null;
+    }
+    const removedScfs = Array.from(new Set(
+      ensureArray(entry.removedScfs).map((scf) => normalizeScf(scf)).filter(Boolean)
+    ));
+    const foundZeroRateScfs = Array.from(new Set(
+      ensureArray(entry.foundZeroRateScfs).map((scf) => normalizeScf(scf)).filter(Boolean)
+    ));
+    const skippedAlreadyRemovedScfs = Array.from(new Set(
+      ensureArray(entry.skippedAlreadyRemovedScfs).map((scf) => normalizeScf(scf)).filter(Boolean)
+    ));
+    const skippedDnmScfs = Array.from(new Set(
+      ensureArray(entry.skippedDnmScfs).map((scf) => normalizeScf(scf)).filter(Boolean)
+    ));
+    if (!removedScfs.length && !foundZeroRateScfs.length && !skippedAlreadyRemovedScfs.length && !skippedDnmScfs.length) {
+      return null;
+    }
+    return {
+      id: String(entry.id || "").trim() || createClientId("zero_rate_removal"),
+      comparisonId: String(entry.comparisonId || "").trim(),
+      comparisonName: String(entry.comparisonName || "").trim(),
+      primaryReportId: String(entry.primaryReportId || "").trim(),
+      primaryReportName: String(entry.primaryReportName || "").trim(),
+      listType: String(entry.listType || "").trim().toLowerCase(),
+      metricKey: String(entry.metricKey || "soldRate").trim() || "soldRate",
+      checkedCount: Number(entry.checkedCount || 0),
+      removedScfs,
+      foundZeroRateScfs,
+      skippedAlreadyRemovedScfs,
+      skippedDnmScfs,
+      createdAt: String(entry.createdAt || "").trim(),
+      undoneAt: String(entry.undoneAt || "").trim(),
+    };
+  }).filter(Boolean);
+}
+
 function normalizeReviewSyncLists(source) {
   const rows = ensureArray(source || []);
   return rows
@@ -1772,6 +1816,7 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
     reviewExcludedScfs: normalizeReviewSyncScfMap(state.analysis.reviewExcludedScfs),
     reviewBaselineLists: normalizeReviewSyncLists(state.analysis.reviewBaselineLists),
     reviewWorkingLists: normalizeReviewSyncLists(state.analysis.reviewWorkingLists),
+    reviewZeroRateRemovals: normalizeReviewZeroRateRemovals(state.analysis.reviewZeroRateRemovals),
     reviewSummary: state.analysis.reviewSummary ? cloneData(state.analysis.reviewSummary) : null,
     reviewSummaryMode: String(state.analysis.reviewSummaryMode || "review").trim() || "review",
     reviewSummaryNotes: String(state.analysis.reviewSummaryNotes || "").trim(),
@@ -1831,6 +1876,7 @@ function applyAnalysisReviewSync(message) {
     state.analysis.reviewExcludedScfs = normalizeReviewSyncScfMap(message.reviewExcludedScfs);
     state.analysis.reviewBaselineLists = normalizeReviewSyncLists(message.reviewBaselineLists);
     state.analysis.reviewWorkingLists = normalizeReviewSyncLists(message.reviewWorkingLists);
+    state.analysis.reviewZeroRateRemovals = normalizeReviewZeroRateRemovals(message.reviewZeroRateRemovals);
     state.analysis.reviewSummary = message.reviewSummary ? cloneData(message.reviewSummary) : null;
     state.analysis.reviewSummaryMode = String(message.reviewSummaryMode || "review").trim() || "review";
     state.analysis.reviewSummaryNotes = String(message.reviewSummaryNotes || "").trim();
@@ -5960,6 +6006,7 @@ async function completeComparisonReview() {
     state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
     state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
     state.analysis.reviewExcludedScfs = {};
+    state.analysis.reviewZeroRateRemovals = [];
     syncAnalysisMeta({
       runName: savedSetup.run_name || savedSetup.runName || state.analysis.runName || getDefaultAnalysisName(),
       notes: savedSetup.notes || state.analysis.runNotes || "",
@@ -7150,8 +7197,38 @@ function getTotalMailedFromRow(row) {
 
 function getRowMetricNumber(row, metricLabel) {
   const rawValue = getRowMetricRawValueByAliases(row, getMetricLabelAliases(metricLabel));
-  const numeric = Number(String(rawValue ?? "").replace(/[$,%(),\s]/g, ""));
-  return Number.isNaN(numeric) ? 0 : numeric;
+  return parseLooseMetricNumber(rawValue);
+}
+
+function parseLooseMetricNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+  const raw = String(value).trim();
+  if (!raw) {
+    return 0;
+  }
+  const isNegative = raw.startsWith("(") && raw.endsWith(")");
+  const numeric = Number(raw.replace(/[$,%(),\s]/g, ""));
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return isNegative ? -numeric : numeric;
+}
+
+function getNavigatorEntryMetricNumericValue(entry, metricKey) {
+  const normalizedMetricKey = String(metricKey || "soldRate").trim();
+  const metricLabel = getReviewMetricDisplayName(normalizedMetricKey);
+  const displayValue = getRowMetricDisplayValue(entry?.row || {}, metricLabel);
+  const parsedDisplayValue = parseLooseMetricNumber(displayValue);
+  if (displayValue !== "-" || parsedDisplayValue !== 0) {
+    return parsedDisplayValue;
+  }
+  return parseLooseMetricNumber(entry?.[normalizedMetricKey]);
+}
+
+function isZeroNavigatorMetricEntry(entry, metricKey) {
+  return getNavigatorEntryMetricNumericValue(entry, metricKey) === 0;
 }
 
 function getRowMetricDisplayValue(row, metricLabel) {
@@ -7190,6 +7267,21 @@ function getReviewMetricDisplayName(metricKey) {
   if (normalized === "inForceRate") return "In Force Rate";
   if (normalized === "convertedRate") return "Converted Rate";
   return "Sold Rate";
+}
+
+function getReviewBaselineListEntries(listType) {
+  const normalizedType = String(listType || "").trim().toLowerCase();
+  return ensureArray(
+    (state.analysis.reviewBaselineLists || []).find((entry) => String(entry?.type || "").trim().toLowerCase() === normalizedType)?.items || []
+  );
+}
+
+function getDnmReferenceScfSet() {
+  return new Set(
+    getReviewBaselineListEntries("dnm")
+      .map((entry) => normalizeScf(entry?.scf))
+      .filter(Boolean)
+  );
 }
 
 function inferReviewMetricScale(rows = [], metricKey) {
@@ -7411,32 +7503,61 @@ function removeWorkingListEntriesAtZeroRate(listType, rows = [], metricKey) {
   ensureComparisonReviewWorkingLists();
   const list = getWorkingReferenceList(normalizedListType);
   if (!list) {
-    return { removedCount: 0, affectedScfs: [] };
+    return {
+      removedCount: 0,
+      removedScfs: [],
+      foundZeroRateScfs: [],
+      skippedAlreadyRemovedScfs: [],
+      skippedDnmScfs: [],
+      checkedCount: 0,
+    };
   }
 
-  const scfsToRemove = new Set(
-    rows
-      .filter((entry) => Number(entry?.[normalizedMetricKey] || 0) <= 0)
-      .map((entry) => normalizeScf(entry?.scf))
-      .filter(Boolean)
-  );
+  const checkedRows = ensureArray(rows);
+  const currentScfs = new Set(ensureArray(list.items).map((entry) => normalizeScf(entry?.scf)).filter(Boolean));
+  const dnmScfs = getDnmReferenceScfSet();
+  const foundZeroRateScfs = [];
+  const skippedAlreadyRemovedScfs = [];
+  const skippedDnmScfs = [];
+  const scfsToRemove = [];
 
-  if (!scfsToRemove.size) {
-    return { removedCount: 0, affectedScfs: [] };
-  }
+  checkedRows.forEach((entry) => {
+    const scf = normalizeScf(entry?.scf);
+    if (!scf || !isZeroNavigatorMetricEntry(entry, normalizedMetricKey)) {
+      return;
+    }
+    foundZeroRateScfs.push(scf);
+    if (!currentScfs.has(scf)) {
+      if (dnmScfs.has(scf)) {
+        skippedDnmScfs.push(scf);
+      } else {
+        skippedAlreadyRemovedScfs.push(scf);
+      }
+      return;
+    }
+    scfsToRemove.push(scf);
+  });
+
+  const uniqueScfsToRemove = new Set(scfsToRemove);
 
   const originalItems = Array.isArray(list.items) ? list.items : [];
-  const removedItems = originalItems.filter((entry) => scfsToRemove.has(normalizeScf(entry?.scf)));
-  const remainingItems = originalItems.filter((entry) => !scfsToRemove.has(normalizeScf(entry?.scf)));
+  const removedItems = originalItems.filter((entry) => uniqueScfsToRemove.has(normalizeScf(entry?.scf)));
+  const remainingItems = originalItems.filter((entry) => !uniqueScfsToRemove.has(normalizeScf(entry?.scf)));
   const removedCount = removedItems.length;
-  list.items = remainingItems;
-  list.count = remainingItems.length;
-  list.updatedAt = new Date().toISOString();
-  invalidateComparisonReviewSummary();
+  if (removedCount > 0) {
+    list.items = remainingItems;
+    list.count = remainingItems.length;
+    list.updatedAt = new Date().toISOString();
+    invalidateComparisonReviewSummary();
+  }
 
   return {
     removedCount,
-    affectedScfs: removedItems.map((entry) => normalizeScf(entry?.scf)).filter(Boolean),
+    removedScfs: removedItems.map((entry) => normalizeScf(entry?.scf)).filter(Boolean),
+    foundZeroRateScfs: Array.from(new Set(foundZeroRateScfs)),
+    skippedAlreadyRemovedScfs: Array.from(new Set(skippedAlreadyRemovedScfs)),
+    skippedDnmScfs: Array.from(new Set(skippedDnmScfs)),
+    checkedCount: checkedRows.length,
   };
 }
 
@@ -7495,6 +7616,104 @@ function appendAnalysisReviewNote(note) {
 
 function stripAutoAnalysisReviewNotes() {
   state.analysis.reviewSummaryNotes = getManualAnalysisReviewNotes(state.analysis.reviewSummaryNotes);
+}
+
+function recordZeroRateRemovalAction(action = {}) {
+  const normalizedAction = normalizeReviewZeroRateRemovals([{
+    ...action,
+    id: String(action.id || "").trim() || createClientId("zero_rate_removal"),
+    createdAt: String(action.createdAt || "").trim() || new Date().toISOString(),
+  }])[0];
+  if (!normalizedAction) {
+    return null;
+  }
+  state.analysis.reviewZeroRateRemovals = [
+    ...ensureArray(state.analysis.reviewZeroRateRemovals).filter((entry) => String(entry?.id || "").trim() !== normalizedAction.id),
+    normalizedAction,
+  ];
+  return normalizedAction;
+}
+
+function getActiveZeroRateRemovalActions() {
+  const workingMaps = new Map(
+    ensureArray(state.analysis.reviewWorkingLists).map((entry) => [
+      String(entry?.type || "").trim().toLowerCase(),
+      new Set(ensureArray(entry?.items).map((item) => normalizeScf(item?.scf)).filter(Boolean)),
+    ])
+  );
+  const baselineMaps = new Map(
+    ensureArray(state.analysis.reviewBaselineLists).map((entry) => [
+      String(entry?.type || "").trim().toLowerCase(),
+      new Set(ensureArray(entry?.items).map((item) => normalizeScf(item?.scf)).filter(Boolean)),
+    ])
+  );
+
+  return normalizeReviewZeroRateRemovals(state.analysis.reviewZeroRateRemovals).map((action) => {
+    const normalizedListType = String(action.listType || "").trim().toLowerCase();
+    const workingSet = workingMaps.get(normalizedListType) || new Set();
+    const baselineSet = baselineMaps.get(normalizedListType) || new Set();
+    const activeRemovedScfs = ensureArray(action.removedScfs).filter((scf) => baselineSet.has(scf) && !workingSet.has(scf));
+    return {
+      ...action,
+      activeRemovedScfs,
+      activeRemovedCount: activeRemovedScfs.length,
+      isPending: !action.undoneAt && activeRemovedScfs.length > 0,
+    };
+  });
+}
+
+function buildZeroRateRemovalSummary() {
+  const actions = getActiveZeroRateRemovalActions().filter((entry) => entry.isPending);
+  return {
+    actions,
+    totalRemovedCount: actions.reduce((sum, entry) => sum + Number(entry.activeRemovedCount || 0), 0),
+    totalActionCount: actions.length,
+  };
+}
+
+function restoreZeroRateRemovalAction(actionId) {
+  const normalizedActionId = String(actionId || "").trim();
+  if (!normalizedActionId) {
+    return { restoredCount: 0, restoredScfs: [] };
+  }
+  ensureComparisonReviewWorkingLists();
+  const action = normalizeReviewZeroRateRemovals(state.analysis.reviewZeroRateRemovals).find((entry) => entry.id === normalizedActionId);
+  if (!action) {
+    return { restoredCount: 0, restoredScfs: [] };
+  }
+  const normalizedListType = String(action.listType || "").trim().toLowerCase();
+  const list = getWorkingReferenceList(normalizedListType);
+  if (!list) {
+    return { restoredCount: 0, restoredScfs: [] };
+  }
+  const baselineRows = getReviewBaselineListEntries(normalizedListType);
+  const currentScfs = new Set(ensureArray(list.items).map((entry) => normalizeScf(entry?.scf)).filter(Boolean));
+  const activeRemovedScfs = getActiveZeroRateRemovalActions().find((entry) => entry.id === normalizedActionId)?.activeRemovedScfs || [];
+  const restoreRows = baselineRows.filter((entry) => activeRemovedScfs.includes(normalizeScf(entry?.scf)) && !currentScfs.has(normalizeScf(entry?.scf)));
+  if (!restoreRows.length) {
+    state.analysis.reviewZeroRateRemovals = ensureArray(state.analysis.reviewZeroRateRemovals).map((entry) =>
+      String(entry?.id || "").trim() === normalizedActionId
+        ? { ...entry, undoneAt: entry.undoneAt || new Date().toISOString() }
+        : entry
+    );
+    return { restoredCount: 0, restoredScfs: [] };
+  }
+  list.items = [...ensureArray(list.items), ...restoreRows.map((entry) => ({
+    ...entry,
+    scope: String(entry?.scope || entry?.state || "").trim(),
+  }))];
+  list.count = list.items.length;
+  list.updatedAt = new Date().toISOString();
+  state.analysis.reviewZeroRateRemovals = ensureArray(state.analysis.reviewZeroRateRemovals).map((entry) =>
+    String(entry?.id || "").trim() === normalizedActionId
+      ? { ...entry, undoneAt: new Date().toISOString() }
+      : entry
+  );
+  invalidateComparisonReviewSummary();
+  return {
+    restoredCount: restoreRows.length,
+    restoredScfs: restoreRows.map((entry) => normalizeScf(entry?.scf)).filter(Boolean),
+  };
 }
 
 function getComparisonReviewComparisonById(comparisonId) {
@@ -8834,6 +9053,7 @@ function renderReviewSummaryPrintListMarkup(title, rows = []) {
 
 function buildAnalysisReviewPrintWindowDocument() {
   const summary = getEffectiveComparisonReviewSummary();
+  const zeroRateSummary = buildZeroRateRemovalSummary();
   const listSummary = summary.lists || {};
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
   const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
@@ -8940,6 +9160,19 @@ function buildAnalysisReviewPrintWindowDocument() {
   ${reviewNotes
     ? `<section class="analysis-print-card"><h2>Review Notes</h2><div class="analysis-print-notes">${esc(reviewNotes)}</div></section>`
     : ""}
+  <section class="analysis-print-card">
+    <h2>Pending Zero-Rate Working Copy Removals</h2>
+    <p>${zeroRateSummary.totalRemovedCount} SCF(s) currently removed in the working copy across ${zeroRateSummary.totalActionCount} action(s).</p>
+    ${zeroRateSummary.actions.length
+      ? zeroRateSummary.actions.map((action) => `
+        <section class="analysis-print-section">
+          <h3>${esc(action.comparisonName || action.comparisonId || "Comparison")} - ${esc(action.primaryReportName || action.primaryReportId || "Primary Report")}</h3>
+          <p>${esc(String(action.listType || "").toUpperCase())} list, ${esc(getReviewMetricDisplayName(action.metricKey))}, pending working-copy only.</p>
+          <p>${esc(action.activeRemovedScfs.join(", "))}</p>
+        </section>
+      `).join("")
+      : "<p>No pending zero-rate removals.</p>"}
+  </section>
 
   ${renderReviewSummaryPrintListMarkup("NHCL - Added", nhcl.added)}
   ${renderReviewSummaryPrintListMarkup("NHCL - Removed", nhcl.removed)}
@@ -8972,6 +9205,7 @@ function openAnalysisReviewPrintSummary() {
 function renderAnalysisComparisonSummaryView() {
   const container = el("analysis-comparison-results");
   const summary = getEffectiveComparisonReviewSummary();
+  const zeroRateSummary = buildZeroRateRemovalSummary();
   const readOnly = isCurrentAnalysisReadOnly();
   const listSummary = summary.lists || {};
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
@@ -9014,6 +9248,27 @@ function renderAnalysisComparisonSummaryView() {
           <span>RFC Removed: ${Number(summary.summary?.rfcRemoved || 0)} </span>
           <span>Blocked Additions: ${Number(summary.summary?.blockedCount || 0)} </span>
         </div>
+      </article>
+
+      <article class="panel analysis-review-summary-card">
+        <h4>Pending Zero-Rate Working Copy Removals</h4>
+        <p>${zeroRateSummary.totalRemovedCount} SCF(s) are currently removed in the working copy only.</p>
+        ${zeroRateSummary.actions.length
+          ? `<div class="analysis-review-summary-list analysis-review-summary-list-rows">
+            ${zeroRateSummary.actions.map((action) => `
+              <div class="analysis-review-summary-row-item">
+                <strong>${esc(action.comparisonName || action.comparisonId || "Comparison")}</strong>
+                <span>${esc(action.primaryReportName || action.primaryReportId || "Primary report")}</span>
+                <span>${esc(String(action.listType || "").toUpperCase())} list</span>
+                <span>${esc(getReviewMetricDisplayName(action.metricKey))}</span>
+                <span>Pending working-copy only</span>
+                <span>${Number(action.activeRemovedCount || 0)} removed</span>
+                <span>${esc(action.activeRemovedScfs.join(", "))}</span>
+                ${readOnly ? "" : `<button class="secondary-button table-action-button" data-zero-rate-undo-action="${esc(action.id)}">Undo</button>`}
+              </div>
+            `).join("")}
+          </div>`
+          : `<p class="analysis-review-summary-empty">No pending zero-rate removals.</p>`}
       </article>
 
       ${runNotesMarkup}
@@ -9110,6 +9365,25 @@ function renderAnalysisComparisonSummaryView() {
       broadcastAnalysisReviewState("summary-notes");
     });
   }
+
+  all("[data-zero-rate-undo-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (readOnly) {
+        return;
+      }
+      const actionId = String(button.getAttribute("data-zero-rate-undo-action") || "").trim();
+      const restoreResult = restoreZeroRateRemovalAction(actionId);
+      scheduleReviewStateAutosave("undo-zero-rate-removal");
+      renderAnalysisComparisonReviewPanel();
+      broadcastAnalysisReviewState("undo-zero-rate-removal");
+      setStatus(
+        "analysis-comparison-selection-status",
+        restoreResult.restoredCount
+          ? `Restored ${restoreResult.restoredCount} SCF(s) to the working mailing list from the zero-rate removal action.`
+          : "No pending zero-rate removals were restored."
+      );
+    });
+  });
 
   const reviewerNameInput = el("analysis-review-completed-by-name");
   if (reviewerNameInput instanceof HTMLInputElement) {
@@ -9964,6 +10238,14 @@ function renderAnalysisComparisonReviewPanel() {
   });
 
   el("analysis-review-bulk-remove-zeroes-button")?.addEventListener("click", () => {
+    if (!comparison?.id) {
+      setStatus("analysis-comparison-selection-status", "Choose a comparison before removing zero-rate SCFs.");
+      return;
+    }
+    if (!primaryReport?.id) {
+      setStatus("analysis-comparison-selection-status", "Select a primary report before removing zero-rate SCFs.");
+      return;
+    }
     const metricKey = String(state.analysis.reviewBulkMetric || "soldRate").trim();
     const metricLabel = getReviewMetricDisplayName(metricKey);
     const removalResult = removeWorkingListEntriesAtZeroRate(
@@ -9971,6 +10253,35 @@ function renderAnalysisComparisonReviewPanel() {
       primaryNavigatorRows,
       metricKey
     );
+    console.info("[analysis-zero-rate-removal]", {
+      selectedComparisonId: comparison.id,
+      selectedComparisonName: getComparisonDisplayName(comparison),
+      selectedPrimaryReportId: primaryReport.id,
+      selectedPrimaryReportName: primaryReportDisplayName,
+      listType: targetListType,
+      metricKey,
+      metricLabel,
+      totalScfsChecked: removalResult.checkedCount,
+      zeroRateScfsFound: removalResult.foundZeroRateScfs,
+      skippedAlreadyNotOnWorkingList: removalResult.skippedAlreadyRemovedScfs,
+      skippedAlreadyDnm: removalResult.skippedDnmScfs,
+      removedScfs: removalResult.removedScfs,
+    });
+    if (removalResult.removedCount > 0) {
+      recordZeroRateRemovalAction({
+        comparisonId: comparison.id,
+        comparisonName: getComparisonDisplayName(comparison),
+        primaryReportId: primaryReport.id,
+        primaryReportName: primaryReportDisplayName,
+        listType: targetListType,
+        metricKey,
+        checkedCount: removalResult.checkedCount,
+        removedScfs: removalResult.removedScfs,
+        foundZeroRateScfs: removalResult.foundZeroRateScfs,
+        skippedAlreadyRemovedScfs: removalResult.skippedAlreadyRemovedScfs,
+        skippedDnmScfs: removalResult.skippedDnmScfs,
+      });
+    }
     appendAnalysisReviewNote(
       removalResult.removedCount
         ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) at 0.00% ${metricLabel} for pending removal using ${primaryReportDisplayName} only.`
@@ -9985,7 +10296,13 @@ function renderAnalysisComparisonReviewPanel() {
       "analysis-comparison-selection-status",
       removalResult.removedCount
         ? `${removalResult.removedCount} SCF(s) with 0.00% ${metricLabel} were marked for pending removal from the working ${listType} list using ${primaryReportDisplayName} only. They remain visible in the review list.`
-        : `No additional SCFs with 0.00% ${metricLabel} were removed from the working ${listType} list. Any matching SCFs are already marked Not on working list, or none were found in ${primaryReportDisplayName}.`
+        : !removalResult.foundZeroRateScfs.length
+          ? `No zero-rate SCFs were found in ${primaryReportDisplayName} for ${metricLabel}.`
+          : removalResult.skippedDnmScfs.length && !removalResult.skippedAlreadyRemovedScfs.length
+            ? `Zero-rate SCFs were found, but they are already DNM and not on the working ${listType} list.`
+            : removalResult.skippedAlreadyRemovedScfs.length && !removalResult.skippedDnmScfs.length
+              ? `Zero-rate SCFs were found, but they were already removed from the working ${listType} list.`
+              : `Zero-rate SCFs were found, but none needed removal because they were already not on the working ${listType} list and/or already DNM.`
     );
   });
 
@@ -10068,6 +10385,7 @@ function renderAnalysisComparisonReviewPanel() {
       return;
     }
     state.analysis.reviewWorkingLists = cloneData(state.analysis.reviewBaselineLists || []);
+    state.analysis.reviewZeroRateRemovals = [];
     stripAutoAnalysisReviewNotes();
     appendAnalysisReviewNote("Review reset: restored working lists to the live start point.");
     invalidateComparisonReviewSummary();
@@ -10548,6 +10866,7 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   state.analysis.reviewSelectedScfs = {};
   state.analysis.reviewBaselineLists = [];
   state.analysis.reviewWorkingLists = [];
+  state.analysis.reviewZeroRateRemovals = [];
   state.analysis.reviewBulkPreview = null;
   state.analysis.reviewSummary = null;
   state.analysis.reviewSummaryMode = "review";
@@ -10609,6 +10928,7 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.reviewExcludedScfs = normalizeReviewSyncScfMap(setup.reviewState?.reviewExcludedScfs || {});
   state.analysis.reviewBaselineLists = normalizeReviewSyncLists(setup.reviewState?.reviewBaselineLists || []);
   state.analysis.reviewWorkingLists = normalizeReviewSyncLists(setup.reviewState?.reviewWorkingLists || []);
+  state.analysis.reviewZeroRateRemovals = normalizeReviewZeroRateRemovals(setup.reviewState?.reviewZeroRateRemovals || []);
   state.analysis.reviewBulkPreview = null;
   const comparisonReview = getComparisonReviewResultFromEntry(setup);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
@@ -10664,6 +10984,7 @@ function loadRunIntoWorkspace(run) {
   state.analysis.reviewExcludedScfs = normalizeReviewSyncScfMap(run.reviewState?.reviewExcludedScfs || {});
   state.analysis.reviewBaselineLists = normalizeReviewSyncLists(run.reviewState?.reviewBaselineLists || []);
   state.analysis.reviewWorkingLists = normalizeReviewSyncLists(run.reviewState?.reviewWorkingLists || []);
+  state.analysis.reviewZeroRateRemovals = normalizeReviewZeroRateRemovals(run.reviewState?.reviewZeroRateRemovals || []);
   state.analysis.reviewBulkPreview = null;
   const comparisonReview = getComparisonReviewResultFromEntry(run);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
@@ -10729,6 +11050,7 @@ function buildAnalysisPayload(statusOverride) {
       reviewExcludedScfs: normalizeReviewSyncScfMap(state.analysis.reviewExcludedScfs),
       reviewBaselineLists: normalizeReviewSyncLists(state.analysis.reviewBaselineLists),
       reviewWorkingLists: normalizeReviewSyncLists(state.analysis.reviewWorkingLists),
+      reviewZeroRateRemovals: normalizeReviewZeroRateRemovals(state.analysis.reviewZeroRateRemovals),
     },
     results: state.analysis.reviewSummary
         ? {
@@ -10812,6 +11134,9 @@ function bindAnalysisSubtabs() {
             }
             if (!Array.isArray(state.analysis.reviewWorkingLists) || !state.analysis.reviewWorkingLists.length) {
               state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
+            }
+            if (!Array.isArray(state.analysis.reviewZeroRateRemovals)) {
+              state.analysis.reviewZeroRateRemovals = [];
             }
             if (!state.analysis.selectedComparisonId) {
               state.analysis.selectedComparisonId = getPreferredComparisonId(state.analysis.comparisonRequests || []);
@@ -11678,6 +12003,7 @@ function bindAnalysisButtons() {
       state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
       state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
       state.analysis.reviewExcludedScfs = {};
+      state.analysis.reviewZeroRateRemovals = [];
       showAnalysisPanel("compare-review");
       ensureVisibleAnalysisPanel();
       setStatus("analysis-comparison-selection-status", "Review the comparison and work from the testing copy of the lists.");

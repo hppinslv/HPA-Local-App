@@ -374,6 +374,23 @@ test("review working-list changes persist before completion and reload with the 
         { type: "nhcl", items: [{ scf: "010", state: "" }, { scf: "011", state: "" }] },
         { type: "rfc", items: [] },
       ],
+      reviewZeroRateRemovals: [
+        {
+          id: "zero_remove_1",
+          comparisonId: "comparison_nhcl",
+          comparisonName: "NHCL Compare",
+          primaryReportId: "report_a",
+          primaryReportName: "New Home - Jan 2013 - Dec 2025 (06/26/2026)",
+          listType: "nhcl",
+          metricKey: "soldRate",
+          checkedCount: 25,
+          removedScfs: ["010"],
+          foundZeroRateScfs: ["010", "011"],
+          skippedAlreadyRemovedScfs: ["011"],
+          skippedDnmScfs: [],
+          createdAt: "2026-06-26T15:30:00.000Z",
+        },
+      ],
     },
   }));
 
@@ -388,6 +405,24 @@ test("review working-list changes persist before completion and reload with the 
   assert.deepEqual(reloaded.reviewState.reviewWorkingLists, [
     { type: "nhcl", name: "", sourceName: "", updatedAt: "", items: [{ scf: "010", state: "" }, { scf: "011", state: "" }] },
     { type: "rfc", name: "", sourceName: "", updatedAt: "", items: [] },
+  ]);
+  assert.deepEqual(reloaded.reviewState.reviewZeroRateRemovals, [
+    {
+      id: "zero_remove_1",
+      comparisonId: "comparison_nhcl",
+      comparisonName: "NHCL Compare",
+      primaryReportId: "report_a",
+      primaryReportName: "New Home - Jan 2013 - Dec 2025 (06/26/2026)",
+      listType: "nhcl",
+      metricKey: "soldRate",
+      checkedCount: 25,
+      removedScfs: ["010"],
+      foundZeroRateScfs: ["010", "011"],
+      skippedAlreadyRemovedScfs: ["011"],
+      skippedDnmScfs: [],
+      createdAt: "2026-06-26T15:30:00.000Z",
+      undoneAt: "",
+    },
   ]);
 });
 

@@ -1560,6 +1560,35 @@ function normalizeAnalysisReviewState(value = {}) {
         items: normalizeReferenceListSnapshotItems(entry?.items || []),
       };
     }).filter(Boolean);
+  const normalizeZeroRateRemovals = (entries) =>
+    ensureArray(entries).map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const removedScfs = Array.from(new Set(ensureArray(entry.removedScfs).map((scf) => normalizeScf(scf)).filter(Boolean)));
+      const foundZeroRateScfs = Array.from(new Set(ensureArray(entry.foundZeroRateScfs).map((scf) => normalizeScf(scf)).filter(Boolean)));
+      const skippedAlreadyRemovedScfs = Array.from(new Set(ensureArray(entry.skippedAlreadyRemovedScfs).map((scf) => normalizeScf(scf)).filter(Boolean)));
+      const skippedDnmScfs = Array.from(new Set(ensureArray(entry.skippedDnmScfs).map((scf) => normalizeScf(scf)).filter(Boolean)));
+      if (!removedScfs.length && !foundZeroRateScfs.length && !skippedAlreadyRemovedScfs.length && !skippedDnmScfs.length) {
+        return null;
+      }
+      return {
+        id: String(entry.id || "").trim(),
+        comparisonId: String(entry.comparisonId || "").trim(),
+        comparisonName: String(entry.comparisonName || "").trim(),
+        primaryReportId: String(entry.primaryReportId || "").trim(),
+        primaryReportName: String(entry.primaryReportName || "").trim(),
+        listType: String(entry.listType || "").trim().toLowerCase(),
+        metricKey: String(entry.metricKey || "soldRate").trim() || "soldRate",
+        checkedCount: Number(entry.checkedCount || 0),
+        removedScfs,
+        foundZeroRateScfs,
+        skippedAlreadyRemovedScfs,
+        skippedDnmScfs,
+        createdAt: String(entry.createdAt || "").trim(),
+        undoneAt: String(entry.undoneAt || "").trim(),
+      };
+    }).filter(Boolean);
 
   return {
     selectedComparisonId: String(source.selectedComparisonId || "").trim(),
@@ -1571,6 +1600,7 @@ function normalizeAnalysisReviewState(value = {}) {
     reviewExcludedScfs: normalizeMap(source.reviewExcludedScfs),
     reviewBaselineLists: normalizeListSnapshots(source.reviewBaselineLists),
     reviewWorkingLists: normalizeListSnapshots(source.reviewWorkingLists),
+    reviewZeroRateRemovals: normalizeZeroRateRemovals(source.reviewZeroRateRemovals),
   };
 }
 
