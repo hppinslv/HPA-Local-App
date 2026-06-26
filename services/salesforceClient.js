@@ -3413,6 +3413,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   let flattened = { columns: [], rows: [], summaryValues: [] };
   let fullDetailExport = { columns: [], rows: [] };
   let reportPayloadDetailExport = { columns: [], rows: [] };
+  let preferredExport = { columns: [], rows: [] };
   let normalizedDetailSummary = { columns: [], rows: [], summaryValues: [] };
   let preferredExportSummary = { columns: [], rows: [], summaryValues: [] };
   let payloadDetailSummary = { columns: [], rows: [], summaryValues: [] };
@@ -3455,7 +3456,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     payloadDetailSummary = reportPayloadDetailExport.rows.length
       ? buildFlatRowsFromDetailExport(reportPayloadDetailExport.rows)
       : { columns: [], rows: [], summaryValues: [] };
-    const preferredExport = choosePreferredAnalysisExportRows(
+    preferredExport = choosePreferredAnalysisExportRows(
       fullDetailExport,
       reportPayloadDetailExport
     );
@@ -3479,6 +3480,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
           summaryValues: aggregateDataset.summaryValues,
         }
       : { columns: [], rows: [], summaryValues: [] };
+    preferredExport = { columns: [], rows: [] };
     preferredExportSummary = normalizedDetailSummary;
   }
 
