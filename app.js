@@ -10737,7 +10737,24 @@ async function loadAnalysisSetups() {
   const tbody = el("analysis-setup-body");
   if (!tbody) return;
   const setupsPayload = await apiRequest("/api/analysis/setups");
-  const setups = (setupsPayload.setups || []).filter((entry) => !entry.archived);
+  const normalizedSetups = ensureArray(setupsPayload.setups).filter((entry) => !entry.archived);
+  const openSetups = normalizedSetups
+    .filter((entry) => !isCompletedAnalysisSetup(entry))
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.updated_at || left.updatedAt || left.created_at || left.createdAt || "") || 0;
+      const rightTime = Date.parse(right.updated_at || right.updatedAt || right.created_at || right.createdAt || "") || 0;
+      return rightTime - leftTime;
+    });
+  const newestOpenSetupId = String(openSetups[0]?.id || "").trim();
+  const setups = normalizedSetups.filter((entry) => {
+    if (isCompletedAnalysisSetup(entry)) {
+      return true;
+    }
+    if (!newestOpenSetupId) {
+      return true;
+    }
+    return String(entry?.id || "").trim() === newestOpenSetupId;
+  });
   const rows = setups.length
     ? setups.map((setup, index) => ({
         id: setup.id,
