@@ -7979,7 +7979,7 @@ function getComparisonReviewReports(comparison) {
         .filter(Boolean)
     )
   )
-    .map((reportId) => reportMap.get(reportId))
+    .map((reportId) => resolveHydratedAnalysisReport(reportMap.get(reportId)))
     .filter(Boolean);
 }
 
@@ -7994,6 +7994,50 @@ function reportHasReviewScfData(report) {
     return true;
   }
   return false;
+}
+
+function resolveHydratedAnalysisReport(report) {
+  if (!report || typeof report !== "object") {
+    return null;
+  }
+  if (reportHasReviewScfData(report)) {
+    return report;
+  }
+
+  const reportId = String(report.id || "").trim();
+  const pullId = String(report.pullId || report.pull_id || "").trim();
+  const reportName = String(report.report_name || report.reportName || report.name || "").trim();
+  const keyCodeGroup = getAnalysisReportKeyCodeGroup(report);
+
+  const hydratedMatch = ensureArray(state.analysis.savedReports).find((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return false;
+    }
+    if (reportHasReviewScfData(entry) === false) {
+      return false;
+    }
+    const entryId = String(entry.id || "").trim();
+    const entryPullId = String(entry.pullId || entry.pull_id || "").trim();
+    const entryName = String(entry.report_name || entry.reportName || entry.name || "").trim();
+    if (reportId && entryId === reportId) {
+      return true;
+    }
+    if (pullId && entryPullId === pullId) {
+      return true;
+    }
+    if (reportName && entryName === reportName) {
+      return true;
+    }
+    return Boolean(
+      keyCodeGroup
+      && getAnalysisReportKeyCodeGroup(entry) === keyCodeGroup
+      && entryName
+      && reportName
+      && entryName.includes(reportName)
+    );
+  });
+
+  return hydratedMatch || report;
 }
 
 function ensureComparisonReviewSelection() {
