@@ -1514,6 +1514,11 @@ function isCompletedAnalysisSetup(entry = {}) {
     && !String(entry?.completionUndoneAt || entry?.completion_undone_at || "").trim();
 }
 
+function syncAnalysisReadOnlyState(entry = {}) {
+  state.analysis.currentSetupStatus = String(entry?.status || "").trim();
+  state.analysis.readOnlyReview = isCompletedAnalysisSetup(entry);
+}
+
 function shouldDisplayAnalysisHistoryEntry(entry = {}) {
   if (!entry?.archived) {
     return true;
@@ -9786,6 +9791,7 @@ async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
   });
   const setup = response.setup || {};
   state.analysis.currentSetupId = setup.id || state.analysis.currentSetupId;
+  syncAnalysisReadOnlyState(setup);
   persistAnalysisSetupId(state.analysis.currentSetupId);
   persistAnalysisSetupDraft();
   syncAnalysisMeta({
@@ -10233,7 +10239,7 @@ function loadSetupIntoWorkspace(setup) {
   clearComparisonSetupAutosave();
   stopAnalysisRunPolling();
   state.analysis.currentSetupId = setup.id || "";
-  state.analysis.currentSetupStatus = String(setup.status || "").trim();
+  syncAnalysisReadOnlyState(setup);
   persistAnalysisSetupId(state.analysis.currentSetupId);
   state.analysis.currentRunId = "";
   state.analysis.currentReportId = "";
@@ -10272,7 +10278,6 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   state.analysis.reviewCompletedByName = String(setup.reviewState?.reviewCompletedByName || comparisonReview?.completedByName || "").trim();
   state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(setup.reviewState?.reviewCompletedOnDate || comparisonReview?.completedOnDate || "") || getTodayIsoDate();
-  state.analysis.readOnlyReview = isCompletedAnalysisSetup(setup);
   state.analysis.setupHydrated = true;
   state.analysis.lastSetupLoadSource = "persistent-storage";
   syncAnalysisMeta({
@@ -10291,7 +10296,7 @@ function loadRunIntoWorkspace(run) {
   clearComparisonSetupAutosave();
   state.analysis.currentRunId = run.id || "";
   state.analysis.currentSetupId = run.setupId || "";
-  state.analysis.currentSetupStatus = String(run.status || "").trim();
+  syncAnalysisReadOnlyState(run);
   persistAnalysisSetupId(state.analysis.currentSetupId);
   state.analysis.currentReportId = "";
   state.analysis.reportPulls = Array.isArray(run.reportPulls) && run.reportPulls.length
@@ -10328,7 +10333,6 @@ function loadRunIntoWorkspace(run) {
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   state.analysis.reviewCompletedByName = String(run.reviewState?.reviewCompletedByName || comparisonReview?.completedByName || "").trim();
   state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(run.reviewState?.reviewCompletedOnDate || comparisonReview?.completedOnDate || "") || getTodayIsoDate();
-  state.analysis.readOnlyReview = isCompletedAnalysisSetup(run);
   syncAnalysisMeta({
     runName: run.runName || "",
     notes: run.notes ?? state.analysis.runNotes,
@@ -11203,6 +11207,7 @@ function bindAnalysisButtons() {
       });
       const setup = response.setup || {};
       state.analysis.currentSetupId = setup.id || state.analysis.currentSetupId;
+      syncAnalysisReadOnlyState(setup);
       persistAnalysisSetupId(state.analysis.currentSetupId);
       persistAnalysisSetupDraft();
       syncAnalysisMeta({
@@ -11241,6 +11246,7 @@ function bindAnalysisButtons() {
       });
       const savedSetup = saveResponse.setup || {};
       state.analysis.currentSetupId = savedSetup.id || state.analysis.currentSetupId;
+      syncAnalysisReadOnlyState(savedSetup);
       persistAnalysisSetupId(state.analysis.currentSetupId);
       persistAnalysisSetupDraft();
       const runResponse = await apiRequest("/api/analysis/runs", {
