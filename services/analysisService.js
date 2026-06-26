@@ -1591,6 +1591,40 @@ function normalizeAnalysisReviewState(value = {}) {
         undoneAt: String(entry.undoneAt || "").trim(),
       };
     }).filter(Boolean);
+  const normalizeZeroRemovalDiagnostics = (source) => {
+    if (!source || typeof source !== "object") {
+      return null;
+    }
+    return {
+      setupId: String(source.setupId || "").trim(),
+      comparisonName: String(source.comparisonName || "").trim(),
+      selectedPrimaryReportId: String(source.selectedPrimaryReportId || "").trim(),
+      resolvedSavedReportId: String(source.resolvedSavedReportId || "").trim(),
+      totalReportRowsChecked: Number(source.totalReportRowsChecked || 0),
+      zeroRemovalFieldUsed: String(source.zeroRemovalFieldUsed || "").trim(),
+      zeroRemovalCandidateCount: Number(source.zeroRemovalCandidateCount || 0),
+      zeroValueCount: Number(source.zeroValueCount || 0),
+      blankOrNullCount: Number(source.blankOrNullCount || 0),
+      nonNumericCount: Number(source.nonNumericCount || 0),
+      zeroRemovalSampleRows: ensureArray(source.zeroRemovalSampleRows).map((entry) => ({
+        scf: normalizeScf(entry?.scf),
+        rawMailedValue:
+          entry?.rawMailedValue === null || entry?.rawMailedValue === undefined
+            ? ""
+            : String(entry.rawMailedValue),
+        parsedMailedValue: Number(entry?.parsedMailedValue || 0),
+        wouldRemove: entry?.wouldRemove === true,
+      })).filter((entry) => entry.scf).slice(0, 10),
+      zeroRemovalLastResult: source.zeroRemovalLastResult && typeof source.zeroRemovalLastResult === "object"
+        ? {
+            status: String(source.zeroRemovalLastResult.status || "").trim(),
+            removedCount: Number(source.zeroRemovalLastResult.removedCount || 0),
+            totalMailedRemoved: Number(source.zeroRemovalLastResult.totalMailedRemoved || 0),
+            message: String(source.zeroRemovalLastResult.message || "").trim(),
+          }
+        : null,
+    };
+  };
 
   return {
     selectedComparisonId: String(source.selectedComparisonId || "").trim(),
@@ -1603,6 +1637,7 @@ function normalizeAnalysisReviewState(value = {}) {
     reviewBaselineLists: normalizeListSnapshots(source.reviewBaselineLists),
     reviewWorkingLists: normalizeListSnapshots(source.reviewWorkingLists),
     reviewZeroRateRemovals: normalizeZeroRateRemovals(source.reviewZeroRateRemovals),
+    reviewZeroRemovalDiagnostics: normalizeZeroRemovalDiagnostics(source.reviewZeroRemovalDiagnostics),
   };
 }
 
@@ -3143,6 +3178,10 @@ function getAnalysisSetupReviewDebug(setupId = "") {
           inForceRateFieldKeys: [],
           convertedRateFieldKeys: [],
         },
+    zeroRemovalFieldUsed: String(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalFieldUsed || "").trim(),
+    zeroRemovalCandidateCount: Number(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalCandidateCount || 0),
+    zeroRemovalSampleRows: ensureArray(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalSampleRows),
+    zeroRemovalLastResult: setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalLastResult || null,
   };
 }
 

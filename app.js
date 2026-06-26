@@ -104,6 +104,7 @@ const state = {
     reviewBaselineLists: [],
     reviewWorkingLists: [],
     reviewZeroRateRemovals: [],
+    reviewZeroRemovalDiagnostics: null,
     reviewSummary: null,
     reviewSummaryMode: "review",
     reviewSummaryNotes: "",
@@ -1772,6 +1773,42 @@ function normalizeReviewZeroRateRemovals(source) {
   }).filter(Boolean);
 }
 
+function normalizeReviewZeroRemovalDiagnostics(source) {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+  const sampleRows = ensureArray(source.zeroRemovalSampleRows || source.sampleRows).map((entry) => ({
+    scf: normalizeScf(entry?.scf),
+    rawMailedValue:
+      entry?.rawMailedValue === null || entry?.rawMailedValue === undefined
+        ? ""
+        : String(entry.rawMailedValue),
+    parsedMailedValue: Number(entry?.parsedMailedValue || 0),
+    wouldRemove: entry?.wouldRemove === true,
+  })).filter((entry) => entry.scf);
+  return {
+    setupId: String(source.setupId || "").trim(),
+    comparisonName: String(source.comparisonName || "").trim(),
+    selectedPrimaryReportId: String(source.selectedPrimaryReportId || "").trim(),
+    resolvedSavedReportId: String(source.resolvedSavedReportId || "").trim(),
+    totalReportRowsChecked: Number(source.totalReportRowsChecked || 0),
+    zeroRemovalFieldUsed: String(source.zeroRemovalFieldUsed || "").trim(),
+    zeroRemovalCandidateCount: Number(source.zeroRemovalCandidateCount || 0),
+    zeroValueCount: Number(source.zeroValueCount || 0),
+    blankOrNullCount: Number(source.blankOrNullCount || 0),
+    nonNumericCount: Number(source.nonNumericCount || 0),
+    zeroRemovalSampleRows: sampleRows.slice(0, 10),
+    zeroRemovalLastResult: source.zeroRemovalLastResult && typeof source.zeroRemovalLastResult === "object"
+      ? {
+          status: String(source.zeroRemovalLastResult.status || "").trim(),
+          removedCount: Number(source.zeroRemovalLastResult.removedCount || 0),
+          totalMailedRemoved: Number(source.zeroRemovalLastResult.totalMailedRemoved || 0),
+          message: String(source.zeroRemovalLastResult.message || "").trim(),
+        }
+      : null,
+  };
+}
+
 function normalizeReviewSyncLists(source) {
   const rows = ensureArray(source || []);
   return rows
@@ -1824,6 +1861,7 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
     reviewBaselineLists: normalizeReviewSyncLists(state.analysis.reviewBaselineLists),
     reviewWorkingLists: normalizeReviewSyncLists(state.analysis.reviewWorkingLists),
     reviewZeroRateRemovals: normalizeReviewZeroRateRemovals(state.analysis.reviewZeroRateRemovals),
+    reviewZeroRemovalDiagnostics: normalizeReviewZeroRemovalDiagnostics(state.analysis.reviewZeroRemovalDiagnostics),
     reviewSummary: state.analysis.reviewSummary ? cloneData(state.analysis.reviewSummary) : null,
     reviewSummaryMode: String(state.analysis.reviewSummaryMode || "review").trim() || "review",
     reviewSummaryNotes: String(state.analysis.reviewSummaryNotes || "").trim(),
@@ -1884,6 +1922,7 @@ function applyAnalysisReviewSync(message) {
     state.analysis.reviewBaselineLists = normalizeReviewSyncLists(message.reviewBaselineLists);
     state.analysis.reviewWorkingLists = normalizeReviewSyncLists(message.reviewWorkingLists);
     state.analysis.reviewZeroRateRemovals = normalizeReviewZeroRateRemovals(message.reviewZeroRateRemovals);
+    state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics(message.reviewZeroRemovalDiagnostics);
     state.analysis.reviewSummary = message.reviewSummary ? cloneData(message.reviewSummary) : null;
     state.analysis.reviewSummaryMode = String(message.reviewSummaryMode || "review").trim() || "review";
     state.analysis.reviewSummaryNotes = String(message.reviewSummaryNotes || "").trim();
@@ -7455,6 +7494,51 @@ function getRowMetricRawValueByAliases(row, metricLabels = []) {
   return fallbackEntry[1];
 }
 
+function getRowMetricMatchByAliases(row, metricLabels = []) {
+  if (!Array.isArray(metricLabels) || !metricLabels.length) {
+    return { key: "", value: "" };
+  }
+
+  const expandedMetricLabels = Array.from(
+    new Set(metricLabels.flatMap((metricLabel) => getMetricLabelAliases(metricLabel)))
+  );
+
+  for (const metricLabel of expandedMetricLabels) {
+    const target = normalizeComparisonMetricKey(metricLabel);
+    const entries = Object.entries(row || {});
+    const exactEntry = entries.find(([key, rawValue]) => (
+      normalizeComparisonMetricKey(key) === target
+      && !(rawValue === null || rawValue === undefined || String(rawValue).trim() === "")
+    ));
+    if (exactEntry) {
+      return { key: exactEntry[0], value: exactEntry[1] };
+    }
+    const fuzzyEntry = entries.find(([key, rawValue]) => (
+      normalizeComparisonMetricKey(key).includes(target)
+      && !(rawValue === null || rawValue === undefined || String(rawValue).trim() === "")
+    ));
+    if (fuzzyEntry) {
+      return { key: fuzzyEntry[0], value: fuzzyEntry[1] };
+    }
+  }
+
+  const fallbackEntry = Object.entries(row || {}).find(([key, rawValue]) => {
+    const normalized = normalizeComparisonMetricKey(key);
+    if (normalized.endsWith("__label")) {
+      return false;
+    }
+    if (!normalized.includes("mailed")) {
+      return false;
+    }
+    if (normalized.includes("rate")) {
+      return false;
+    }
+    return !(rawValue === null || rawValue === undefined || String(rawValue).trim() === "");
+  });
+
+  return fallbackEntry ? { key: fallbackEntry[0], value: fallbackEntry[1] } : { key: "", value: "" };
+}
+
 function getTotalMailedFromRow(row) {
   const rawValue = getRowMetricRawValueByAliases(row, [
     "Total Mailed",
@@ -7476,25 +7560,46 @@ function getTotalMailedFromRow(row) {
   return rawValue;
 }
 
+function getTotalMailedMatchFromRow(row) {
+  return getRowMetricMatchByAliases(row, [
+    "Total Mailed",
+    "Sum of Mailed",
+    "Mailed",
+    "Mailed Count",
+    "Mail Count",
+    "Total Mail",
+    "total_mail",
+    "total_mailed",
+    "quantity mailed",
+    "quantityMailed",
+    "mail count",
+    "mailing total",
+  ]);
+}
+
 function getRowMetricNumber(row, metricLabel) {
   const rawValue = getRowMetricRawValueByAliases(row, getMetricLabelAliases(metricLabel));
   return parseLooseMetricNumber(rawValue);
 }
 
 function parseLooseMetricNumber(value) {
+  return parseLooseMetricNumberDetailed(value).numericValue;
+}
+
+function parseLooseMetricNumberDetailed(value) {
   if (value === null || value === undefined || value === "") {
-    return 0;
+    return { numericValue: 0, isBlank: true, isNumeric: false };
   }
   const raw = String(value).trim();
   if (!raw) {
-    return 0;
+    return { numericValue: 0, isBlank: true, isNumeric: false };
   }
   const isNegative = raw.startsWith("(") && raw.endsWith(")");
   const numeric = Number(raw.replace(/[$,%(),\s]/g, ""));
   if (!Number.isFinite(numeric)) {
-    return 0;
+    return { numericValue: 0, isBlank: false, isNumeric: false };
   }
-  return isNegative ? -numeric : numeric;
+  return { numericValue: isNegative ? -numeric : numeric, isBlank: false, isNumeric: true };
 }
 
 function getNavigatorEntryMetricNumericValue(entry, metricKey) {
@@ -7848,15 +7953,60 @@ function removeWorkingListEntriesAtZeroRate(listType, rows = [], metricKey) {
 }
 
 function isZeroQuantityNavigatorEntry(entry) {
-  const rawMailedValue = getTotalMailedFromRow(entry?.row || {});
-  if (rawMailedValue === "" || rawMailedValue === null || rawMailedValue === undefined) {
-    return true;
-  }
-  return parseLooseMetricNumber(rawMailedValue) === 0;
+  const mailedInfo = parseLooseMetricNumberDetailed(getTotalMailedFromRow(entry?.row || {}));
+  return mailedInfo.isBlank || !mailedInfo.isNumeric || mailedInfo.numericValue === 0;
 }
 
-function removeWorkingListEntriesAtZeroQuantity(listType, rows = []) {
+function analyzeZeroQuantityReportRows(report) {
+  const entries = getUnifiedReportScfEntries(report);
+  const fieldUsage = new Map();
+  const candidateRows = entries.map((entry) => {
+    const mailedMatch = getTotalMailedMatchFromRow(entry?.row || {});
+    const parsed = parseLooseMetricNumberDetailed(mailedMatch.value);
+    if (mailedMatch.key) {
+      fieldUsage.set(mailedMatch.key, Number(fieldUsage.get(mailedMatch.key) || 0) + 1);
+    }
+    return {
+      scf: normalizeScf(entry?.scf),
+      rawMailedValue:
+        mailedMatch.value === null || mailedMatch.value === undefined
+          ? ""
+          : String(mailedMatch.value),
+      parsedMailedValue: parsed.numericValue,
+      isBlank: parsed.isBlank,
+      isNumeric: parsed.isNumeric,
+      wouldRemove: parsed.isBlank || !parsed.isNumeric || parsed.numericValue === 0,
+    };
+  });
+
+  const zeroValueCount = candidateRows.filter((entry) => entry.isNumeric && !entry.isBlank && entry.parsedMailedValue === 0).length;
+  const blankOrNullCount = candidateRows.filter((entry) => entry.isBlank).length;
+  const nonNumericCount = candidateRows.filter((entry) => !entry.isBlank && !entry.isNumeric).length;
+  const sampleRows = candidateRows.slice(0, 10).map((entry) => ({
+    scf: entry.scf,
+    rawMailedValue: entry.rawMailedValue,
+    parsedMailedValue: entry.parsedMailedValue,
+    wouldRemove: entry.wouldRemove,
+  }));
+
+  const zeroRemovalFieldUsed = [...fieldUsage.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+
+  return {
+    reportId: String(report?.id || "").trim(),
+    totalReportRowsChecked: candidateRows.length,
+    zeroRemovalFieldUsed,
+    zeroRemovalCandidateCount: candidateRows.filter((entry) => entry.wouldRemove).length,
+    zeroValueCount,
+    blankOrNullCount,
+    nonNumericCount,
+    zeroRemovalSampleRows: sampleRows,
+    candidateRows,
+  };
+}
+
+function removeWorkingListEntriesAtZeroQuantity(listType, report) {
   const normalizedListType = String(listType || "").trim().toLowerCase();
+  const diagnostics = analyzeZeroQuantityReportRows(report);
 
   ensureComparisonReviewWorkingLists();
   const list = getWorkingReferenceList(normalizedListType);
@@ -7867,12 +8017,12 @@ function removeWorkingListEntriesAtZeroQuantity(listType, rows = []) {
       foundZeroRateScfs: [],
       skippedAlreadyRemovedScfs: [],
       skippedDnmScfs: [],
-      checkedCount: 0,
+      checkedCount: diagnostics.totalReportRowsChecked,
       totalMailedRemoved: 0,
+      diagnostics,
     };
   }
 
-  const checkedRows = ensureArray(rows);
   const currentScfs = new Set(ensureArray(list.items).map((entry) => normalizeScf(entry?.scf)).filter(Boolean));
   const dnmScfs = getDnmReferenceScfSet();
   const foundZeroQuantityScfs = [];
@@ -7881,13 +8031,13 @@ function removeWorkingListEntriesAtZeroQuantity(listType, rows = []) {
   const scfsToRemove = [];
   const mailedByScf = new Map();
 
-  checkedRows.forEach((entry) => {
+  diagnostics.candidateRows.forEach((entry) => {
     const scf = normalizeScf(entry?.scf);
-    if (!scf || !isZeroQuantityNavigatorEntry(entry)) {
+    if (!scf || !entry.wouldRemove) {
       return;
     }
     foundZeroQuantityScfs.push(scf);
-    mailedByScf.set(scf, parseLooseMetricNumber(getTotalMailedFromRow(entry?.row || {})));
+    mailedByScf.set(scf, Number(entry.parsedMailedValue || 0));
     if (!currentScfs.has(scf)) {
       if (dnmScfs.has(scf)) {
         skippedDnmScfs.push(scf);
@@ -7921,8 +8071,9 @@ function removeWorkingListEntriesAtZeroQuantity(listType, rows = []) {
     foundZeroRateScfs: Array.from(new Set(foundZeroQuantityScfs)),
     skippedAlreadyRemovedScfs: Array.from(new Set(skippedAlreadyRemovedScfs)),
     skippedDnmScfs: Array.from(new Set(skippedDnmScfs)),
-    checkedCount: checkedRows.length,
+    checkedCount: diagnostics.totalReportRowsChecked,
     totalMailedRemoved,
+    diagnostics,
   };
 }
 
@@ -10733,28 +10884,51 @@ function renderAnalysisComparisonReviewPanel() {
     const metricKey = String(state.analysis.reviewBulkMetric || "soldRate").trim();
     const removalResult = removeWorkingListEntriesAtZeroQuantity(
       targetListType,
-      primaryNavigatorRows
+      primaryReport
     );
-    const visibleZeroQuantityScfs = primaryNavigatorRows
-      .filter((entry) => isZeroQuantityNavigatorEntry(entry))
-      .map((entry) => normalizeScf(entry?.scf))
-      .filter(Boolean);
+    const diagnostics = removalResult.diagnostics || {};
+    const checkedField = String(diagnostics.zeroRemovalFieldUsed || "").trim();
+    const checkedRowCount = Number(diagnostics.totalReportRowsChecked || 0);
+    const lastResultMessage = !checkedField
+      ? "Could not remove zeroes because no mailed/quantity field was found."
+      : removalResult.removedCount
+        ? `Removed ${removalResult.removedCount} zero-mailed SCF(s) from the working copy.`
+        : `Checked ${checkedRowCount} SCFs using ${checkedField}. No zero-mailed SCFs found.`;
+    state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics({
+      ...diagnostics,
+      setupId: String(state.analysis.currentSetupId || "").trim(),
+      comparisonName: getComparisonDisplayName(comparison),
+      selectedPrimaryReportId: String(primaryReport?.id || "").trim(),
+      resolvedSavedReportId: String(primaryReport?.id || "").trim(),
+      zeroRemovalLastResult: {
+        status: !checkedField ? "error" : removalResult.removedCount ? "removed" : "checked",
+        removedCount: Number(removalResult.removedCount || 0),
+        totalMailedRemoved: Number(removalResult.totalMailedRemoved || 0),
+        message: lastResultMessage,
+      },
+    });
     console.info("[analysis-zero-rate-removal]", {
+      setupId: String(state.analysis.currentSetupId || "").trim(),
       selectedComparisonId: comparison.id,
       selectedComparisonName: getComparisonDisplayName(comparison),
       selectedPrimaryReportId: primaryReport.id,
+      resolvedSavedReportId: primaryReport.id,
       selectedPrimaryReportName: primaryReportDisplayName,
       listType: targetListType,
       removalKind: "zero-quantity",
-      totalScfsChecked: removalResult.checkedCount,
-      visibleZeroQuantityScfs,
+      totalScfsChecked: checkedRowCount,
+      mailedFieldUsed: checkedField,
       zeroQuantityScfsFound: removalResult.foundZeroRateScfs,
+      zeroValueCount: Number(diagnostics.zeroValueCount || 0),
+      blankOrNullCount: Number(diagnostics.blankOrNullCount || 0),
+      nonNumericCount: Number(diagnostics.nonNumericCount || 0),
+      zeroRemovalSampleRows: diagnostics.zeroRemovalSampleRows || [],
       skippedAlreadyNotOnWorkingList: removalResult.skippedAlreadyRemovedScfs,
       skippedAlreadyDnm: removalResult.skippedDnmScfs,
       removedScfs: removalResult.removedScfs,
       totalMailedRemoved: removalResult.totalMailedRemoved,
     });
-    if (removalResult.removedCount > 0) {
+    if (checkedField && removalResult.removedCount > 0) {
       recordZeroRateRemovalAction({
         comparisonId: comparison.id,
         comparisonName: getComparisonDisplayName(comparison),
@@ -10772,29 +10946,18 @@ function renderAnalysisComparisonReviewPanel() {
       });
     }
     appendAnalysisReviewNote(
-      removalResult.removedCount
-        ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) with zero mailed quantity for pending removal using ${primaryReportDisplayName} only.`
-        : `Bulk removal decision: reviewed ${listType} SCFs with zero mailed quantity using ${primaryReportDisplayName} only; matching SCFs were already not on the working list or none were found.`
+      !checkedField
+        ? `Bulk removal decision: could not remove zero-mailed ${listType} SCFs because no mailed/quantity field was found in ${primaryReportDisplayName}.`
+        : removalResult.removedCount
+          ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) with zero mailed quantity for pending removal using ${primaryReportDisplayName} only.`
+          : `Bulk removal decision: checked ${checkedRowCount} ${listType} SCF(s) using ${checkedField} in ${primaryReportDisplayName}; no zero-mailed SCFs were found.`
     );
     invalidateComparisonReviewSummary();
     state.analysis.reviewBulkPreview = null;
     scheduleReviewStateAutosave("bulk-remove-zeroes");
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("bulk-remove-zeroes");
-    setStatus(
-      "analysis-comparison-selection-status",
-      removalResult.removedCount
-        ? `${removalResult.removedCount} SCF(s) with zero mailed quantity were marked for pending removal from the working ${listType} list using ${primaryReportDisplayName} only.`
-        : !removalResult.foundZeroRateScfs.length && visibleZeroQuantityScfs.length
-          ? `Zero-quantity SCFs are visible in the report (${visibleZeroQuantityScfs.join(", ")}), but they could not be matched into the working ${listType} removal set yet.`
-          : !removalResult.foundZeroRateScfs.length
-          ? `No zero-quantity SCFs were found in ${primaryReportDisplayName}.`
-          : removalResult.skippedDnmScfs.length && !removalResult.skippedAlreadyRemovedScfs.length
-            ? `Zero-quantity SCFs were found, but they are already DNM and not on the working ${listType} list.`
-            : removalResult.skippedAlreadyRemovedScfs.length && !removalResult.skippedDnmScfs.length
-              ? `Zero-quantity SCFs were found, but they were already removed from the working ${listType} list.`
-              : `Zero-quantity SCFs were found, but none needed removal because they were already not on the working ${listType} list and/or already DNM.`
-    );
+    setStatus("analysis-comparison-selection-status", lastResultMessage);
   });
 
   el("analysis-review-bulk-cancel-button")?.addEventListener("click", () => {
@@ -11421,6 +11584,7 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.reviewBaselineLists = normalizeReviewSyncLists(setup.reviewState?.reviewBaselineLists || []);
   state.analysis.reviewWorkingLists = normalizeReviewSyncLists(setup.reviewState?.reviewWorkingLists || []);
   state.analysis.reviewZeroRateRemovals = normalizeReviewZeroRateRemovals(setup.reviewState?.reviewZeroRateRemovals || []);
+  state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics(setup.reviewState?.reviewZeroRemovalDiagnostics || null);
   state.analysis.reviewBulkPreview = null;
   const comparisonReview = getComparisonReviewResultFromEntry(setup);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
@@ -11479,6 +11643,7 @@ function loadRunIntoWorkspace(run) {
   state.analysis.reviewBaselineLists = normalizeReviewSyncLists(run.reviewState?.reviewBaselineLists || []);
   state.analysis.reviewWorkingLists = normalizeReviewSyncLists(run.reviewState?.reviewWorkingLists || []);
   state.analysis.reviewZeroRateRemovals = normalizeReviewZeroRateRemovals(run.reviewState?.reviewZeroRateRemovals || []);
+  state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics(run.reviewState?.reviewZeroRemovalDiagnostics || null);
   state.analysis.reviewBulkPreview = null;
   const comparisonReview = getComparisonReviewResultFromEntry(run);
   state.analysis.reviewSummary = comparisonReview?.summary || null;
@@ -11546,6 +11711,7 @@ function buildAnalysisPayload(statusOverride) {
       reviewBaselineLists: normalizeReviewSyncLists(state.analysis.reviewBaselineLists),
       reviewWorkingLists: normalizeReviewSyncLists(state.analysis.reviewWorkingLists),
       reviewZeroRateRemovals: normalizeReviewZeroRateRemovals(state.analysis.reviewZeroRateRemovals),
+      reviewZeroRemovalDiagnostics: normalizeReviewZeroRemovalDiagnostics(state.analysis.reviewZeroRemovalDiagnostics),
     },
     results: state.analysis.reviewSummary
         ? {
