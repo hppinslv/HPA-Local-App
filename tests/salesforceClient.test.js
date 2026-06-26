@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const {
   buildFlatRowsFromDetailExport,
   calculateAnalysisCountRates,
+  hasAnalysisDetailExportRows,
+  normalizeScf,
   resolveAnalysisConvertedCount,
   shouldFallbackToSoqlForReportPayload,
 } = require("../services/salesforceClient");
@@ -131,4 +133,55 @@ test("zero mailed rows return zero rates without dividing by zero", () => {
     inForceRate: 0,
     convertedRate: 0,
   });
+});
+
+test("normalizeScf preserves leading zeros and pads short numeric values", () => {
+  assert.equal(normalizeScf(10), "010");
+  assert.equal(normalizeScf("10"), "010");
+  assert.equal(normalizeScf("010"), "010");
+  assert.equal(normalizeScf(893), "893");
+});
+
+test("rows with SCF 10, 010, and numeric 10 aggregate together under 010", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    { "SCF Grouping": "10", Key: "N", Mailed: 100, "Opp Count": 1, "In Force": 0, "Total Converted Monthly Premiums": 0 },
+    { "SCF Grouping": "010", Key: "N", Mailed: 50, "Opp Count": 0, "In Force": 1, "Total Converted Monthly Premiums": 15 },
+    { "SCF Grouping": 10, Key: "N", Mailed: 16, "Opp Count": 0, "In Force": 0, "Total Converted Monthly Premiums": 0 },
+  ]);
+
+  const row = getAggregateRow(dataset, "010");
+  assert.equal(row["Sum of Mailed"], "166");
+  assert.equal(row["Sum of Opp Count"], "1");
+  assert.equal(row["Sum of In Force"], "1");
+  assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Sold Rate"], "0.6024096386");
+  assert.equal(row["In Force Rate"], "0.6024096386");
+  assert.equal(row["Converted Rate"], "0.6024096386");
+});
+
+test("aggregate-shaped saved rows are not mistaken for detail export rows", () => {
+  assert.equal(
+    hasAnalysisDetailExportRows([
+      {
+        "SCF Grouping": "010",
+        "Sum of Mailed": "2,319",
+        "Sum of Opp Count": "1",
+        "Sold Rate": "0.0431220354",
+      },
+    ]),
+    false
+  );
+
+  assert.equal(
+    hasAnalysisDetailExportRows([
+      {
+        "SCF Grouping": "010",
+        Mailed: 2319,
+        "Opp Count": 1,
+        "In Force": 0,
+        "Total Converted Monthly Premiums": 0,
+      },
+    ]),
+    true
+  );
 });

@@ -32,6 +32,7 @@ const {
   writeReferenceListExport,
   getAnalysisArtifactPath,
   getAnalysisReport,
+  getAnalysisReportRateDebug,
   getAnalysisReportScfMetrics,
   getAnalysisReportExportPath,
   getAnalysisRun,
@@ -965,6 +966,18 @@ const server = http.createServer((request, response) => {
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to load SCF metrics." });
+      });
+    return;
+  }
+
+  const analysisReportScfDebugMatch = requestUrl.pathname.match(/^\/api\/analysis\/reports\/([^/]+)\/scf\/([^/]+)\/debug-rates$/);
+  if (analysisReportScfDebugMatch && request.method === "GET") {
+    getAnalysisReportRateDebug(analysisReportScfDebugMatch[1], analysisReportScfDebugMatch[2])
+      .then((debug) => {
+        sendJson(response, 200, { debug });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to load SCF rate debug." });
       });
     return;
   }

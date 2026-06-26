@@ -6,6 +6,7 @@ const {
   buildFlatRowsFromDetailExport,
   fetchAnalysisReportScfMetrics,
   fetchFlexibleSalesforceReportData,
+  hasAnalysisDetailExportRows,
   normalizeLabel,
 } = require("./salesforceClient");
 const { loadStateObject, queueStateSync } = require("./supabasePersistence");
@@ -47,6 +48,212 @@ function isSparseSavedAnalysisMetricRow(row = {}) {
     row["Sum of Total Converted Monthly Premiums"] ?? row["sum of total converted monthly premiums"] ?? 0
   );
   return oppCount > 0 && totalMonthlyPremium === 0 && inForceMonthlyPremium === 0 && convertedPremium === 0;
+}
+
+function getAnalysisMetricNumber(row = {}, labels = []) {
+  const requested = Array.isArray(labels) ? labels : [labels];
+  for (const label of requested) {
+    const normalizedTarget = normalizeLabel(label);
+    for (const [key, value] of Object.entries(row || {})) {
+      if (normalizeLabel(key) === normalizedTarget) {
+        return parseAnalysisMetricNumber(value);
+      }
+    }
+  }
+  return 0;
+}
+
+function getAnalysisMetricRawValue(row = {}, labels = []) {
+  const requested = Array.isArray(labels) ? labels : [labels];
+  for (const label of requested) {
+    const normalizedTarget = normalizeLabel(label);
+    for (const [key, value] of Object.entries(row || {})) {
+      if (normalizeLabel(key) === normalizedTarget) {
+        return value;
+      }
+    }
+  }
+  return "";
+}
+
+function findAnalysisSummaryRow(rows = [], normalizedScf, normalizedKeys = []) {
+  return ensureArray(rows).filter((row) => {
+    const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row.scf ?? "");
+    if (rowScf !== normalizedScf) {
+      return false;
+    }
+    if (!normalizedKeys.length) {
+      return true;
+    }
+    const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
+    return normalizedKeys.includes(rowKey);
+  });
+}
+
+function normalizeAnalysisStoredKeyCode(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "NHCL" || normalized === "N") {
+    return "N";
+  }
+  if (normalized === "RFC") {
+    return "RFC";
+  }
+  return normalized;
+}
+
+function getAnalysisRateFieldCandidates(rows = []) {
+  const candidates = {
+    mailed: new Set(),
+    soldCount: new Set(),
+    inForceCount: new Set(),
+    convertedPremium: new Set(),
+  };
+  const patterns = {
+    mailed: ["mailed"],
+    soldCount: ["opp count", "applications received", "application count", "sold"],
+    inForceCount: ["in force", "inforce"],
+    convertedPremium: ["converted monthly premium"],
+  };
+
+  ensureArray(rows).forEach((row) => {
+    Object.keys(row || {}).forEach((key) => {
+      const normalized = normalizeLabel(key);
+      Object.entries(patterns).forEach(([metric, metricPatterns]) => {
+        if (metricPatterns.some((pattern) => normalized.includes(pattern))) {
+          candidates[metric].add(key);
+        }
+      });
+    });
+  });
+
+  return {
+    mailed: Array.from(candidates.mailed),
+    soldCount: Array.from(candidates.soldCount),
+    inForceCount: Array.from(candidates.inForceCount),
+    convertedPremium: Array.from(candidates.convertedPremium),
+  };
+}
+
+function summarizeAnalysisRateRow(row = {}) {
+  const mailed = getAnalysisMetricNumber(row, ["Sum of Mailed", "Mailed"]);
+  const soldCount = getAnalysisMetricNumber(row, [
+    "Sum of Opp Count",
+    "Opp Count",
+    "Applications Received",
+    "Application Count",
+  ]);
+  const inForceCount = getAnalysisMetricNumber(row, ["Sum of In Force", "In Force"]);
+  const convertedCount = getAnalysisMetricNumber(row, ["Sum of Sold", "Sold", "Converted", "Sum of Converted"]);
+  const convertedPremiumTotal = getAnalysisMetricNumber(row, [
+    "Sum of Total Converted Monthly Premiums",
+    "Total Converted Monthly Premiums",
+  ]);
+  const soldRate = getAnalysisMetricNumber(row, ["Sold Rate"]);
+  const inForceRate = getAnalysisMetricNumber(row, ["In Force Rate"]);
+  const convertedRate = getAnalysisMetricNumber(row, ["Converted Rate"]);
+
+  return {
+    mailed,
+    soldCount,
+    inForceCount,
+    convertedCount,
+    convertedPremiumTotal,
+    soldRate,
+    inForceRate,
+    convertedRate,
+  };
+}
+
+function buildAnalysisOverwriteProtection(baseRow = {}, candidateRow = {}) {
+  const warnings = [];
+  [
+    "Sum of Mailed",
+    "Sum of Opp Count",
+    "Sum of In Force",
+    "Sum of Sold",
+    "Sold Rate",
+    "In Force Rate",
+    "Converted Rate",
+  ].forEach((label) => {
+    const baseValue = getAnalysisMetricNumber(baseRow, [label]);
+    const candidateValue = getAnalysisMetricNumber(candidateRow, [label]);
+    const candidateRaw = getAnalysisMetricRawValue(candidateRow, [label]);
+    if (
+      (candidateRaw === "" || candidateRaw === null || candidateRaw === undefined || candidateValue === 0) &&
+      baseValue > 0
+    ) {
+      warnings.push(`${label}: protected saved nonzero value against live zero`);
+    }
+  });
+  return warnings;
+}
+
+function choosePreferredAnalysisScfRow({
+  detailRow = null,
+  savedSummaryRow = null,
+  liveRow = null,
+} = {}) {
+  if (detailRow) {
+    return { row: detailRow, source: "detail-export-rows" };
+  }
+  if (savedSummaryRow) {
+    return { row: savedSummaryRow, source: "saved-summary-rows" };
+  }
+  if (liveRow) {
+    return { row: liveRow, source: "salesforce-scoped-refetch" };
+  }
+  return { row: null, source: "no-source" };
+}
+
+function shouldSupplementSavedSummaryRow(row = {}) {
+  const metrics = summarizeAnalysisRateRow(row);
+  return (
+    metrics.mailed > 0 &&
+    metrics.soldCount === 0 &&
+    metrics.inForceCount === 0 &&
+    metrics.convertedCount === 0 &&
+    metrics.soldRate === 0 &&
+    metrics.inForceRate === 0 &&
+    metrics.convertedRate === 0
+  );
+}
+
+function mergeAnalysisMetricRowsPreferNonZero(baseRow = {}, candidateRow = {}) {
+  const mergedRow = {
+    ...(baseRow && typeof baseRow === "object" ? baseRow : {}),
+    ...(candidateRow && typeof candidateRow === "object" ? candidateRow : {}),
+  };
+
+  [
+    "SCF Grouping",
+    "Key",
+    "Sum of Mailed",
+    "Sum of Opp Count",
+    "Sum of In Force",
+    "Sum of Sold",
+    "Sum of Total Monthly Premium",
+    "Sum of In Force Monthly Premium",
+    "Sum of Total Converted Monthly Premiums",
+    "Sold Rate",
+    "In Force Rate",
+    "Converted Rate",
+  ].forEach((label) => {
+    const baseRaw = getAnalysisMetricRawValue(baseRow, [label]);
+    const candidateRaw = getAnalysisMetricRawValue(candidateRow, [label]);
+    const baseValue = getAnalysisMetricNumber(baseRow, [label]);
+    const candidateValue = getAnalysisMetricNumber(candidateRow, [label]);
+    if (
+      (candidateRaw === "" || candidateRaw === null || candidateRaw === undefined || candidateValue === 0) &&
+      baseRaw !== "" &&
+      baseRaw !== null &&
+      baseRaw !== undefined &&
+      baseValue > 0
+    ) {
+      mergedRow[label] = baseRaw;
+    }
+  });
+
+  return mergedRow;
 }
 
 const DNM_CATALOG_HEADER = "Per Amalgamated, states we can not mail 9/19/2024:";
@@ -809,7 +1016,7 @@ function normalizePersistedAnalysisReports(reports = []) {
 
 function normalizePersistedAnalysisReport(report = {}) {
   const exportRows = ensureArray(report.exportRows);
-  if (!exportRows.length || typeof buildFlatRowsFromDetailExport !== "function") {
+  if (!exportRows.length || !hasAnalysisDetailExportRows(exportRows) || typeof buildFlatRowsFromDetailExport !== "function") {
     return { changed: false, report };
   }
 
@@ -2864,46 +3071,66 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
   }
 
   const savedExportRows = ensureArray(report.exportRows);
-  if (savedExportRows.length) {
+  const normalizedKeys = ensureArray(report.parameters?.key_codes)
+    .map((value) => normalizeAnalysisStoredKeyCode(value))
+    .filter(Boolean);
+
+  if (savedExportRows.length && hasAnalysisDetailExportRows(savedExportRows)) {
     const savedSummary = buildFlatRowsFromDetailExport(savedExportRows);
-    const normalizedKeys = ensureArray(report.parameters?.key_codes)
-      .map((value) => String(value || "").trim().toUpperCase())
-      .filter(Boolean);
-    const matchingSavedRows = ensureArray(savedSummary?.rows).filter((row) => {
-      const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row.scf ?? "");
-      if (rowScf !== normalizedScf) {
-        return false;
-      }
-      if (!normalizedKeys.length) {
-        return true;
-      }
-      const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
-      return normalizedKeys.includes(rowKey);
-    });
+    const matchingSavedRows = findAnalysisSummaryRow(savedSummary?.rows, normalizedScf, normalizedKeys);
     if (matchingSavedRows.length) {
       const preferredSavedRow =
         matchingSavedRows.find((row) => !isSparseSavedAnalysisMetricRow(row)) || matchingSavedRows[0];
       if (!isSparseSavedAnalysisMetricRow(preferredSavedRow)) {
-      return {
-        reportId: normalizedId,
-        scf: normalizedScf,
-        row: preferredSavedRow,
-        rows: matchingSavedRows,
-        source: "saved-export-rows",
-      };
+        return {
+          reportId: normalizedId,
+          scf: normalizedScf,
+          row: preferredSavedRow,
+          rows: matchingSavedRows,
+          source: "saved-detail-export-aggregate",
+        };
       }
     }
   }
 
   const parameters = report.parameters || {};
-  const result = await fetchAnalysisReportScfMetrics(parameters.report_id || DEFAULT_REPORT_ID, {
-    scf: normalizedScf,
-    keyCodes: ensureArray(parameters.key_codes),
-    dateRange: {
-      startDate: parameters.start_date || "",
-      endDate: parameters.end_date || "",
-    },
-  });
+  const savedSummaryRows = findAnalysisSummaryRow(report.rows, normalizedScf, normalizedKeys);
+  const savedSummaryRow = savedSummaryRows[0] || null;
+  const shouldFetchLiveFallback = !savedSummaryRow || shouldSupplementSavedSummaryRow(savedSummaryRow);
+
+  if (savedSummaryRow && !shouldFetchLiveFallback) {
+    return {
+      reportId: normalizedId,
+      scf: normalizedScf,
+      row: savedSummaryRow,
+      rows: savedSummaryRows,
+      source: "saved-summary-rows",
+    };
+  }
+
+  const result = shouldFetchLiveFallback
+    ? await fetchAnalysisReportScfMetrics(parameters.report_id || DEFAULT_REPORT_ID, {
+        scf: normalizedScf,
+        keyCodes: ensureArray(parameters.key_codes),
+        dateRange: {
+          startDate: parameters.start_date || "",
+          endDate: parameters.end_date || "",
+        },
+      })
+    : { row: null, rows: [] };
+
+  if (savedSummaryRow) {
+    const mergedRow = result?.row
+      ? mergeAnalysisMetricRowsPreferNonZero(savedSummaryRow, result.row)
+      : savedSummaryRow;
+    return {
+      reportId: normalizedId,
+      scf: normalizedScf,
+      row: mergedRow,
+      rows: result?.row ? [mergedRow] : savedSummaryRows,
+      source: result?.row ? "saved-summary-with-live-supplement" : "saved-summary-rows",
+    };
+  }
 
   return {
     reportId: normalizedId,
@@ -2912,6 +3139,131 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
     rows: result.rows,
     source: "salesforce-scoped-refetch",
   };
+}
+
+async function getAnalysisReportRateDebug(reportId, scf) {
+  const normalizedId = String(reportId || "").trim();
+  const normalizedScf = normalizeScf(scf);
+  if (!normalizedId) {
+    throw new Error("Analysis report not found.");
+  }
+  if (!normalizedScf) {
+    throw new Error("SCF is required.");
+  }
+
+  const report = readAnalysisReports().find((entry) => String(entry.id || "").trim() === normalizedId);
+  if (!report) {
+    throw new Error("Analysis report not found.");
+  }
+
+  const normalizedKeys = ensureArray(report.parameters?.key_codes)
+    .map((value) => normalizeAnalysisStoredKeyCode(value))
+    .filter(Boolean);
+  const savedExportRows = ensureArray(report.exportRows);
+  const savedExportIsDetail = hasAnalysisDetailExportRows(savedExportRows);
+  const matchingSavedDetailRows = savedExportIsDetail
+    ? savedExportRows.filter((row) => {
+        const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row.scf ?? "");
+        if (rowScf !== normalizedScf) {
+          return false;
+        }
+        if (!normalizedKeys.length) {
+          return true;
+        }
+        const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
+        return normalizedKeys.includes(rowKey);
+      })
+    : [];
+  const savedDetailAggregate = matchingSavedDetailRows.length
+    ? findAnalysisSummaryRow(buildFlatRowsFromDetailExport(matchingSavedDetailRows).rows, normalizedScf, normalizedKeys)[0] || null
+    : null;
+  const savedSummaryRows = findAnalysisSummaryRow(report.rows, normalizedScf, normalizedKeys);
+  const savedSummaryRow = savedSummaryRows[0] || null;
+
+  let liveMetrics = null;
+  let liveError = "";
+  try {
+    const parameters = report.parameters || {};
+    liveMetrics = await fetchAnalysisReportScfMetrics(parameters.report_id || DEFAULT_REPORT_ID, {
+      scf: normalizedScf,
+      keyCodes: ensureArray(parameters.key_codes),
+      dateRange: {
+        startDate: parameters.start_date || "",
+        endDate: parameters.end_date || "",
+      },
+    });
+  } catch (error) {
+    liveError = error instanceof Error ? error.message : String(error || "Unable to fetch live SCF metrics.");
+  }
+
+  const liveRow = liveMetrics?.row || null;
+  const selectedSource = choosePreferredAnalysisScfRow({
+    detailRow: savedDetailAggregate,
+    savedSummaryRow,
+    liveRow,
+  });
+  const chosenSource = selectedSource.source;
+  const overwriteWarnings = savedSummaryRow && liveRow
+    ? buildAnalysisOverwriteProtection(savedSummaryRow, liveRow)
+    : [];
+
+  const debugPayload = {
+    reportId: normalizedId,
+    requestedScf: String(scf || ""),
+    normalizedScf,
+    keyCodes: normalizedKeys,
+    sourcePriority: [
+      "detail-export-rows",
+      "saved-summary-rows",
+      "salesforce-scoped-refetch",
+    ],
+    chosenSource,
+    savedExportRowsAreDetail: savedExportIsDetail,
+    savedExportRowCount: savedExportRows.length,
+    matchingSavedDetailRowCount: matchingSavedDetailRows.length,
+    matchingSavedSummaryRowCount: savedSummaryRows.length,
+    candidateFieldNames: getAnalysisRateFieldCandidates([
+      ...matchingSavedDetailRows,
+      ...(savedSummaryRow ? [savedSummaryRow] : []),
+      ...(liveRow ? [liveRow] : []),
+    ]),
+    savedDetailAggregate: savedDetailAggregate
+      ? {
+          metrics: summarizeAnalysisRateRow(savedDetailAggregate),
+          row: savedDetailAggregate,
+        }
+      : null,
+    savedSummaryAggregate: savedSummaryRow
+      ? {
+          metrics: summarizeAnalysisRateRow(savedSummaryRow),
+          row: savedSummaryRow,
+        }
+      : null,
+    liveScopedAggregate: liveRow
+      ? {
+          metrics: summarizeAnalysisRateRow(liveRow),
+          row: liveRow,
+          source: liveMetrics?.source || "salesforce-scoped-refetch",
+        }
+      : null,
+    liveError,
+    mergeProtection: {
+      attemptedOverwrite: overwriteWarnings.length > 0,
+      warnings: overwriteWarnings,
+    },
+  };
+
+  console.log(`Analysis rate debug ${normalizedId} ${normalizedScf}:`, JSON.stringify({
+    source: debugPayload.chosenSource,
+    savedExportRowsAreDetail: debugPayload.savedExportRowsAreDetail,
+    matchingSavedDetailRowCount: debugPayload.matchingSavedDetailRowCount,
+    savedDetailMetrics: debugPayload.savedDetailAggregate?.metrics || null,
+    savedSummaryMetrics: debugPayload.savedSummaryAggregate?.metrics || null,
+    liveMetrics: debugPayload.liveScopedAggregate?.metrics || null,
+    liveError: debugPayload.liveError || "",
+  }));
+
+  return debugPayload;
 }
 
 function compareAnalysisReports(reportAId, reportBId, comparisonRequest = {}) {
@@ -4221,6 +4573,7 @@ module.exports = {
   compareAnalysisReports,
   getAnalysisArtifactPath,
   getAnalysisReport,
+  getAnalysisReportRateDebug,
   getAnalysisReportScfMetrics,
   getAnalysisReportExportPath,
   getAnalysisRun,
@@ -4233,6 +4586,9 @@ module.exports = {
   listAnalysisSetups,
   listReferenceLists,
   normalizeScf,
+  buildAnalysisOverwriteProtection,
+  choosePreferredAnalysisScfRow,
+  mergeAnalysisMetricRowsPreferNonZero,
   renameAnalysisReport,
   rebuildAnalysisReport,
   removeDnmStateGroup,

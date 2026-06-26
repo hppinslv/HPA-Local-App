@@ -59,6 +59,17 @@ Primary Report Navigator rates must be calculated from SCF-level counts, not fro
 - Do not introduce a new fallback path for navigator rows unless it follows the same formulas above.
 - If a change touches Analysis rates, comparison metrics, or Primary Report Navigator rows, verify the values for a known SCF before shipping.
 
+## Troubleshooting Wrong Rates
+
+- If most rates are zero, check SCF key normalization first, especially leading-zero matches like `010`, `011`, and `012`.
+- Keep SCF values as strings, trim whitespace, and left-pad numeric values shorter than three digits.
+- Do not change the formula unless the counts are already correct and only the final math is wrong.
+- Debug counts before rates: confirm mailed, sold/opportunity count, in-force count, converted count, and converted premium totals for the SCF.
+- Detail row aggregation is the source of truth whenever detail/export rows exist for that SCF.
+- Saved summary rows are only a fallback when detail rows are unavailable.
+- Zero fallback data must never overwrite nonzero detail-derived values.
+- Future changes must not calculate converted rate from converted premium dollars. Converted premium only decides whether a row counts as converted.
+
 ## Known Expectation
 
 The comparison cards and the Primary Report Navigator should agree for the same SCF once exact metrics are loaded.

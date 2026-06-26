@@ -6093,6 +6093,7 @@ async function requestAnalysisReportScfMetrics(reportId, scf) {
       state.analysis.reportScfMetricCache[cacheKey] = {
         status: "ready",
         row: nextRow,
+        source: payload?.metrics?.source || "",
         updatedAt: Date.now(),
       };
       scheduleAnalysisComparisonReviewRender(40);
@@ -6129,6 +6130,29 @@ function reportHasPremiumExportColumns(report) {
     labels.has("in force monthly premium") &&
     labels.has("total converted monthly premiums")
   );
+}
+
+function isNavigatorAggregateExportRow(row = {}) {
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+
+  return Object.keys(row).some((key) => {
+    const normalized = normalizeComparisonMetricKey(key);
+    return (
+      normalized === "sum of mailed" ||
+      normalized === "sum of opp count" ||
+      normalized === "sum of in force" ||
+      normalized === "sum of sold" ||
+      normalized === "sold rate" ||
+      normalized === "in force rate" ||
+      normalized === "converted rate"
+    );
+  });
+}
+
+function reportHasDetailExportRows(report) {
+  return getReportExportRowsWithScf(report).some((entry) => !isNavigatorAggregateExportRow(entry?.row));
 }
 
 function reportNeedsExactScfMetricFetch(report, rowEntry) {
@@ -6388,6 +6412,10 @@ function setComparisonSelectedReportIds(link, nextIds) {
 }
 
 function buildExportScfAggregateMap(report) {
+  if (!reportHasDetailExportRows(report)) {
+    return new Map();
+  }
+
   const exportRows = getReportEntriesForKeyCodeGroup(report, getReportExportRowsWithScf(report));
   const aggregateMap = new Map();
 
@@ -6702,11 +6730,40 @@ function buildPrimaryNavigatorRows(report) {
   return getUnifiedReportScfEntries(report).map((entry) => ({
     scf: entry.scf,
     row: entry.row,
+    source: entry.source || "",
     mailed: getRowMetricNumber(entry.row, "Sum of Mailed"),
     soldRate: getRowMetricNumber(entry.row, "Sold Rate"),
     inForceRate: getRowMetricNumber(entry.row, "In Force Rate"),
     convertedRate: getRowMetricNumber(entry.row, "Converted Rate"),
   }));
+}
+
+function logPrimaryNavigatorRateTrace(report, rows = [], scfs = ["010", "011", "012", "013", "014", "015"]) {
+  const normalizedReportId = String(report?.id || "").trim();
+  if (!normalizedReportId || !Array.isArray(rows) || !rows.length) {
+    return;
+  }
+
+  const targetScfs = new Set(ensureArray(scfs).map((entry) => normalizeScf(entry)).filter(Boolean));
+  rows
+    .filter((entry) => targetScfs.has(entry.scf))
+    .forEach((entry) => {
+      const cachedMetrics = getCachedAnalysisReportScfMetrics(normalizedReportId, entry.scf);
+      console.debug("Primary navigator rate trace", {
+        reportId: normalizedReportId,
+        scf: entry.scf,
+        source: entry.source || "",
+        exactSource: cachedMetrics?.source || "",
+        mailed: getRowMetricNumber(entry.row, "Sum of Mailed"),
+        soldCount: getRowMetricNumber(entry.row, "Sum of Opp Count"),
+        inForceCount: getRowMetricNumber(entry.row, "Sum of In Force"),
+        convertedCount: getRowMetricNumber(entry.row, "Sum of Sold"),
+        convertedPremiumTotal: getRowMetricNumber(entry.row, "Sum of Total Converted Monthly Premiums"),
+        soldRate: getRowMetricNumber(entry.row, "Sold Rate"),
+        inForceRate: getRowMetricNumber(entry.row, "In Force Rate"),
+        convertedRate: getRowMetricNumber(entry.row, "Converted Rate"),
+      });
+    });
 }
 
 function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs, options = {}) {
@@ -6745,6 +6802,7 @@ function mergeExactMetricsIntoNavigatorRows(rows = [], report, scfs, options = {
     return {
       scf: entry.scf,
       row: normalizedRow,
+      source: cachedMetrics.source || entry.source || "",
       mailed: getRowMetricNumber(normalizedRow, "Sum of Mailed"),
       soldRate: getRowMetricNumber(normalizedRow, "Sold Rate"),
       inForceRate: getRowMetricNumber(normalizedRow, "In Force Rate"),
@@ -8337,6 +8395,7 @@ function renderAnalysisComparisonReviewPanel() {
     [effectiveSelectedScf, ...visibleNavigatorScfs],
     { requestMissing: false }
   );
+  logPrimaryNavigatorRateTrace(primaryReport, primaryNavigatorRows);
   requestAnalysisReportScfMetrics(primaryReport?.id, effectiveSelectedScf);
   prefetchAnalysisReportScfMetrics(
     primaryReport,

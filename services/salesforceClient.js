@@ -947,6 +947,49 @@ function normalizeScf(value) {
   return digits.slice(-3).padStart(3, "0");
 }
 
+function isAnalysisAggregateRow(row = {}) {
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+
+  const keys = Object.keys(row);
+  return keys.some((key) => {
+    const normalized = normalizeLabel(key);
+    return (
+      normalized === "sum of mailed" ||
+      normalized === "sum of opp count" ||
+      normalized === "sum of in force" ||
+      normalized === "sum of sold" ||
+      normalized === "sold rate" ||
+      normalized === "in force rate" ||
+      normalized === "converted rate"
+    );
+  });
+}
+
+function isAnalysisDetailExportRow(row = {}) {
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+
+  const scf = normalizeScf(
+    row["SCF Grouping"] ??
+    row["scf grouping"] ??
+    row["SCF"] ??
+    row.scf ??
+    ""
+  );
+  if (!scf) {
+    return false;
+  }
+
+  return !isAnalysisAggregateRow(row);
+}
+
+function hasAnalysisDetailExportRows(rows = []) {
+  return Array.isArray(rows) && rows.some((row) => isAnalysisDetailExportRow(row));
+}
+
 function translateReportFieldToSoql(columnName, rootObject = null, preserveLeadingObject = false) {
   let translated = String(columnName || "").trim();
 
@@ -3412,6 +3455,11 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
         .filter(Boolean)
     )
   ).sort();
+  const filteredSummaryRows = filterAnalysisRows(finalizedFlattened.rows, filters);
+  const filteredExportRows = hasAnalysisDetailExportRows(preferredExport.rows)
+    ? filterAnalysisRows(preferredExport.rows, filters)
+    : [];
+
   return {
     reportId,
     filters: normalizedFilters,
@@ -3420,11 +3468,11 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     groupedReportUnavailableReason,
     columns: finalizedFlattened.columns,
     summaryValues: finalizedFlattened.summaryValues || [],
-    rows: filterAnalysisRows(finalizedFlattened.rows, filters),
-    exportColumns: finalizedFlattened.columns,
-    exportRows: filterAnalysisRows(finalizedFlattened.rows, filters),
+    rows: filteredSummaryRows,
+    exportColumns: filteredExportRows.length ? preferredExport.columns : [],
+    exportRows: filteredExportRows,
     unfilteredRowCount: finalizedFlattened.rows.length,
-    exportRowCount: filterAnalysisRows(finalizedFlattened.rows, filters).length,
+    exportRowCount: filteredExportRows.length,
     availableKeyValues,
     diagnostics,
   };
@@ -4109,8 +4157,11 @@ module.exports = {
   getAnalysisDebugFilePath,
   getConnectedSalesforceToken,
   getMonthDateRange,
+  hasAnalysisDetailExportRows,
+  isAnalysisDetailExportRow,
   mapColumnLabels,
   normalizeLabel,
+  normalizeScf,
   parseDateValue,
   parseNumber,
   resolveAnalysisConvertedCount,
