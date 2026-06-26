@@ -5444,6 +5444,59 @@ function getAnalysisReportKeyCodeGroup(report) {
   return "";
 }
 
+function resolveAnalysisComparisonNameFromGroup(keyCodeGroup = "") {
+  return String(keyCodeGroup || "").trim().toUpperCase() === "RFC" ? "Refinance" : "New Home";
+}
+
+function inferAnalysisComparisonKeyCodeGroupFromPull(pull = {}) {
+  const directSources = [
+    pull?.keyCodeGroup,
+    pull?.key_code_group,
+    pull?.clientType,
+    pull?.client_type,
+  ];
+
+  for (const source of directSources) {
+    const normalized = String(source || "").trim().toUpperCase();
+    if (ANALYSIS_KEY_CODE_GROUPS.includes(normalized)) {
+      return normalized;
+    }
+    if (normalized === "N") {
+      return "NHCL";
+    }
+  }
+
+  const keyCodes = ensureArray(pull?.keyCodes ?? pull?.key_codes)
+    .map((entry) => String(entry || "").trim().toUpperCase())
+    .filter(Boolean);
+  if (keyCodes.includes("RFC")) {
+    return "RFC";
+  }
+  if (keyCodes.includes("NHCL") || keyCodes.includes("N")) {
+    return "NHCL";
+  }
+
+  const nameSources = [
+    pull?.reportName,
+    pull?.report_name,
+    pull?.analysisLabel,
+    pull?.label,
+    pull?.name,
+  ];
+  for (const source of nameSources) {
+    const text = String(source || "").trim();
+    if (!text) continue;
+    if (/^RFC\b/i.test(text) || /^Refinance\b/i.test(text)) {
+      return "RFC";
+    }
+    if (/^NHCL\b/i.test(text) || /^New Home\b/i.test(text)) {
+      return "NHCL";
+    }
+  }
+
+  return "";
+}
+
 function deriveComparisonKeyCodeGroupFromReportIds(reportIds = []) {
   const reportMap = getAvailableAnalysisReportMap();
   const groups = Array.from(
@@ -5511,6 +5564,97 @@ function getPreferredComparisonId(comparisons = []) {
 
   const firstCustomNamed = comparisons.find((entry, index) => hasCustomComparisonName(entry, index));
   return firstCustomNamed?.id || comparisons[0]?.id || "";
+}
+
+function hasUsableComparisonSelection(entries = []) {
+  return ensureArray(entries).some((entry) => getComparisonSelectedReportIds(entry).length >= 2);
+}
+
+function buildRecoveredComparisonLinksFromWorkspace() {
+  const pullsByGroup = new Map();
+  const reportMap = buildComparisonReviewReportMap();
+
+  ensureArray(state.analysis.reportPulls).forEach((pull) => {
+    const candidateIds = [
+      pull?.savedReportId,
+      pull?.id,
+      pull?.pullId,
+      pull?.pull_id,
+    ]
+      .map((entry) => String(entry || "").trim())
+      .filter(Boolean);
+    const matchedReport = candidateIds
+      .map((reportId) => reportMap.get(reportId))
+      .find(Boolean);
+    const keyCodeGroup = getAnalysisReportKeyCodeGroup(matchedReport) || inferAnalysisComparisonKeyCodeGroupFromPull(pull);
+    const selectedReportId = String(
+      pull?.savedReportId
+      || matchedReport?.id
+      || pull?.id
+      || ""
+    ).trim();
+    if (!keyCodeGroup || !selectedReportId) {
+      return;
+    }
+    const existing = pullsByGroup.get(keyCodeGroup) || [];
+    existing.push(selectedReportId);
+    pullsByGroup.set(keyCodeGroup, existing);
+  });
+
+  if (!pullsByGroup.size) {
+    ensureArray(state.analysis.savedReports).forEach((report) => {
+      const keyCodeGroup = getAnalysisReportKeyCodeGroup(report);
+      const reportId = String(report?.id || "").trim();
+      if (!keyCodeGroup || !reportId) {
+        return;
+      }
+      const existing = pullsByGroup.get(keyCodeGroup) || [];
+      existing.push(reportId);
+      pullsByGroup.set(keyCodeGroup, existing);
+    });
+  }
+
+  return Array.from(pullsByGroup.entries())
+    .map(([keyCodeGroup, reportIds], index) => {
+      const selectedReportIds = Array.from(new Set(reportIds.filter(Boolean))).slice(0, 5);
+      if (selectedReportIds.length < 2) {
+        return null;
+      }
+      return createComparisonLink(index, {
+        id: `comparison_${String(keyCodeGroup || index + 1).trim().toLowerCase()}`,
+        comparisonName: resolveAnalysisComparisonNameFromGroup(keyCodeGroup),
+        keyCodeGroup,
+        selectedReportIds,
+        reportIds: selectedReportIds,
+        reportAId: selectedReportIds[0] || "",
+        reportBId: selectedReportIds[1] || "",
+      });
+    })
+    .filter(Boolean);
+}
+
+function recoverComparisonSetupFromWorkspace() {
+  if (
+    hasUsableComparisonSelection(state.analysis.comparisonRequests)
+    || hasUsableComparisonSelection(state.analysis.comparisonLinks)
+  ) {
+    return false;
+  }
+
+  const recoveredLinks = buildRecoveredComparisonLinksFromWorkspace();
+  if (!recoveredLinks.length) {
+    return false;
+  }
+
+  state.analysis.comparisonLinks = recoveredLinks;
+  state.analysis.comparisonRequests = recoveredLinks.map((entry, index) => createComparisonLink(index, entry));
+  if (!state.analysis.selectedComparisonId) {
+    state.analysis.selectedComparisonId = recoveredLinks[0]?.id || "";
+  }
+  if (!state.analysis.lastEditedComparisonId) {
+    state.analysis.lastEditedComparisonId = recoveredLinks[0]?.id || "";
+  }
+  return true;
 }
 
 function focusComparisonReviewSummary() {
@@ -9472,9 +9616,13 @@ function renderAnalysisComparisonReviewPanel() {
   if (completeButton) {
     completeButton.disabled = true;
   }
+  if (recoverComparisonSetupFromWorkspace()) {
+    scheduleAnalysisComparisonReviewRender(20);
+    return;
+  }
   const comparisons = syncComparisonRequestsFromLinks();
 
-  if (!comparisons.length) {
+  if (!comparisons.length || !hasUsableComparisonSelection(comparisons)) {
     container.innerHTML = '<div class="empty-state-block">No comparisons yet.</div>';
     return;
   }
@@ -9501,6 +9649,14 @@ function renderAnalysisComparisonReviewPanel() {
 
   const { comparison, reports, primaryReport, primaryRows, selectedScf } = context;
   if (!reports.length || !primaryReport) {
+    if (recoverComparisonSetupFromWorkspace()) {
+      scheduleAnalysisComparisonReviewRender(20);
+      return;
+    }
+    if (Array.isArray(state.analysis.savedReports) && state.analysis.savedReports.length) {
+      container.innerHTML = '<div class="empty-state-block">Saved reports were found, but the comparison setup could not be restored. Go back to Set Up Comparison and save the comparison again.</div>';
+      return;
+    }
     container.innerHTML = '<div class="empty-state-block">Reloading comparison reports...</div>';
     void loadAnalysisReports()
       .catch(() => null)
@@ -10970,6 +11126,7 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.comparisonLinks = state.analysis.comparisonRequests.length
     ? state.analysis.comparisonRequests.map((entry, index) => createComparisonLink(index, entry))
     : [createComparisonLink(0)];
+  recoverComparisonSetupFromWorkspace();
   state.analysis.comparisonResults = [];
   state.analysis.selectedComparisonId = String(setup.reviewState?.selectedComparisonId || "").trim();
   state.analysis.lastEditedComparisonId = String(setup.reviewState?.lastEditedComparisonId || "").trim();
@@ -11027,6 +11184,7 @@ function loadRunIntoWorkspace(run) {
   state.analysis.comparisonLinks = state.analysis.comparisonRequests.length
     ? state.analysis.comparisonRequests.map((entry, index) => createComparisonLink(index, entry))
     : [createComparisonLink(0)];
+  recoverComparisonSetupFromWorkspace();
   state.analysis.comparisonResults = [];
   state.analysis.selectedComparisonId = String(run.reviewState?.selectedComparisonId || "").trim();
   state.analysis.lastEditedComparisonId = String(run.reviewState?.lastEditedComparisonId || "").trim();
@@ -11252,6 +11410,7 @@ async function loadAnalysisReports() {
   });
   state.analysis.comparisonLinks = remapComparisonReportIds(state.analysis.comparisonLinks);
   state.analysis.comparisonRequests = remapComparisonReportIds(state.analysis.comparisonRequests);
+  recoverComparisonSetupFromWorkspace();
   const validReportIds = new Set(rows.map((report) => String(report.id || "").trim()).filter(Boolean));
   setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => validReportIds.has(id)));
   if (!tbody) {
