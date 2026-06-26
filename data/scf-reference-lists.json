@@ -827,7 +827,7 @@
     {
       "type": "nhcl",
       "name": "NHCL Mailing SCFs",
-      "sourceName": "NHCL SCF's_2025.10.xlsx",
+      "sourceName": "NHCL SCF's_2025.10",
       "items": [
         {
           "scf": "010",
@@ -3129,7 +3129,7 @@
     {
       "type": "rfc",
       "name": "RFC Mailing SCFs",
-      "sourceName": "RFC SCF's_2025.10.xlsx",
+      "sourceName": "RFC SCF's_2025.10",
       "items": [
         {
           "scf": "011",

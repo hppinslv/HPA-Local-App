@@ -393,6 +393,83 @@ test("delete removes only the requested persisted comparison setup", (t) => {
   assert.equal(updated.comparisonSetups[0].id, "comparison_rfc");
 });
 
+test("completed comparison review persistence keeps detailed added and removed SCF rows", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const saved = service.saveAnalysisSetup(createComparisonPayload({
+    status: "complete",
+    reviewState: {
+      selectedComparisonId: "comparison_nhcl",
+      lastEditedComparisonId: "comparison_nhcl",
+      reviewPrimaryReportIds: {
+        comparison_nhcl: "report_a",
+      },
+      reviewSelectedScfs: {
+        comparison_nhcl: "010",
+      },
+      reviewCompletedByName: "Melinda Harris",
+      reviewCompletedOnDate: "2026-06-26",
+      reviewBaselineLists: [
+        { type: "nhcl", items: [{ scf: "010", state: "" }, { scf: "011", state: "" }] },
+        { type: "rfc", items: [{ scf: "143", state: "" }] },
+      ],
+      reviewWorkingLists: [
+        { type: "nhcl", items: [{ scf: "010", state: "" }] },
+        { type: "rfc", items: [{ scf: "143", state: "" }, { scf: "144", state: "" }] },
+      ],
+    },
+    results: {
+      comparisonReview: {
+        summary: {
+          generatedAt: "2026-06-26T15:30:00.000Z",
+          runNotes: "Review notes",
+          lists: {
+            nhcl: {
+              added: [],
+              removed: [{ scf: "011", state: "" }],
+              blocked: [],
+              addedCount: 0,
+              removedCount: 1,
+              blockedCount: 0,
+            },
+            rfc: {
+              added: [{ scf: "144", state: "" }],
+              removed: [],
+              blocked: [],
+              addedCount: 1,
+              removedCount: 0,
+              blockedCount: 0,
+            },
+          },
+          summary: {
+            nhclAdded: 0,
+            nhclRemoved: 1,
+            rfcAdded: 1,
+            rfcRemoved: 0,
+            blockedCount: 0,
+          },
+          violations: [],
+        },
+        notes: "Review notes",
+        completedAt: "2026-06-26T15:30:00.000Z",
+        completedByName: "Melinda Harris",
+        completedOnDate: "2026-06-26",
+      },
+    },
+  }));
+
+  const reopened = service.getAnalysisSetup(saved.id);
+  assert.equal(reopened.results.comparisonReview.summary.lists.nhcl.removed[0].scf, "011");
+  assert.equal(reopened.results.comparisonReview.summary.lists.rfc.added[0].scf, "144");
+  assert.equal(reopened.results.comparisonReview.completedByName, "Melinda Harris");
+});
+
 test("undo latest completed analysis restores mailing lists to the pre-completion snapshot", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);
@@ -431,6 +508,51 @@ test("undo latest completed analysis restores mailing lists to the pre-completio
   assert.deepEqual(nhclAfterUndo.items.map((entry) => entry.scf).sort(), ["010"]);
   assert.deepEqual(rfcAfterUndo.items.map((entry) => entry.scf).sort(), ["143"]);
   assert.ok(nhclAfterUndo.history.some((entry) => entry.actionType === "undo-analysis-complete"));
+});
+
+test("deleting a completed analysis restores list history and keeps normalized source names", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir, {
+    lists: [
+      { type: "dnm", name: "Do Not Mail", sourceName: "Test", items: [] },
+      { type: "nhcl", name: "NHCL Mailing SCFs", sourceName: "NHCL SCF's_2025.10.xlsx", items: [{ scf: "010", state: "" }] },
+      { type: "rfc", name: "RFC Mailing SCFs", sourceName: "RFC SCF's_2025.10.xlsx", items: [{ scf: "143", state: "" }] },
+      { type: "candidate", name: "Candidate SCFs", sourceName: "Test", items: [] },
+    ],
+  });
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const setup = service.saveAnalysisSetup({
+    ...createComparisonPayload({
+      status: "complete",
+      completedAt: "2026-06-26T15:30:00.000Z",
+      referenceListsSnapshot: [
+        { type: "nhcl", sourceName: "NHCL SCF's_2025.10", items: [{ scf: "010", state: "" }] },
+        { type: "rfc", sourceName: "RFC SCF's_2025.10", items: [{ scf: "143", state: "" }] },
+      ],
+      referenceListChanges: [
+        { type: "nhcl", added: [{ scf: "011", state: "" }], removed: [] },
+        { type: "rfc", added: [], removed: [{ scf: "143", state: "" }] },
+      ],
+    }),
+  });
+
+  const deletion = service.deleteAnalysisSetup(setup.id, {
+    revertReferenceLists: true,
+    actor: "Melinda Harris",
+  });
+  const nhclAfterDelete = service.getReferenceListByType("nhcl");
+  const rfcAfterDelete = service.getReferenceListByType("rfc");
+
+  assert.deepEqual(deletion.revertedLists.sort(), ["nhcl", "rfc"]);
+  assert.equal(nhclAfterDelete.sourceName, "NHCL SCF's_2025.10");
+  assert.equal(rfcAfterDelete.sourceName, "RFC SCF's_2025.10");
+  assert.ok(nhclAfterDelete.history.some((entry) => entry.actionType === "restore-analysis-delete"));
+  assert.ok(rfcAfterDelete.history.some((entry) => entry.actionType === "restore-analysis-delete"));
 });
 
 test("only the most recent completed analysis can be undone", (t) => {

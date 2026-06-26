@@ -74,6 +74,7 @@ const state = {
     runName: "",
     runNotes: "",
     currentSetupId: "",
+    currentSetupStatus: "",
     currentRunId: "",
     currentReportId: "",
     runPollHandle: null,
@@ -107,6 +108,7 @@ const state = {
     reviewSummaryApproved: false,
     reviewCompletedByName: "",
     reviewCompletedOnDate: "",
+    readOnlyReview: false,
     reviewSyncVersion: 0,
     reportScfMetricCache: {},
     editingReportId: "",
@@ -119,6 +121,7 @@ const state = {
       x: 16,
       y: 16,
     },
+    mailingListViewTab: "current",
     mailingListHistoryPreview: null,
   },
   monthly: {
@@ -1497,6 +1500,15 @@ function logComparisonSetupPersistenceContext(reason = "compare-review-open") {
   });
 }
 
+function isCurrentAnalysisReadOnly() {
+  return state.analysis.readOnlyReview === true;
+}
+
+function isCompletedAnalysisSetup(entry = {}) {
+  return String(entry?.status || "").trim().toLowerCase() === "complete"
+    && !String(entry?.completionUndoneAt || entry?.completion_undone_at || "").trim();
+}
+
 function persistUiState() {
   try {
     window.localStorage.setItem(
@@ -1741,6 +1753,9 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
 }
 
 function scheduleReviewStateAutosave(reason = "review-state-change") {
+  if (isCurrentAnalysisReadOnly()) {
+    return;
+  }
   persistAnalysisSetupDraft();
   const hasSetupContext =
     String(state.analysis.currentSetupId || "").trim()
@@ -1874,15 +1889,35 @@ function getComparisonReviewResultFromEntry(entry = {}) {
   if (!comparisonReview || typeof comparisonReview !== "object") {
     return null;
   }
+  const savedSummary = comparisonReview.summary && typeof comparisonReview.summary === "object"
+    ? comparisonReview.summary
+    : null;
+  const hasReviewSnapshots =
+    ensureArray(entry?.reviewState?.reviewBaselineLists).length > 0
+    || ensureArray(entry?.reviewState?.reviewWorkingLists).length > 0;
+  const rebuiltSummary = hasReviewSnapshots
+    ? buildComparisonReviewSummaryFromSnapshots(
+        entry.reviewState?.reviewBaselineLists || [],
+        entry.reviewState?.reviewWorkingLists || [],
+        savedSummary?.runNotes || entry?.notes || ""
+      )
+    : null;
+  const normalizedSummary = rebuiltSummary
+    ? {
+        ...(savedSummary || {}),
+        ...rebuiltSummary,
+        runNotes: String(savedSummary?.runNotes || rebuiltSummary.runNotes || "").trim(),
+      }
+    : savedSummary;
   return {
     ...comparisonReview,
-    summary: comparisonReview.summary && typeof comparisonReview.summary === "object"
+    summary: normalizedSummary
       ? {
-          ...comparisonReview.summary,
-          completedAt: comparisonReview.completedAt || comparisonReview.summary.completedAt || null,
-          completedByName: comparisonReview.completedByName || comparisonReview.summary.completedByName || "",
-          completedOnDate: comparisonReview.completedOnDate || comparisonReview.summary.completedOnDate || "",
-          canUndoLatestCompletion: comparisonReview.canUndoLatestCompletion === true || comparisonReview.summary.canUndoLatestCompletion === true,
+          ...normalizedSummary,
+          completedAt: comparisonReview.completedAt || normalizedSummary.completedAt || null,
+          completedByName: comparisonReview.completedByName || normalizedSummary.completedByName || "",
+          completedOnDate: comparisonReview.completedOnDate || normalizedSummary.completedOnDate || "",
+          canUndoLatestCompletion: comparisonReview.canUndoLatestCompletion === true || normalizedSummary.canUndoLatestCompletion === true,
         }
       : comparisonReview.summary,
   };
@@ -1891,7 +1926,10 @@ function getComparisonReviewResultFromEntry(entry = {}) {
 function resolveAnalysisLandingFromEntry(entry = {}) {
   const comparisonReview = getComparisonReviewResultFromEntry(entry);
   if (comparisonReview?.summary) {
-    return { panel: "compare-review", summaryMode: "review" };
+    return {
+      panel: "compare-review",
+      summaryMode: isCompletedAnalysisSetup(entry) ? "summary" : "review",
+    };
   }
 
   if (Array.isArray(entry?.comparisonRequests) && entry.comparisonRequests.length) {
@@ -2255,6 +2293,21 @@ function renderDnmStateSelect(list) {
   select.disabled = states.length === 0;
 }
 
+function updateMailingListViewTabs() {
+  const activeTab = String(state.analysis.mailingListViewTab || "current").trim().toLowerCase() === "history"
+    ? "history"
+    : "current";
+  state.analysis.mailingListViewTab = activeTab;
+  all("[data-mailing-list-view-tab]").forEach((button) => {
+    button.classList.toggle(
+      "is-active",
+      button.getAttribute("data-mailing-list-view-tab") === activeTab
+    );
+  });
+  show(el("mailing-list-current-panel"), activeTab === "current");
+  show(el("mailing-list-history-panel"), activeTab === "history");
+}
+
 function buildBucketedMailingRows(items = []) {
   const maxRowsByBucket = {};
   const bucketMap = new Map();
@@ -2285,12 +2338,14 @@ function buildBucketedMailingRows(items = []) {
   return { bucketMap, maxRows };
 }
 
-function renderMailingListRows(list) {
-  const tbody = el("mailing-list-body");
-  const head = el("mailing-list-table-head");
+function renderMailingListRowsInto(list, options = {}) {
+  const tbody = options.tbodyId ? el(options.tbodyId) : el("mailing-list-body");
+  const head = options.headId ? el(options.headId) : el("mailing-list-table-head");
   if (!tbody) return;
-  const query = (state.analysis.search || "").toLowerCase();
+  const query = String(options.query ?? state.analysis.search ?? "").toLowerCase();
   const isDnm = list?.type === "dnm";
+  const allowRemoval = options.allowRemoval !== false;
+  const emptyMessage = String(options.emptyMessage || "").trim();
 
   if (head) {
     head.innerHTML = isDnm
@@ -2316,7 +2371,7 @@ function renderMailingListRows(list) {
       const row = document.createElement("tr");
       row.innerHTML =
         '<td colspan="3" class="empty-cell">' +
-        (query ? "No matches for this search." : "No states in this list.") +
+        (query ? "No matches for this search." : emptyMessage || "No states in this list.") +
         "</td>";
       tbody.appendChild(row);
       return;
@@ -2325,8 +2380,12 @@ function renderMailingListRows(list) {
     filteredGroups.forEach((group) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${esc(group.state || group.label || "")}</td><td>${esc(group.scfText || "")}</td>
-        <td class="table-action-cell"><button data-action="delete-dnm-state" data-state-key="${esc(group.key || "")}"
-        class="secondary-button table-action-button">Remove State</button></td>`;
+        <td class="table-action-cell">${
+          allowRemoval
+            ? `<button data-action="delete-dnm-state" data-state-key="${esc(group.key || "")}"
+        class="secondary-button table-action-button">Remove State</button>`
+            : ""
+        }</td>`;
       tbody.appendChild(tr);
     });
     return;
@@ -2345,7 +2404,7 @@ function renderMailingListRows(list) {
     const row = document.createElement("tr");
     row.innerHTML =
       `<td colspan="${isDnm ? 3 : 10}" class="empty-cell">` +
-      (query ? "No matches for this search." : "No records in this list.") +
+      (query ? "No matches for this search." : emptyMessage || "No records in this list.") +
       "</td>";
     tbody.appendChild(row);
     return;
@@ -2360,17 +2419,29 @@ function renderMailingListRows(list) {
         return "<td></td>";
       }
       const displayValue = entry.state ? `${entry.scf} ${entry.state}` : entry.scf;
+      const removeMarkup = allowRemoval
+        ? `<button data-action="delete-list-item" data-scf="${esc(entry.scf)}" class="secondary-button mailing-list-grid-remove">Remove</button>`
+        : "";
       return (
         `<td class="mailing-list-grid-cell">` +
         `<div class="mailing-list-grid-entry">` +
         `<span class="mailing-list-grid-text">${esc(displayValue)}</span>` +
-        `<button data-action="delete-list-item" data-scf="${esc(entry.scf)}" class="secondary-button mailing-list-grid-remove">Remove</button>` +
+        removeMarkup +
         `</div>` +
         `</td>`
       );
     }).join("");
     tbody.appendChild(tr);
   }
+}
+
+function renderMailingListRows(list) {
+  renderMailingListRowsInto(list, {
+    headId: "mailing-list-table-head",
+    tbodyId: "mailing-list-body",
+    query: state.analysis.search || "",
+    allowRemoval: true,
+  });
 }
 
 function getMailingListHistoryActionLabel(actionType) {
@@ -2388,53 +2459,7 @@ function getMailingListHistoryActionLabel(actionType) {
   return labels[normalized] || normalized || "Update";
 }
 
-function buildMailingListPreviewMarkup(listType, items = []) {
-  const normalizedType = String(listType || "").trim().toLowerCase();
-  const normalizedItems = Array.isArray(items) ? items : [];
-  if (!normalizedItems.length) {
-    return '<div class="empty-state-block">No items in this snapshot.</div>';
-  }
-
-  if (normalizedType === "dnm") {
-    const groups = normalizedItems
-      .reduce((map, entry) => {
-        const state = String(entry.state || "").trim() || "Unknown";
-        if (!map.has(state)) {
-          map.set(state, []);
-        }
-        map.get(state).push(normalizeScf(entry.scf));
-        return map;
-      }, new Map());
-    return `
-      <div class="analysis-review-summary-list analysis-review-summary-list-rows">
-        ${Array.from(groups.entries())
-          .sort((left, right) => left[0].localeCompare(right[0]))
-          .map(([state, scfs]) => `
-            <div class="analysis-review-summary-row-item">
-              <strong>${esc(state)}</strong> <span>${esc(scfs.filter(Boolean).join(", "))}</span>
-            </div>
-          `)
-          .join("")}
-      </div>
-    `;
-  }
-
-  return `
-    <div class="analysis-review-summary-list analysis-review-summary-list-rows">
-      ${normalizedItems
-        .slice()
-        .sort((left, right) => String(left.scf || "").localeCompare(String(right.scf || ""), undefined, { numeric: true }))
-        .map((entry) => `
-          <div class="analysis-review-summary-row-item">
-            <strong>${esc(entry.scf)}</strong>${entry.state ? ` <span>${esc(entry.state)}</span>` : ""}
-          </div>
-        `)
-        .join("")}
-    </div>
-  `;
-}
-
-function renderMailingListHistoryPreview(listType, preview = null) {
+function legacyRenderMailingListHistoryPreview(listType, preview = null) {
   const container = el("mailing-list-history-preview");
   if (!container) {
     return;
@@ -2491,6 +2516,49 @@ function renderMailingListHistory(list) {
   renderMailingListHistoryPreview(list?.type || "", null);
 }
 
+function renderMailingListHistoryPreview(listType, preview = null) {
+  const title = el("mailing-list-history-preview-title");
+  const source = el("mailing-list-history-preview-source");
+  const updated = el("mailing-list-history-preview-updated");
+  const count = el("mailing-list-history-preview-count");
+  const head = el("mailing-list-history-preview-head");
+  const body = el("mailing-list-history-preview-body");
+  if (!title || !source || !updated || !count || !body) {
+    return;
+  }
+  if (!preview || !preview.snapshotType) {
+    title.textContent = "Choose a snapshot";
+    source.textContent = "Select Before or After to preview the list.";
+    updated.textContent = "";
+    count.textContent = "";
+    if (head) {
+      head.innerHTML = "<tr><th>SCF</th><th>State</th></tr>";
+    }
+    body.innerHTML = '<tr><td colspan="2" class="empty-cell">Choose a history snapshot to preview what the list looked like.</td></tr>';
+    return;
+  }
+
+  const items = Array.isArray(preview.items) ? preview.items : [];
+  title.textContent = preview.snapshotType === "before" ? "Before Snapshot" : "After Snapshot";
+  source.textContent = `${getMailingListHistoryActionLabel(preview.actionType)}${preview.sourceName ? ` · ${preview.sourceName}` : ""}`;
+  updated.textContent = preview.changedAt ? `Changed: ${formatDate(preview.changedAt)}` : "";
+  count.textContent = `Count: ${items.length}`;
+  renderMailingListRowsInto(
+    {
+      type: listType,
+      items,
+      stateGroups: preview.stateGroups || [],
+    },
+    {
+      headId: "mailing-list-history-preview-head",
+      tbodyId: "mailing-list-history-preview-body",
+      query: "",
+      allowRemoval: false,
+      emptyMessage: "No items in this snapshot.",
+    }
+  );
+}
+
 async function removeDnmState(stateKey) {
   const key = String(stateKey || "").trim();
   if (!key) return;
@@ -2511,6 +2579,7 @@ function renderMailingList(list) {
   renderDnmStateSelect(list);
   renderMailingListRows(list);
   renderMailingListHistory(list);
+  updateMailingListViewTabs();
 }
 
 async function loadAndRenderMailingList(type) {
@@ -5367,8 +5436,12 @@ function getReviewWorkingListMap() {
   const lists = Array.isArray(state.analysis.reviewWorkingLists)
     ? state.analysis.reviewWorkingLists
     : [];
+  return buildReviewListMapFromSnapshots(lists);
+}
+
+function buildReviewListMapFromSnapshots(lists = []) {
   const map = new Map();
-  lists.forEach((entry) => {
+  ensureArray(lists).forEach((entry) => {
     if (!entry || !entry.type) return;
     const normalizedType = String(entry.type).trim().toLowerCase();
     map.set(normalizedType, ensureArray(entry.items).map((item) => {
@@ -5392,13 +5465,13 @@ function normalizeSummaryRows(rows) {
     .filter((entry) => entry.scf);
 }
 
-function buildComparisonReviewSummaryFromClient() {
-  const baselineMap = getReviewBaselineListMap();
-  const workingMap = getReviewWorkingListMap();
+function buildComparisonReviewSummaryFromSnapshots(baselineLists = [], workingLists = [], runNotesValue = "") {
+  const baselineMap = buildReviewListMapFromSnapshots(baselineLists);
+  const workingMap = buildReviewListMapFromSnapshots(workingLists);
   const dnmSet = new Set(normalizeSummaryRows(baselineMap.get("dnm") || []).map((entry) => entry.scf));
   const listTypes = ["nhcl", "rfc"];
   const result = {};
-  const runNotes = String(state.analysis.runNotes || "").trim();
+  const runNotes = String(runNotesValue || "").trim();
 
   listTypes.forEach((listType) => {
     const baselineRows = normalizeSummaryRows(baselineMap.get(listType) || []);
@@ -5464,6 +5537,14 @@ function buildComparisonReviewSummaryFromClient() {
   };
 }
 
+function buildComparisonReviewSummaryFromClient() {
+  return buildComparisonReviewSummaryFromSnapshots(
+    state.analysis.reviewBaselineLists,
+    state.analysis.reviewWorkingLists,
+    state.analysis.runNotes
+  );
+}
+
 function getReviewWorkingListPayload() {
   return (ensureArray(state.analysis.reviewWorkingLists) || []).map((entry) => ({
     type: entry.type,
@@ -5497,6 +5578,7 @@ function renderComparisonReviewPanelShell() {
     return;
   }
   const detachedWindow = isAnalysisReviewPopupWindow();
+  const readOnly = isCurrentAnalysisReadOnly();
 
   panel.innerHTML = `
     <section class="analysis-step-indicator-panel">
@@ -5533,11 +5615,11 @@ function renderComparisonReviewPanelShell() {
     <div class="action-row analysis-toolbar-actions analysis-review-action-bar">
       <div class="analysis-review-action-copy">
         <strong>Final step</strong>
-        <p>Approval is required before Complete Analysis becomes available.</p>
+        <p>${readOnly ? "This completed analysis is locked for review only unless you undo it." : "Approval is required before Complete Analysis becomes available."}</p>
       </div>
       <button id="open-comparison-review-popup-button" class="secondary-button"${detachedWindow ? " disabled" : ""}>${detachedWindow ? "Opened In New Window" : "Open In New Window"}</button>
       <button id="back-to-comparison-setup-button" class="secondary-button">Back to Set Up Comparison</button>
-      <button id="summarize-comparison-review-button" class="secondary-button">Summarize Review</button>
+      <button id="summarize-comparison-review-button" class="secondary-button"${readOnly ? " disabled" : ""}>Summarize Review</button>
       <button id="complete-comparison-review-button" class="primary-button" disabled>Complete Analysis</button>
       <button id="exit-comparison-review-button" class="secondary-button${detachedWindow ? "" : " is-hidden"}">${detachedWindow ? "Close Window" : "Exit"}</button>
     </div>
@@ -5646,6 +5728,10 @@ function summarizeComparisonReview() {
 }
 
 async function completeComparisonReview() {
+  if (isCurrentAnalysisReadOnly()) {
+    setStatus("analysis-comparison-selection-status", "This completed analysis is read-only. Undo the completion to make changes.");
+    return;
+  }
   ensureReviewCompletionFields();
   syncComparisonRequestsFromLinks();
   const completeButton = el("complete-comparison-review-button");
@@ -5783,6 +5869,10 @@ async function completeComparisonReview() {
     );
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("comparison-complete");
+    state.analysis.reviewSummaryMode = "summary";
+    showAnalysisPanel("previous");
+    await loadAnalysisSetups();
+    setStatus("analysis-setup-status", `${savedSetup.run_name || savedSetup.runName || state.analysis.runName || "Analysis"} completed and closed.`);
   } catch (error) {
     setStatus("analysis-comparison-selection-status", `Unable to complete comparison: ${error.message}`);
   } finally {
@@ -8194,6 +8284,7 @@ function renderAvailableReports() {
 function renderAnalysisSetupHome() {
   const container = el("analysis-comparison-links");
   if (!container) return;
+  const readOnly = isCurrentAnalysisReadOnly();
 
   if (!state.analysis.comparisonLinks.length) {
     state.analysis.comparisonLinks = [createComparisonLink(0)];
@@ -8202,7 +8293,9 @@ function renderAnalysisSetupHome() {
   const validation = validateAnalysisComparisonSetup();
   const summary = el("analysis-comparison-validation-summary");
   if (summary) {
-    summary.textContent = validation.summaryErrors.join(" ");
+    summary.textContent = readOnly
+      ? "Completed analyses are read-only. Undo the completion to make changes."
+      : validation.summaryErrors.join(" ");
   }
 
   container.innerHTML = state.analysis.comparisonLinks
@@ -8216,7 +8309,7 @@ function renderAnalysisSetupHome() {
         ? validation.reports
             .map((report) => {
               const checked = selectedIds.includes(report.id) ? " checked" : "";
-              const disabled = report.status !== "ready" && !selectedIds.includes(report.id) ? " disabled" : "";
+              const disabled = readOnly || (report.status !== "ready" && !selectedIds.includes(report.id)) ? " disabled" : "";
               const optionClass = [
                 "analysis-report-picker-option",
                 selectedIds.includes(report.id) ? "is-selected" : "",
@@ -8263,12 +8356,12 @@ function renderAnalysisSetupHome() {
               <strong>${esc(comparisonName)}</strong>
               <p class="analysis-comparison-helper">Choose the reports that should be compared together.</p>
             </div>
-            <button class="secondary-button table-action-button" data-action="remove-comparison-link" data-comparison-id="${esc(link.id)}"${state.analysis.comparisonLinks.length === 1 ? " disabled" : ""}>Remove Comparison</button>
+            <button class="secondary-button table-action-button" data-action="remove-comparison-link" data-comparison-id="${esc(link.id)}"${readOnly || state.analysis.comparisonLinks.length === 1 ? " disabled" : ""}>Remove Comparison</button>
           </div>
           <div class="analysis-comparison-grid">
             <div class="field-stack">
               <label class="field-label">Comparison Name</label>
-              <input class="field-input" data-comparison-field="comparisonName" data-comparison-id="${esc(link.id)}" type="text" value="${esc(comparisonName)}" placeholder="Example: NHCL October vs November" />
+              <input class="field-input" data-comparison-field="comparisonName" data-comparison-id="${esc(link.id)}" type="text" value="${esc(comparisonName)}" placeholder="Example: NHCL October vs November"${readOnly ? " disabled" : ""} />
             </div>
             <div class="field-stack analysis-comparison-wide">
               <div class="analysis-comparison-selection-head">
@@ -8308,12 +8401,15 @@ function renderAnalysisSetupHome() {
   bindAnalysisComparisonPickerInteractions(container);
   runComparisonDebugAutoTest(container);
 
-  setComparisonSetupNextButtonsDisabled(!validation.isValid);
+  setComparisonSetupNextButtonsDisabled(readOnly || !validation.isValid);
 
   renderAvailableReports();
 }
 
 function toggleComparisonReportSelection(comparisonId, reportId, shouldSelect) {
+  if (isCurrentAnalysisReadOnly()) {
+    return false;
+  }
   const link = state.analysis.comparisonLinks.find((entry) => entry.id === comparisonId);
   if (!link) return false;
 
@@ -8566,6 +8662,7 @@ function renderReviewSummaryRows(title, rows) {
 function renderAnalysisComparisonSummaryView() {
   const container = el("analysis-comparison-results");
   const summary = state.analysis.reviewSummary || {};
+  const readOnly = isCurrentAnalysisReadOnly();
   const listSummary = summary.lists || {};
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
   const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
@@ -8591,7 +8688,7 @@ function renderAnalysisComparisonSummaryView() {
             <h3>Final Review Summary</h3>
             <p>Review what will be added and removed for NHCL and RFC, confirm the notes, then approve before completing.</p>
           </div>
-          <button id="analysis-review-summary-back-button" class="secondary-button">Back to Review</button>
+          <button id="analysis-review-summary-back-button" class="secondary-button"${readOnly ? " disabled" : ""}>Back to Review</button>
         </div>
       </article>
 
@@ -8611,26 +8708,27 @@ function renderAnalysisComparisonSummaryView() {
         <h4>Approval Required Before Completion</h4>
         <p>Complete this analysis only when you confirm the review summary is correct. The Complete Analysis button will stay disabled until this box is checked.</p>
         <label class="analysis-review-summary-approve">
-          <input id="analysis-review-summary-approved" type="checkbox" ${approved ? "checked" : ""} />
+          <input id="analysis-review-summary-approved" type="checkbox" ${approved ? "checked" : ""}${readOnly ? " disabled" : ""} />
           I approve this summary and want to move to completed review.
         </label>
         <div class="analysis-pull-grid">
           <div class="field-stack">
             <label class="field-label" for="analysis-review-completed-by-name">Name</label>
-            <input id="analysis-review-completed-by-name" class="field-input" type="text" value="${esc(reviewerName)}" placeholder="Required to complete" />
+            <input id="analysis-review-completed-by-name" class="field-input" type="text" value="${esc(reviewerName)}" placeholder="Required to complete"${readOnly ? " disabled" : ""} />
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-completed-on-date">Date</label>
-            <input id="analysis-review-completed-on-date" class="field-input" type="date" value="${esc(reviewerDate)}" />
+            <input id="analysis-review-completed-on-date" class="field-input" type="date" value="${esc(reviewerDate)}"${readOnly ? " disabled" : ""} />
           </div>
         </div>
         <div class="field-stack">
           <label class="field-label" for="analysis-review-summary-notes">Review Notes</label>
-          <textarea id="analysis-review-summary-notes" class="field-input multiline-input" rows="3">${esc(state.analysis.reviewSummaryNotes || "")}</textarea>
+          <textarea id="analysis-review-summary-notes" class="field-input multiline-input" rows="3"${readOnly ? " disabled" : ""}>${esc(state.analysis.reviewSummaryNotes || "")}</textarea>
         </div>
         ${summary.completedAt
           ? `<p class="analysis-comparison-helper">Completed by ${esc(summary.completedByName || reviewerName || "Unknown")} on ${esc(formatDateOnly(summary.completedOnDate || reviewerDate) || "Not set")}.</p>`
           : ""}
+        ${readOnly ? '<p class="analysis-comparison-helper">This completed analysis is locked for review only. Undo the completion to make changes.</p>' : ""}
         ${canUndoMostRecent ? '<button id="undo-latest-comparison-complete-button" class="secondary-button">Undo Most Recent Completion</button>' : ""}
       </article>
 
@@ -8644,6 +8742,9 @@ function renderAnalysisComparisonSummaryView() {
   `;
 
   el("analysis-review-summary-back-button")?.addEventListener("click", () => {
+    if (readOnly) {
+      return;
+    }
     state.analysis.reviewSummaryMode = "review";
     state.analysis.reviewSummaryApproved = false;
     scheduleReviewStateAutosave("summary-back");
@@ -8652,6 +8753,9 @@ function renderAnalysisComparisonSummaryView() {
   });
 
   el("analysis-review-summary-approved")?.addEventListener("change", () => {
+    if (readOnly) {
+      return;
+    }
     const approved = el("analysis-review-summary-approved")?.checked === true;
     state.analysis.reviewSummaryApproved = approved;
     const completeButton = el("complete-comparison-review-button");
@@ -8672,6 +8776,9 @@ function renderAnalysisComparisonSummaryView() {
   if (notesInput instanceof HTMLTextAreaElement) {
     notesInput.value = state.analysis.reviewSummaryNotes || "";
     notesInput.addEventListener("input", () => {
+      if (readOnly) {
+        return;
+      }
       state.analysis.reviewSummaryNotes = notesInput.value || "";
       scheduleReviewStateAutosave("summary-notes");
       broadcastAnalysisReviewState("summary-notes");
@@ -8682,6 +8789,9 @@ function renderAnalysisComparisonSummaryView() {
   if (reviewerNameInput instanceof HTMLInputElement) {
     reviewerNameInput.value = reviewerName;
     reviewerNameInput.addEventListener("input", () => {
+      if (readOnly) {
+        return;
+      }
       state.analysis.reviewCompletedByName = reviewerNameInput.value || "";
       scheduleReviewStateAutosave("summary-reviewer-name");
       broadcastAnalysisReviewState("summary-reviewer-name");
@@ -8692,6 +8802,9 @@ function renderAnalysisComparisonSummaryView() {
   if (reviewerDateInput instanceof HTMLInputElement) {
     reviewerDateInput.value = reviewerDate;
     reviewerDateInput.addEventListener("input", () => {
+      if (readOnly) {
+        return;
+      }
       state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(reviewerDateInput.value || "") || getTodayIsoDate();
       scheduleReviewStateAutosave("summary-reviewer-date");
       broadcastAnalysisReviewState("summary-reviewer-date");
@@ -8702,7 +8815,7 @@ function renderAnalysisComparisonSummaryView() {
   const summaryCheckbox = el("analysis-review-summary-approved");
   const completeButton = el("complete-comparison-review-button");
   if (completeButton) {
-    completeButton.disabled = !summaryCheckbox?.checked || !canCompleteMode;
+    completeButton.disabled = readOnly || !summaryCheckbox?.checked || !canCompleteMode;
     completeButton.title = canCompleteMode
       ? (summaryCheckbox?.checked ? "Complete this review." : "Check approval before complete.")
       : "Run a summary first and clear blocked Do Not Mail additions before completing.";
@@ -8713,6 +8826,7 @@ function renderAnalysisComparisonReviewPanel() {
   const container = el("analysis-comparison-results");
   if (!container) return;
   const detachedWindow = isAnalysisReviewPopupWindow();
+  const readOnly = isCurrentAnalysisReadOnly();
 
   ensureComparisonReviewPanelToolbar();
 
@@ -8722,7 +8836,7 @@ function renderAnalysisComparisonReviewPanel() {
     const completeButton = el("complete-comparison-review-button");
     const approvedCheckbox = el("analysis-review-summary-approved");
     if (completeButton) {
-      completeButton.disabled = !approvedCheckbox?.checked || !canComplete;
+      completeButton.disabled = readOnly || !approvedCheckbox?.checked || !canComplete;
       completeButton.title = canComplete
         ? (approvedCheckbox?.checked ? "Complete this review." : "Check approval before complete.")
         : "Run a summary first and clear blocked Do Not Mail additions before completing.";
@@ -8954,10 +9068,10 @@ function renderAnalysisComparisonReviewPanel() {
 
   const detachedActionButtons = effectiveTargetListEntry
     ? `
-            <button id="analysis-review-remove-button" class="primary-button">Remove from ${esc(listType)}</button>
+            <button id="analysis-review-remove-button" class="primary-button"${readOnly ? " disabled" : ""}>Remove from ${esc(listType)}</button>
           `
     : `
-            <button id="analysis-review-add-button" class="primary-button">Add to ${esc(listType)}</button>
+            <button id="analysis-review-add-button" class="primary-button"${readOnly ? " disabled" : ""}>Add to ${esc(listType)}</button>
           `;
 
   const actionButtons = effectiveDnmStatus.isDoNotMail
@@ -8970,7 +9084,7 @@ function renderAnalysisComparisonReviewPanel() {
     : `
           ${detachedActionButtons}
           <button id="analysis-review-export-button" class="secondary-button">Export Working ${esc(listType)}</button>
-          <button id="analysis-review-restore-button" class="secondary-button">Reset Decisions</button>
+          <button id="analysis-review-restore-button" class="secondary-button"${readOnly ? " disabled" : ""}>Reset Decisions</button>
         `
         ;
 
@@ -9632,6 +9746,9 @@ function syncComparisonRequestsFromLinks() {
 }
 
 async function saveComparisonSetup(statusMessage = "Comparison setup saved.") {
+  if (isCurrentAnalysisReadOnly()) {
+    throw new Error("Completed analyses are read-only until you undo the completion.");
+  }
   const validation = validateAnalysisComparisonSetup();
   if (!validation.isValid) {
     throw new Error(validation.summaryErrors.join(" ").trim() || "Fix the comparison setup before saving.");
@@ -10048,6 +10165,7 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   clearComparisonSetupAutosave();
   stopAnalysisRunPolling();
   state.analysis.currentSetupId = "";
+  state.analysis.currentSetupStatus = "";
   state.analysis.currentRunId = "";
   state.analysis.currentReportId = "";
   state.analysis.reportPulls = [];
@@ -10068,6 +10186,7 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   state.analysis.reviewSummaryNotes = "";
   state.analysis.reviewCompletedByName = "";
   state.analysis.reviewCompletedOnDate = getTodayIsoDate();
+  state.analysis.readOnlyReview = false;
   state.analysis.setupHydrated = false;
   state.analysis.lastSetupLoadSource = "";
   if (clearPersistedSetup) {
@@ -10090,6 +10209,7 @@ function loadSetupIntoWorkspace(setup) {
   clearComparisonSetupAutosave();
   stopAnalysisRunPolling();
   state.analysis.currentSetupId = setup.id || "";
+  state.analysis.currentSetupStatus = String(setup.status || "").trim();
   persistAnalysisSetupId(state.analysis.currentSetupId);
   state.analysis.currentRunId = "";
   state.analysis.currentReportId = "";
@@ -10128,6 +10248,7 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   state.analysis.reviewCompletedByName = String(setup.reviewState?.reviewCompletedByName || comparisonReview?.completedByName || "").trim();
   state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(setup.reviewState?.reviewCompletedOnDate || comparisonReview?.completedOnDate || "") || getTodayIsoDate();
+  state.analysis.readOnlyReview = isCompletedAnalysisSetup(setup);
   state.analysis.setupHydrated = true;
   state.analysis.lastSetupLoadSource = "persistent-storage";
   syncAnalysisMeta({
@@ -10146,6 +10267,7 @@ function loadRunIntoWorkspace(run) {
   clearComparisonSetupAutosave();
   state.analysis.currentRunId = run.id || "";
   state.analysis.currentSetupId = run.setupId || "";
+  state.analysis.currentSetupStatus = String(run.status || "").trim();
   persistAnalysisSetupId(state.analysis.currentSetupId);
   state.analysis.currentReportId = "";
   state.analysis.reportPulls = Array.isArray(run.reportPulls) && run.reportPulls.length
@@ -10182,6 +10304,7 @@ function loadRunIntoWorkspace(run) {
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
   state.analysis.reviewCompletedByName = String(run.reviewState?.reviewCompletedByName || comparisonReview?.completedByName || "").trim();
   state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(run.reviewState?.reviewCompletedOnDate || comparisonReview?.completedOnDate || "") || getTodayIsoDate();
+  state.analysis.readOnlyReview = isCompletedAnalysisSetup(run);
   syncAnalysisMeta({
     runName: run.runName || "",
     notes: run.notes ?? state.analysis.runNotes,
@@ -10342,6 +10465,7 @@ async function loadAnalysisReports() {
   const tbody = el("analysis-history-body");
   const payload = await apiRequest("/api/analysis/reports");
   const rows = payload.reports || [];
+  const readOnly = isCurrentAnalysisReadOnly();
   state.analysis.reportScfMetricCache = {};
   state.analysis.savedReports = rows;
   const savedReportIdByPullId = new Map(
@@ -10406,7 +10530,7 @@ async function loadAnalysisReports() {
     const titleCell = isEditing
       ? `<input class="field-input" data-edit-report-title="${esc(report.id)}" type="text" value="${esc(
           state.analysis.editingReportTitle || getAnalysisReportDisplayName(report)
-        )}" />`
+        )}"${readOnly ? " disabled" : ""} />`
       : `<div class="analysis-report-row-title">
            <strong>${esc(getAnalysisReportDisplayName(report))}</strong>
            <span>${esc(report.report_id || report.reportId || report.id || "")}</span>
@@ -10416,7 +10540,7 @@ async function loadAnalysisReports() {
       : '<span class="analysis-report-download-empty">No file</span>';
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><input type="checkbox" data-select-report="${esc(report.id)}" aria-label="Select ${esc(getAnalysisReportDisplayName(report))}"${isSelected ? " checked" : ""} /></td>
+      <td><input type="checkbox" data-select-report="${esc(report.id)}" aria-label="Select ${esc(getAnalysisReportDisplayName(report))}"${isSelected ? " checked" : ""}${readOnly ? " disabled" : ""} /></td>
       <td>${titleCell}</td>
       <td>${formatDate(report.created_at || report.createdAt)}</td>
       <td>${esc(report.status || "idle")}</td>
@@ -10425,10 +10549,10 @@ async function loadAnalysisReports() {
       <td class="action-row">
         <button class="secondary-button table-action-button" data-view-report="${esc(report.id)}">View</button>
         ${isEditing
-          ? `<button class="secondary-button table-action-button" data-save-report-title="${esc(report.id)}">Save</button>
-             <button class="secondary-button table-action-button" data-cancel-report-title="${esc(report.id)}">Cancel</button>`
-          : `<button class="secondary-button table-action-button" data-edit-report="${esc(report.id)}">Edit Title</button>`}
-        <button class="secondary-button table-action-button" data-delete-report="${esc(report.id)}">Delete</button>
+          ? `<button class="secondary-button table-action-button" data-save-report-title="${esc(report.id)}"${readOnly ? " disabled" : ""}>Save</button>
+             <button class="secondary-button table-action-button" data-cancel-report-title="${esc(report.id)}"${readOnly ? " disabled" : ""}>Cancel</button>`
+          : `<button class="secondary-button table-action-button" data-edit-report="${esc(report.id)}"${readOnly ? " disabled" : ""}>Edit Title</button>`}
+        <button class="secondary-button table-action-button" data-delete-report="${esc(report.id)}"${readOnly ? " disabled" : ""}>Delete</button>
       </td>
     `;
     tbody.appendChild(tr);
@@ -10614,26 +10738,39 @@ async function loadAnalysisSetups() {
   if (!tbody) return;
   const setupsPayload = await apiRequest("/api/analysis/setups");
   const setups = (setupsPayload.setups || []).filter((entry) => !entry.archived);
-  const defaultName = getDefaultAnalysisName();
-  const setup = choosePreferredAnalysisSetup(setups, {
-    preferredId: state.analysis.currentSetupId || readPersistedAnalysisSetupId(),
-  });
-  const rows = [{
-    id: setup?.id || "__current_month_analysis__",
-    sourceType: setup ? "setup" : "draft",
-    name: defaultName,
-    stage: setup && (setup.completed_at || setup.completedAt) ? "Completed" : "Open",
-    status: setup?.status || "draft",
-    createdAt: setup?.created_at || setup?.createdAt || null,
-    updatedAt: setup?.updated_at || setup?.updatedAt || null,
-    completedAt: setup?.completed_at || setup?.completedAt || null,
-    reportPullCount: Array.isArray(setup?.reportPulls) ? setup.reportPulls.length : 0,
-  }];
+  const rows = setups.length
+    ? setups.map((setup, index) => ({
+        id: setup.id,
+        sourceType: "setup",
+        name: String(setup.run_name || setup.runName || getDefaultAnalysisName()).trim() || getDefaultAnalysisName(),
+        stage: isCompletedAnalysisSetup(setup) ? "Completed" : "Open",
+        status: setup.status || "draft",
+        isCompleted: isCompletedAnalysisSetup(setup),
+        createdAt: setup.created_at || setup.createdAt || null,
+        updatedAt: setup.updated_at || setup.updatedAt || null,
+        completedAt: setup.completed_at || setup.completedAt || null,
+        reportPullCount: Array.isArray(setup.reportPulls) ? setup.reportPulls.length : 0,
+        isTopRow: index === 0,
+        canUndoLatestCompletion: setup.canUndoLatestCompletion === true,
+      }))
+    : [{
+        id: "__current_month_analysis__",
+        sourceType: "draft",
+        name: getDefaultAnalysisName(),
+        stage: "Open",
+        status: "draft",
+        createdAt: null,
+        updatedAt: null,
+        completedAt: null,
+        reportPullCount: 0,
+      }];
   const empty = el("analysis-setup-empty-row");
   if (empty) empty.remove();
   tbody.innerHTML = "";
 
   rows.forEach((entry) => {
+    const showUndo = entry.sourceType === "setup" && entry.isTopRow && (entry.canUndoLatestCompletion || entry.isCompleted);
+    const showDelete = entry.sourceType === "setup" && entry.isTopRow;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${esc(entry.name)}</td>
@@ -10645,7 +10782,10 @@ async function loadAnalysisSetups() {
       <td>${Number(entry.reportPullCount || 0)}</td>
       <td class="action-row">
         <button class="secondary-button" data-open-analysis-entry="${esc(entry.id)}" data-entry-type="${esc(entry.sourceType)}">Open</button>
-        ${entry.sourceType === "setup"
+        ${showUndo
+          ? `<button class="secondary-button" data-undo-analysis-entry="${esc(entry.id)}">Undo</button>`
+          : ""}
+        ${showDelete
           ? `<button class="secondary-button" data-delete-analysis-entry="${esc(entry.id)}">Delete</button>`
           : ""}
       </td>
@@ -10670,7 +10810,7 @@ async function loadAnalysisSetups() {
         resetAnalysisWorkspace();
         showAnalysisPanel("workspace");
       }
-      setStatus("analysis-setup-status", `Loaded analysis ${defaultName}.`);
+      setStatus("analysis-setup-status", `Loaded analysis ${type === "setup" ? id : getDefaultAnalysisName()}.`);
     });
   });
 
@@ -10679,6 +10819,14 @@ async function loadAnalysisSetups() {
       const setupId = button.getAttribute("data-delete-analysis-entry");
       if (!setupId) return;
       await deleteAnalysisSetupEntry(setupId);
+    });
+  });
+
+  all("[data-undo-analysis-entry]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const setupId = button.getAttribute("data-undo-analysis-entry");
+      if (!setupId) return;
+      await undoAnalysisSetupEntry(setupId);
     });
   });
 }
@@ -10704,12 +10852,7 @@ async function deleteAnalysisSetupEntry(setupId) {
     return;
   }
 
-  let revertReferenceLists = false;
-  if (isComplete && hasListChanges) {
-    revertReferenceLists = confirm(
-      `${setupName} changed the NHCL and/or RFC mailing lists.\n\nClick OK to revert those mailing lists back to how they were before this analysis.\nClick Cancel to keep the current mailing-list changes and only delete the analysis.`
-    );
-  }
+  const revertReferenceLists = isComplete && hasListChanges;
 
   setStatus("analysis-setup-status", `Deleting ${setupName}...`);
   const result = await apiRequest(`/api/analysis/setups/${encodeURIComponent(normalizedSetupId)}/delete`, {
@@ -10742,6 +10885,42 @@ async function deleteAnalysisSetupEntry(setupId) {
     revertReferenceLists && Array.isArray(result?.result?.revertedLists) && result.result.revertedLists.length
       ? `${setupName} deleted and reverted ${result.result.revertedLists.join(", ").toUpperCase()} mailing lists.`
       : `${setupName} deleted.`
+  );
+}
+
+async function undoAnalysisSetupEntry(setupId) {
+  const normalizedSetupId = String(setupId || "").trim();
+  if (!normalizedSetupId) {
+    return;
+  }
+
+  const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(normalizedSetupId)}`);
+  const setup = response.setup || {};
+  const setupName = String(setup.run_name || setup.runName || "this analysis").trim() || "this analysis";
+  if (!confirm(`Undo the most recent completed analysis for ${setupName} and restore the mailing lists to their pre-completion state?`)) {
+    return;
+  }
+
+  setStatus("analysis-setup-status", `Undoing ${setupName}...`);
+  const undoResponse = await apiRequest(`/api/analysis/setups/${encodeURIComponent(normalizedSetupId)}/undo-complete`, {
+    method: "POST",
+    body: {
+      actor: "Local User",
+    },
+  });
+
+  const restoredSetup = undoResponse.setup || {};
+  state.referenceLists = Array.isArray(undoResponse.lists) ? undoResponse.lists : state.referenceLists;
+  await loadAnalysisSetups();
+  loadSetupIntoWorkspace(restoredSetup);
+  const landing = resolveAnalysisLandingFromEntry(restoredSetup);
+  state.analysis.reviewSummaryMode = landing.summaryMode;
+  showAnalysisPanel(landing.panel);
+  setStatus(
+    "analysis-setup-status",
+    Array.isArray(undoResponse.revertedLists) && undoResponse.revertedLists.length
+      ? `${setupName} was reopened and restored ${undoResponse.revertedLists.join(", ").toUpperCase()} mailing lists.`
+      : `${setupName} was reopened.`
   );
 }
 
@@ -10963,6 +11142,10 @@ function bindAnalysisButtons() {
   });
 
   saveSetupButton?.addEventListener("click", async () => {
+    if (isCurrentAnalysisReadOnly()) {
+      setStatus("analysis-status-detail", "Completed analyses are read-only until you undo the completion.");
+      return;
+    }
     const validationError = validateAnalysisPulls();
     if (validationError) {
       setStatus("analysis-status-detail", validationError);
@@ -10996,6 +11179,10 @@ function bindAnalysisButtons() {
   });
 
   runAnalysisButton?.addEventListener("click", async () => {
+    if (isCurrentAnalysisReadOnly()) {
+      setStatus("analysis-status-detail", "Completed analyses are read-only until you undo the completion.");
+      return;
+    }
     const validationError = validateAnalysisPulls();
     if (validationError) {
       setStatus("analysis-status-detail", validationError);
@@ -11045,6 +11232,10 @@ function bindAnalysisButtons() {
   });
 
   addComparisonButton?.addEventListener("click", () => {
+    if (isCurrentAnalysisReadOnly()) {
+      setStatus("analysis-comparison-status", "Completed analyses are read-only until you undo the completion.");
+      return;
+    }
     if (getAvailableAnalysisReports().filter((report) => report.status === "ready").length < 2) {
       setStatus(
         "analysis-comparison-status",
@@ -11074,6 +11265,10 @@ function bindAnalysisButtons() {
   });
 
   const handleCompleteComparisonSetup = async (button) => {
+    if (isCurrentAnalysisReadOnly()) {
+      setStatus("analysis-comparison-status", "Completed analyses are read-only until you undo the completion.");
+      return;
+    }
     const validation = validateAnalysisComparisonSetup();
     renderAnalysisSetupHome();
     if (!validation.isValid) {
@@ -11121,6 +11316,10 @@ function bindAnalysisButtons() {
   });
 
   saveComparisonReviewButton?.addEventListener("click", async () => {
+    if (isCurrentAnalysisReadOnly()) {
+      setStatus("analysis-comparison-status", "Completed analyses are read-only until you undo the completion.");
+      return;
+    }
     saveComparisonReviewButton.disabled = true;
     setStatus("analysis-comparison-status", "Saving comparison setup...");
     try {
@@ -11209,6 +11408,7 @@ function bindAnalysisButtons() {
   });
 
   compareContainer?.addEventListener("input", (event) => {
+    if (isCurrentAnalysisReadOnly()) return;
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
     const comparisonId = target.getAttribute("data-comparison-id");
@@ -11233,6 +11433,7 @@ function bindAnalysisButtons() {
   });
 
   compareContainer?.addEventListener("click", (event) => {
+    if (isCurrentAnalysisReadOnly()) return;
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     if (target.getAttribute("data-action") !== "remove-comparison-link") return;
@@ -12521,6 +12722,14 @@ function bindMailingListEvents() {
     el("mailing-list-import-input")?.click();
   });
   el("mailing-list-import-input")?.addEventListener("change", importReferenceList);
+  all("[data-mailing-list-view-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.analysis.mailingListViewTab = button.getAttribute("data-mailing-list-view-tab") === "history"
+        ? "history"
+        : "current";
+      updateMailingListViewTabs();
+    });
+  });
   el("mailing-list-search")?.addEventListener("input", (event) => {
     state.analysis.search = String(event.target.value || "");
     renderMailingListRows(getReferenceListFromCache(state.analysis.mailingListType) || {});
@@ -12559,6 +12768,8 @@ function bindMailingListEvents() {
       changedAt: historyEntry.changedAt || historyEntry.changed_at || "",
       items: snapshotType === "before" ? historyEntry.beforeItems || [] : historyEntry.afterItems || [],
     };
+    state.analysis.mailingListViewTab = "history";
+    updateMailingListViewTabs();
     renderMailingListHistoryPreview(state.analysis.mailingListType, state.analysis.mailingListHistoryPreview);
   });
 }

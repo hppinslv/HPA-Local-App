@@ -413,6 +413,12 @@ function normalizeState(value) {
   return String(value || "").trim();
 }
 
+function normalizeReferenceListSourceName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\.(xlsx|xlsm|xls|csv|pdf)$/i, "");
+}
+
 function resolveListItemState(entry = {}) {
   return normalizeState(entry.state || entry.scope);
 }
@@ -493,7 +499,7 @@ function normalizeReferenceListHistoryEntries(entries = []) {
       listType: String(entry?.listType || "").trim().toLowerCase(),
       actionType: String(entry?.actionType || "").trim().toLowerCase() || "update",
       actor: String(entry?.actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
-      sourceName: String(entry?.sourceName || "").trim(),
+      sourceName: normalizeReferenceListSourceName(entry?.sourceName || ""),
       reason: String(entry?.reason || "").trim(),
       changedAt: entry?.changedAt || entry?.changed_at || new Date().toISOString(),
       beforeItems: normalizeReferenceListSnapshotItems(entry?.beforeItems || []),
@@ -512,7 +518,7 @@ function normalizeReferenceListsPayload(payload = null) {
         ...list,
         type: String(list?.type || "").trim().toLowerCase(),
         name: String(list?.name || "").trim(),
-        sourceName: String(list?.sourceName || "").trim(),
+        sourceName: normalizeReferenceListSourceName(list?.sourceName || ""),
         items: ensureArray(list?.items),
       }))
     : fallback.lists;
@@ -540,7 +546,7 @@ function buildReferenceListHistoryEntry({
     listType: String(listType || "").trim().toLowerCase(),
     actionType: String(actionType || "").trim().toLowerCase() || "update",
     actor: String(actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
-    sourceName: String(sourceName || "").trim(),
+    sourceName: normalizeReferenceListSourceName(sourceName || ""),
     reason: String(reason || "").trim(),
     changedAt: changedAt || new Date().toISOString(),
     beforeItems: normalizeReferenceListSnapshotItems(beforeItems),
@@ -4614,7 +4620,7 @@ function importReferenceList({ listType, fileName, base64Content, actor = DEFAUL
   }
   const beforeItems = normalizeReferenceListSnapshotItems(list.items);
 
-  list.sourceName = fileName;
+  list.sourceName = normalizeReferenceListSourceName(fileName);
   const normalizedEntries = [];
   const seenScfs = new Set();
   const dnmLookup = getReferenceListLookup("dnm");
@@ -4655,7 +4661,7 @@ function importReferenceList({ listType, fileName, base64Content, actor = DEFAUL
     listType: normalizedType,
     actionType: "import-replace",
     actor: String(actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
-    sourceName: String(fileName || "").trim(),
+    sourceName: normalizeReferenceListSourceName(fileName),
     reason: `Imported from ${fileName}`,
     changedAt,
     beforeItems,

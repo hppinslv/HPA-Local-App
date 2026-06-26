@@ -773,6 +773,11 @@
                   <button class="secondary-button" data-mailing-list-tab="rfc">RFC</button>
                 </div>
 
+                <div class="action-row" id="mailing-list-view-tabs">
+                  <button class="secondary-button" data-mailing-list-view-tab="current">Current List</button>
+                  <button class="secondary-button" data-mailing-list-view-tab="history">History</button>
+                </div>
+
                 <div class="mailing-list-layout">
                   <article class="mailing-list-sidecard">
                     <span class="field-label">Selected List</span>
@@ -782,96 +787,98 @@
                     <p id="mailing-list-count" class="inline-status"></p>
                   </article>
 
-                <article class="mailing-list-maincard">
-                  <div id="mailing-list-import-row" class="action-row is-hidden">
-                    <input
-                      id="mailing-list-import-input"
-                      type="file"
-                      accept=".xlsx,.xlsm"
-                      class="is-hidden"
-                    />
-                    <button id="mailing-list-import-button" class="secondary-button">
-                      Import or Replace List
-                    </button>
-                    <button id="mailing-list-export-button" class="secondary-button">
-                      Export NHCL / RFC List
-                    </button>
-                    <button id="mailing-list-mailer-export-button" class="secondary-button">
-                      Export for Mailer
-                    </button>
-                    <p id="mailing-list-import-instructions" class="inline-status">
-                      Import the current list from NHCL or RFC spreadsheet format.
-                    </p>
-                  </div>
+                  <article class="mailing-list-maincard">
+                    <div id="mailing-list-current-panel">
+                      <div id="mailing-list-import-row" class="action-row is-hidden">
+                        <input
+                          id="mailing-list-import-input"
+                          type="file"
+                          accept=".xlsx,.xlsm"
+                          class="is-hidden"
+                        />
+                        <button id="mailing-list-import-button" class="secondary-button">
+                          Import or Replace List
+                        </button>
+                        <button id="mailing-list-export-button" class="secondary-button">
+                          Export NHCL / RFC List
+                        </button>
+                        <button id="mailing-list-mailer-export-button" class="secondary-button">
+                          Export for Mailer
+                        </button>
+                        <p id="mailing-list-import-instructions" class="inline-status">
+                          Import the current list from NHCL or RFC spreadsheet format.
+                        </p>
+                      </div>
 
-                  <div id="dnm-state-manager" class="dnm-state-manager is-hidden">
-                    <p id="dnm-state-header" class="dnm-state-header">
-                      Per Amalgamated, states we can not mail 9/19/2024:
-                    </p>
-                      <div class="dnm-state-toolbar">
-                        <div class="field-stack">
-                          <label class="field-label" for="dnm-state-select">Add State</label>
-                          <select id="dnm-state-select" class="field-input">
-                            <option value="">Select a state</option>
-                          </select>
+                      <div id="dnm-state-manager" class="dnm-state-manager is-hidden">
+                        <p id="dnm-state-header" class="dnm-state-header">
+                          Per Amalgamated, states we can not mail 9/19/2024:
+                        </p>
+                          <div class="dnm-state-toolbar">
+                            <div class="field-stack">
+                              <label class="field-label" for="dnm-state-select">Add State</label>
+                              <select id="dnm-state-select" class="field-input">
+                                <option value="">Select a state</option>
+                              </select>
+                            </div>
+                            <div class="field-stack">
+                              <label class="field-label" for="mailing-list-reason">Reason</label>
+                              <input id="mailing-list-reason" class="field-input" type="text" placeholder="Optional reason for updating this state" />
+                            </div>
+                            <div class="field-stack">
+                              <label class="field-label" for="mailing-list-source-name">Source / Note</label>
+                              <input id="mailing-list-source-name" class="field-input" type="text" placeholder="Optional source name or note" />
+                            </div>
+                          </div>
+
+                          <div class="action-row">
+                            <button id="dnm-state-add-button" class="primary-button">Add State</button>
+                            <button id="dnm-export-button" class="secondary-button">Export DNM Report</button>
+                          </div>
                         </div>
-                        <div class="field-stack">
-                          <label class="field-label" for="mailing-list-reason">Reason</label>
-                          <input id="mailing-list-reason" class="field-input" type="text" placeholder="Optional reason for updating this state" />
+
+                      <div id="mailing-list-generic-controls">
+                        <div class="mailing-list-form-grid">
+                          <div class="field-stack">
+                            <label class="field-label" for="mailing-list-add-scf">SCF</label>
+                            <input id="mailing-list-add-scf" class="field-input" type="text" placeholder="Enter one 3-digit SCF (ex: 050)" />
+                          </div>
+                          <div class="field-stack">
+                            <label class="field-label" for="mailing-list-state">State</label>
+                            <input id="mailing-list-state" class="field-input" type="text" placeholder="State abbreviation or name" />
+                          </div>
                         </div>
-                        <div class="field-stack">
-                          <label class="field-label" for="mailing-list-source-name">Source / Note</label>
-                          <input id="mailing-list-source-name" class="field-input" type="text" placeholder="Optional source name or note" />
+
+                        <div class="action-row">
+                          <button id="mailing-list-add-button" class="primary-button">Add SCF</button>
                         </div>
                       </div>
 
-                      <div class="action-row">
-                        <button id="dnm-state-add-button" class="primary-button">Add State</button>
-                        <button id="dnm-export-button" class="secondary-button">Export DNM Report</button>
+                      <p id="mailing-list-status" class="inline-status"></p>
+
+                      <div id="mailing-list-search-wrap" class="mailing-list-toolbar">
+                        <input id="mailing-list-search" class="field-input" type="text" placeholder="Search SCFs or state in this list" />
+                      </div>
+
+                      <div class="table-wrap">
+                        <table>
+                          <thead id="mailing-list-table-head">
+                            <tr>
+                              <th>SCF</th>
+                              <th>State</th>
+                              <th></th>
+                            </tr>
+                          </thead>
+                          <tbody id="mailing-list-body">
+                            <tr>
+                              <td colspan="3" class="empty-cell">Loading mailing list...</td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     </div>
 
-                    <div id="mailing-list-generic-controls">
-                      <div class="mailing-list-form-grid">
-                        <div class="field-stack">
-                          <label class="field-label" for="mailing-list-add-scf">SCF</label>
-                          <input id="mailing-list-add-scf" class="field-input" type="text" placeholder="Enter one 3-digit SCF (ex: 050)" />
-                        </div>
-                        <div class="field-stack">
-                          <label class="field-label" for="mailing-list-state">State</label>
-                          <input id="mailing-list-state" class="field-input" type="text" placeholder="State abbreviation or name" />
-                        </div>
-                      </div>
-
-                      <div class="action-row">
-                        <button id="mailing-list-add-button" class="primary-button">Add SCF</button>
-                      </div>
-                    </div>
-
-                    <p id="mailing-list-status" class="inline-status"></p>
-
-                    <div id="mailing-list-search-wrap" class="mailing-list-toolbar">
-                      <input id="mailing-list-search" class="field-input" type="text" placeholder="Search SCFs or state in this list" />
-                    </div>
-
-                    <div class="table-wrap">
-                      <table>
-                        <thead id="mailing-list-table-head">
-                          <tr>
-                            <th>SCF</th>
-                            <th>State</th>
-                            <th></th>
-                          </tr>
-                        </thead>
-                        <tbody id="mailing-list-body">
-                          <tr>
-                            <td colspan="3" class="empty-cell">Loading mailing list...</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <section class="panel mailing-list-history-panel">
+                    <section id="mailing-list-history-panel" class="panel mailing-list-history-panel is-hidden">
                       <div class="panel-heading">
                         <h3>List History</h3>
                         <p>Review how this list looked before and after each analysis or manual edit.</p>
@@ -896,7 +903,32 @@
                         </table>
                       </div>
                       <div id="mailing-list-history-preview" class="comparison-results-block">
-                        <div class="empty-state-block">Choose a history snapshot to preview what the list looked like.</div>
+                        <div class="mailing-list-layout">
+                          <article class="mailing-list-sidecard">
+                            <span class="field-label">Snapshot</span>
+                            <strong id="mailing-list-history-preview-title">Choose a snapshot</strong>
+                            <p id="mailing-list-history-preview-source">Select Before or After to preview the list.</p>
+                            <p id="mailing-list-history-preview-updated" class="inline-status"></p>
+                            <p id="mailing-list-history-preview-count" class="inline-status"></p>
+                          </article>
+                          <article class="mailing-list-maincard">
+                            <div class="table-wrap">
+                              <table>
+                                <thead id="mailing-list-history-preview-head">
+                                  <tr>
+                                    <th>SCF</th>
+                                    <th>State</th>
+                                  </tr>
+                                </thead>
+                                <tbody id="mailing-list-history-preview-body">
+                                  <tr>
+                                    <td colspan="2" class="empty-cell">Choose a history snapshot to preview what the list looked like.</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </article>
+                        </div>
                       </div>
                     </section>
                   </article>
