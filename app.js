@@ -5598,6 +5598,39 @@ function buildComparisonReviewSummaryFromClient() {
   );
 }
 
+function hasReviewListSnapshotItems(lists = []) {
+  return ensureArray(lists).some((entry) => ensureArray(entry?.items).length > 0);
+}
+
+function getEffectiveComparisonReviewSummary() {
+  const savedSummary = state.analysis.reviewSummary && typeof state.analysis.reviewSummary === "object"
+    ? cloneData(state.analysis.reviewSummary)
+    : null;
+  const hasLiveReviewLists =
+    hasReviewListSnapshotItems(state.analysis.reviewBaselineLists)
+    || hasReviewListSnapshotItems(state.analysis.reviewWorkingLists);
+
+  if (!hasLiveReviewLists) {
+    return savedSummary || {};
+  }
+
+  try {
+    const liveSummary = buildComparisonReviewSummaryFromClient();
+    return {
+      ...(savedSummary || {}),
+      ...liveSummary,
+      generatedAt: liveSummary.generatedAt || savedSummary?.generatedAt || new Date().toISOString(),
+      runNotes: String(liveSummary.runNotes || savedSummary?.runNotes || state.analysis.runNotes || "").trim(),
+      completedAt: savedSummary?.completedAt || liveSummary.completedAt || null,
+      completedByName: savedSummary?.completedByName || liveSummary.completedByName || "",
+      completedOnDate: savedSummary?.completedOnDate || liveSummary.completedOnDate || "",
+      canUndoLatestCompletion: savedSummary?.canUndoLatestCompletion === true || liveSummary.canUndoLatestCompletion === true,
+    };
+  } catch {
+    return savedSummary || {};
+  }
+}
+
 function getReviewWorkingListPayload() {
   return (ensureArray(state.analysis.reviewWorkingLists) || []).map((entry) => ({
     type: entry.type,
@@ -8783,7 +8816,7 @@ function renderReviewSummaryPrintListMarkup(title, rows = []) {
 }
 
 function buildAnalysisReviewPrintWindowDocument() {
-  const summary = state.analysis.reviewSummary || {};
+  const summary = getEffectiveComparisonReviewSummary();
   const listSummary = summary.lists || {};
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
   const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
@@ -8921,7 +8954,7 @@ function openAnalysisReviewPrintSummary() {
 
 function renderAnalysisComparisonSummaryView() {
   const container = el("analysis-comparison-results");
-  const summary = state.analysis.reviewSummary || {};
+  const summary = getEffectiveComparisonReviewSummary();
   const readOnly = isCurrentAnalysisReadOnly();
   const listSummary = summary.lists || {};
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
