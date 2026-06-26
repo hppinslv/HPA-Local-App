@@ -30,6 +30,7 @@ const {
   deleteAnalysisRun,
   deleteAnalysisComparisonSetup,
   deleteAnalysisSetup,
+  undoLatestCompletedAnalysis,
   writeReferenceListExport,
   getAnalysisArtifactPath,
   getAnalysisReport,
@@ -294,7 +295,7 @@ const server = http.createServer((request, response) => {
     collectRequestBody(request)
       .then((body) => {
         const setup = saveAnalysisSetup(body);
-        sendJson(response, 200, { setup, setups: listAnalysisSetups() });
+        sendJson(response, 200, { setup, setups: listAnalysisSetups(), lists: listReferenceLists() });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to save analysis setup." });
@@ -1102,7 +1103,7 @@ const server = http.createServer((request, response) => {
           ...body,
           id: analysisSetupMatch[1],
         });
-        sendJson(response, 200, { setup, setups: listAnalysisSetups() });
+        sendJson(response, 200, { setup, setups: listAnalysisSetups(), lists: listReferenceLists() });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to save analysis setup." });
@@ -1138,6 +1139,26 @@ const server = http.createServer((request, response) => {
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to delete analysis setup." });
+      });
+    return;
+  }
+
+  const analysisSetupUndoCompleteMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)\/undo-complete$/);
+  if (analysisSetupUndoCompleteMatch && request.method === "POST") {
+    collectRequestBody(request)
+      .then((body) => {
+        const result = undoLatestCompletedAnalysis(analysisSetupUndoCompleteMatch[1], {
+          actor: body.actor,
+        });
+        sendJson(response, 200, {
+          setup: result.setup,
+          revertedLists: result.revertedLists,
+          lists: result.lists,
+          setups: listAnalysisSetups(),
+        });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to undo the completed analysis." });
       });
     return;
   }

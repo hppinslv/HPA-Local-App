@@ -23,6 +23,21 @@ function createTempAnalysisDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "hpa-analysis-persistence-"));
 }
 
+function seedReferenceLists(tempDir, overrides = {}) {
+  const payload = {
+    updatedAt: "2026-06-26T00:00:00.000Z",
+    history: [],
+    lists: [
+      { type: "dnm", name: "Do Not Mail", sourceName: "Test", items: [] },
+      { type: "nhcl", name: "NHCL Mailing SCFs", sourceName: "Test", items: [] },
+      { type: "rfc", name: "RFC Mailing SCFs", sourceName: "Test", items: [] },
+      { type: "candidate", name: "Candidate SCFs", sourceName: "Test", items: [] },
+    ],
+    ...overrides,
+  };
+  fs.writeFileSync(path.join(tempDir, "scf-reference-lists.json"), JSON.stringify(payload, null, 2));
+}
+
 function createComparisonPayload(overrides = {}) {
   return {
     runName: "June 2026",
@@ -64,6 +79,8 @@ function createComparisonPayload(overrides = {}) {
       reviewSelectedScfs: {
         comparison_nhcl: "010",
       },
+      reviewCompletedByName: "Melinda Harris",
+      reviewCompletedOnDate: "2026-06-26",
     },
     commitComparisonSetup: true,
     ...overrides,
@@ -223,6 +240,7 @@ test("buildPersistedComparisonSetups stores primary report and selected scf per 
 
 test("saving a comparison setup writes it to persistent storage and reload survives refresh", (t) => {
   const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
   t.after(() => {
     delete process.env.HPA_ANALYSIS_DATA_DIR;
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -237,6 +255,8 @@ test("saving a comparison setup writes it to persistent storage and reload survi
   assert.equal(saved.comparisonSetups.length, 1);
   assert.equal(saved.comparisonSetups[0].primaryReportId, "report_a");
   assert.equal(saved.comparisonSetups[0].selectedScf, "010");
+  assert.equal(saved.reviewState.reviewCompletedByName, "Melinda Harris");
+  assert.equal(saved.reviewState.reviewCompletedOnDate, "2026-06-26");
 
   service = loadAnalysisServiceWithTempDir(tempDir);
   const reloaded = service.getAnalysisSetup(saved.id);
@@ -246,10 +266,12 @@ test("saving a comparison setup writes it to persistent storage and reload survi
   assert.equal(reloaded.reviewState.selectedComparisonId, "comparison_nhcl");
   assert.equal(reloaded.comparisonRequests[0].comparisonName, "NHCL Compare");
   assert.equal(reloaded.comparisonSetups[0].primaryReportId, "report_a");
+  assert.equal(reloaded.reviewState.reviewCompletedByName, "Melinda Harris");
 });
 
 test("empty local draft style saves cannot overwrite a committed comparison setup", (t) => {
   const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
   t.after(() => {
     delete process.env.HPA_ANALYSIS_DATA_DIR;
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -283,6 +305,7 @@ test("empty local draft style saves cannot overwrite a committed comparison setu
 
 test("delete removes only the requested persisted comparison setup", (t) => {
   const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
   t.after(() => {
     delete process.env.HPA_ANALYSIS_DATA_DIR;
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -325,4 +348,87 @@ test("delete removes only the requested persisted comparison setup", (t) => {
   assert.equal(updated.reviewState.selectedComparisonId, "comparison_rfc");
   assert.equal(updated.comparisonSetups.length, 1);
   assert.equal(updated.comparisonSetups[0].id, "comparison_rfc");
+});
+
+test("undo latest completed analysis restores mailing lists to the pre-completion snapshot", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const setup = service.saveAnalysisSetup({
+    ...createComparisonPayload({
+      status: "complete",
+      completedAt: "2026-06-26T15:30:00.000Z",
+      referenceListsSnapshot: [
+        { type: "nhcl", items: [{ scf: "010", state: "" }] },
+        { type: "rfc", items: [{ scf: "143", state: "" }] },
+      ],
+      referenceListChanges: [
+        { type: "nhcl", added: [{ scf: "011", state: "" }], removed: [] },
+        { type: "rfc", added: [], removed: [{ scf: "143", state: "" }] },
+      ],
+    }),
+  });
+
+  const nhclBeforeUndo = service.getReferenceListByType("nhcl");
+  const rfcBeforeUndo = service.getReferenceListByType("rfc");
+  assert.deepEqual(nhclBeforeUndo.items.map((entry) => entry.scf).sort(), ["011"]);
+  assert.deepEqual(rfcBeforeUndo.items.map((entry) => entry.scf).sort(), []);
+
+  const undoResult = service.undoLatestCompletedAnalysis(setup.id, { actor: "Melinda Harris" });
+  const nhclAfterUndo = service.getReferenceListByType("nhcl");
+  const rfcAfterUndo = service.getReferenceListByType("rfc");
+
+  assert.equal(undoResult.setup.status, "reverted");
+  assert.equal(undoResult.setup.completionUndoneBy, "Melinda Harris");
+  assert.deepEqual(nhclAfterUndo.items.map((entry) => entry.scf).sort(), ["010"]);
+  assert.deepEqual(rfcAfterUndo.items.map((entry) => entry.scf).sort(), ["143"]);
+  assert.ok(nhclAfterUndo.history.some((entry) => entry.actionType === "undo-analysis-complete"));
+});
+
+test("only the most recent completed analysis can be undone", (t) => {
+  const tempDir = createTempAnalysisDir();
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const olderSetup = service.saveAnalysisSetup({
+    ...createComparisonPayload({
+      status: "complete",
+      completedAt: "2026-06-25T15:30:00.000Z",
+      referenceListsSnapshot: [
+        { type: "nhcl", items: [] },
+        { type: "rfc", items: [] },
+      ],
+      referenceListChanges: [
+        { type: "nhcl", added: [{ scf: "010", state: "" }], removed: [] },
+      ],
+    }),
+  });
+  const latestSetup = service.saveAnalysisSetup({
+    ...createComparisonPayload({
+      id: undefined,
+      status: "complete",
+      completedAt: "2026-06-26T15:30:00.000Z",
+      referenceListsSnapshot: [
+        { type: "nhcl", items: [{ scf: "010", state: "" }] },
+        { type: "rfc", items: [] },
+      ],
+      referenceListChanges: [
+        { type: "nhcl", added: [{ scf: "011", state: "" }], removed: [] },
+      ],
+    }),
+  });
+
+  assert.throws(
+    () => service.undoLatestCompletedAnalysis(olderSetup.id, { actor: "Melinda Harris" }),
+    /most recent completed analysis/i
+  );
+  assert.doesNotThrow(() => service.undoLatestCompletedAnalysis(latestSetup.id, { actor: "Melinda Harris" }));
 });

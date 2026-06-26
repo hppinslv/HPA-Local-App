@@ -18,7 +18,7 @@ const ANALYSIS_STORAGE_DIR = process.env.HPA_ANALYSIS_DATA_DIR
 const ANALYSIS_RUNS_PATH = path.join(ANALYSIS_STORAGE_DIR, "analysis-runs.json");
 const ANALYSIS_SETUPS_PATH = path.join(ANALYSIS_STORAGE_DIR, "analysis-setups.json");
 const ANALYSIS_REPORTS_PATH = path.join(ANALYSIS_STORAGE_DIR, "analysis-reports.json");
-const SCF_REFERENCE_LISTS_PATH = path.join(DATA_DIR, "scf-reference-lists.json");
+const SCF_REFERENCE_LISTS_PATH = path.join(ANALYSIS_STORAGE_DIR, "scf-reference-lists.json");
 const ANALYSIS_REFERENCE_LIST_EXPORT_DIR = path.join(os.tmpdir(), "hpa-reference-list-exports");
 const ANALYSIS_REPORT_EXPORT_DIR = path.join(os.tmpdir(), "hpa-analysis-report-exports");
 const ANALYSIS_COMPARISON_ARTIFACT_DIR = path.join(DATA_DIR, "analysis-comparison-artifacts");
@@ -1541,6 +1541,8 @@ function normalizeAnalysisReviewState(value = {}) {
     lastEditedComparisonId: String(source.lastEditedComparisonId || "").trim(),
     reviewPrimaryReportIds: normalizeMap(source.reviewPrimaryReportIds),
     reviewSelectedScfs: normalizeMap(source.reviewSelectedScfs),
+    reviewCompletedByName: String(source.reviewCompletedByName || "").trim(),
+    reviewCompletedOnDate: String(source.reviewCompletedOnDate || "").trim(),
   };
 }
 
@@ -1649,6 +1651,15 @@ function normalizeAnalysisRequest(body = {}) {
 }
 
 function serializeAnalysisSetup(setup) {
+  const latestCompleted = getLatestCompletedAnalysisSetup();
+  const canUndoLatestCompletion =
+    !!latestCompleted && String(latestCompleted.id || "").trim() === String(setup?.id || "").trim();
+  const comparisonReview = setup?.results?.comparisonReview && typeof setup.results.comparisonReview === "object"
+    ? {
+        ...clone(setup.results.comparisonReview),
+        canUndoLatestCompletion,
+      }
+    : setup?.results?.comparisonReview || null;
   return {
     id: setup.id,
     runName: setup.runName,
@@ -1666,13 +1677,23 @@ function serializeAnalysisSetup(setup) {
     comparisonRequests: setup.comparisonRequests || [],
     comparisonSetups: ensureArray(setup.comparisonSetups),
     reviewState: normalizeAnalysisReviewState(setup.reviewState),
-    results: setup.results || null,
+    results: setup.results
+      ? {
+          ...setup.results,
+          comparisonReview,
+        }
+      : null,
     referenceListsSnapshot: setup.referenceListsSnapshot || null,
     reference_lists_snapshot: setup.referenceListsSnapshot || null,
     referenceListChanges: ensureArray(setup.referenceListChanges),
     reference_list_changes: ensureArray(setup.referenceListChanges),
     referenceListChangesAppliedAt: setup.referenceListChangesAppliedAt || null,
     reference_list_changes_applied_at: setup.referenceListChangesAppliedAt || null,
+    completionUndoneAt: setup.completionUndoneAt || null,
+    completion_undone_at: setup.completionUndoneAt || null,
+    completionUndoneBy: setup.completionUndoneBy || "",
+    completion_undone_by: setup.completionUndoneBy || "",
+    canUndoLatestCompletion,
   };
 }
 
@@ -2798,6 +2819,8 @@ function saveAnalysisSetup(body = {}) {
       request.referenceListChangesAppliedAt ||
       existingSetup?.referenceListChangesAppliedAt ||
       null,
+    completionUndoneAt: request.completionUndoneAt || existingSetup?.completionUndoneAt || null,
+    completionUndoneBy: request.completionUndoneBy || existingSetup?.completionUndoneBy || "",
   };
 
   if (existingSetup) {
@@ -2820,6 +2843,8 @@ function saveAnalysisSetup(body = {}) {
       request.referenceListReason
     );
     setup.referenceListChangesAppliedAt = timestamp;
+    setup.completionUndoneAt = null;
+    setup.completionUndoneBy = "";
   }
 
   writeAnalysisSetups(setups);
@@ -2833,6 +2858,7 @@ function restoreReferenceListsFromSnapshot(snapshot = [], options = {}) {
   const actor = String(options.actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR;
   const sourceName = String(options.sourceName || "analysis-delete-restore").trim() || "analysis-delete-restore";
   const reason = String(options.reason || "").trim();
+  const actionType = String(options.actionType || "restore-analysis-delete").trim() || "restore-analysis-delete";
   const restoredTypes = [];
 
   ["nhcl", "rfc"].forEach((type) => {
@@ -2863,7 +2889,7 @@ function restoreReferenceListsFromSnapshot(snapshot = [], options = {}) {
     }
     recordReferenceListHistory(payload, {
       listType: type,
-      actionType: "restore-analysis-delete",
+      actionType,
       actor,
       sourceName,
       reason,
@@ -2929,6 +2955,71 @@ function deleteAnalysisSetup(setupId, options = {}) {
     deletedRunIds: Array.from(relatedRunIds),
     deletedReportIds: relatedReports.map((entry) => String(entry.id || "").trim()).filter(Boolean),
     revertedLists,
+  };
+}
+
+function getLatestCompletedAnalysisSetup() {
+  return readAnalysisSetups()
+    .filter((entry) =>
+      String(entry?.status || "").trim().toLowerCase() === "complete"
+      && entry?.referenceListChangesAppliedAt
+      && !entry?.completionUndoneAt
+    )
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.referenceListChangesAppliedAt || left.completedAt || left.updatedAt || "") || 0;
+      const rightTime = Date.parse(right.referenceListChangesAppliedAt || right.completedAt || right.updatedAt || "") || 0;
+      return rightTime - leftTime;
+    })[0] || null;
+}
+
+function undoLatestCompletedAnalysis(setupId, options = {}) {
+  const normalizedSetupId = String(setupId || "").trim();
+  if (!normalizedSetupId) {
+    throw new Error("Analysis setup ID is required.");
+  }
+
+  const setups = readAnalysisSetups();
+  const setupIndex = setups.findIndex((entry) => String(entry.id || "").trim() === normalizedSetupId);
+  if (setupIndex === -1) {
+    throw new Error("Analysis setup not found.");
+  }
+
+  const setup = clone(setups[setupIndex]);
+  const latestCompleted = getLatestCompletedAnalysisSetup();
+  if (!latestCompleted || String(latestCompleted.id || "").trim() !== normalizedSetupId) {
+    throw new Error("Only the most recent completed analysis can be undone.");
+  }
+  if (!setup.referenceListChangesAppliedAt || !hasMeaningfulReferenceListChanges(setup.referenceListChanges || [])) {
+    throw new Error("This analysis did not apply mailing-list changes.");
+  }
+  if (!setup.referenceListsSnapshot) {
+    throw new Error("No pre-completion mailing-list snapshot is available for this analysis.");
+  }
+
+  const actor = String(options.actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR;
+  const revertedLists = restoreReferenceListsFromSnapshot(setup.referenceListsSnapshot || [], {
+    actor,
+    actionType: "undo-analysis-complete",
+    sourceName: String(setup.runName || setup.id || "analysis-completion-undo").trim() || "analysis-completion-undo",
+    reason: `Undo completed analysis ${String(setup.runName || setup.id || "").trim()}`,
+    metadata: {
+      setupId: normalizedSetupId,
+    },
+  });
+
+  const timestamp = new Date().toISOString();
+  setup.status = "reverted";
+  setup.updatedAt = timestamp;
+  setup.completionUndoneAt = timestamp;
+  setup.completionUndoneBy = actor;
+  setup.referenceListChangesAppliedAt = null;
+  setups[setupIndex] = setup;
+  writeAnalysisSetups(setups);
+
+  return {
+    setup: serializeAnalysisSetup(setup),
+    revertedLists,
+    lists: listReferenceLists(),
   };
 }
 
@@ -4761,6 +4852,7 @@ module.exports = {
   deleteAnalysisSetup,
   deleteAnalysisComparisonSetup,
   deleteAnalysisRun,
+  undoLatestCompletedAnalysis,
   compareAnalysisReports,
   getAnalysisArtifactPath,
   getAnalysisReport,

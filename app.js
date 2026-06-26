@@ -105,6 +105,8 @@ const state = {
     reviewSummaryMode: "review",
     reviewSummaryNotes: "",
     reviewSummaryApproved: false,
+    reviewCompletedByName: "",
+    reviewCompletedOnDate: "",
     reviewSyncVersion: 0,
     reportScfMetricCache: {},
     editingReportId: "",
@@ -325,6 +327,11 @@ const formatDateOnly = (value) => {
     month: "short",
     day: "2-digit",
   });
+};
+
+const getTodayIsoDate = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
 const formatCurrencyValue = (value) => {
@@ -1371,6 +1378,8 @@ function persistAnalysisSetupDraft() {
       lastEditedComparisonId: String(state.analysis.lastEditedComparisonId || "").trim(),
       reviewPrimaryReportIds: cloneData(state.analysis.reviewPrimaryReportIds || {}),
       reviewSelectedScfs: cloneData(state.analysis.reviewSelectedScfs || {}),
+      reviewCompletedByName: String(state.analysis.reviewCompletedByName || "").trim(),
+      reviewCompletedOnDate: String(state.analysis.reviewCompletedOnDate || "").trim(),
       updatedAt: new Date().toISOString(),
     };
 
@@ -1452,10 +1461,21 @@ function restorePersistedAnalysisSetupDraft(setupId = "") {
   if (draft.reviewSelectedScfs && typeof draft.reviewSelectedScfs === "object") {
     state.analysis.reviewSelectedScfs = normalizeReviewSyncMap(draft.reviewSelectedScfs);
   }
+  if (draft.reviewCompletedByName !== undefined) {
+    state.analysis.reviewCompletedByName = String(draft.reviewCompletedByName || "").trim();
+  }
+  if (draft.reviewCompletedOnDate !== undefined) {
+    state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(draft.reviewCompletedOnDate || "") || getTodayIsoDate();
+  }
   state.analysis.selectedComparisonId = String(draft.selectedComparisonId || state.analysis.selectedComparisonId || "").trim();
   state.analysis.lastEditedComparisonId = String(draft.lastEditedComparisonId || state.analysis.lastEditedComparisonId || "").trim();
   state.analysis.lastSetupLoadSource = "local-draft";
   return true;
+}
+
+function ensureReviewCompletionFields() {
+  state.analysis.reviewCompletedByName = String(state.analysis.reviewCompletedByName || "").trim();
+  state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate();
 }
 
 function logComparisonSetupPersistenceContext(reason = "compare-review-open") {
@@ -1683,6 +1703,7 @@ function isAnalysisReviewSyncReady() {
 }
 
 function getAnalysisReviewSyncPayload(reason = "state-change") {
+  ensureReviewCompletionFields();
   const setupId = getCurrentComparisonReviewSetupId();
   const currentComparisonId = String(state.analysis.selectedComparisonId || "").trim();
   const nextVersion = Number(state.analysis.reviewSyncVersion || 0) + 1;
@@ -1704,6 +1725,8 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
     reviewSummaryMode: String(state.analysis.reviewSummaryMode || "review").trim() || "review",
     reviewSummaryNotes: String(state.analysis.reviewSummaryNotes || "").trim(),
     reviewSummaryApproved: Boolean(state.analysis.reviewSummaryApproved),
+    reviewCompletedByName: String(state.analysis.reviewCompletedByName || "").trim(),
+    reviewCompletedOnDate: String(state.analysis.reviewCompletedOnDate || "").trim(),
     reviewTableSort: cloneData(state.analysis.reviewTableSort || { key: "soldRate", direction: "desc" }),
     reviewThresholdMetric: String(state.analysis.reviewThresholdMetric || "soldRate").trim(),
     reviewThresholdValue: String(state.analysis.reviewThresholdValue || ""),
@@ -1744,6 +1767,8 @@ function applyAnalysisReviewSync(message) {
     state.analysis.reviewSummaryMode = String(message.reviewSummaryMode || "review").trim() || "review";
     state.analysis.reviewSummaryNotes = String(message.reviewSummaryNotes || "").trim();
     state.analysis.reviewSummaryApproved = Boolean(message.reviewSummaryApproved);
+    state.analysis.reviewCompletedByName = String(message.reviewCompletedByName || "").trim();
+    state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(message.reviewCompletedOnDate || "") || getTodayIsoDate();
     state.analysis.reviewTableSort = message.reviewTableSort && typeof message.reviewTableSort === "object"
       ? cloneData(message.reviewTableSort)
       : { key: "soldRate", direction: "desc" };
@@ -1832,7 +1857,21 @@ async function openAnalysisWorkspace() {
 function getComparisonReviewResultFromEntry(entry = {}) {
   const results = entry?.results || {};
   const comparisonReview = results?.comparisonReview || null;
-  return comparisonReview && typeof comparisonReview === "object" ? comparisonReview : null;
+  if (!comparisonReview || typeof comparisonReview !== "object") {
+    return null;
+  }
+  return {
+    ...comparisonReview,
+    summary: comparisonReview.summary && typeof comparisonReview.summary === "object"
+      ? {
+          ...comparisonReview.summary,
+          completedAt: comparisonReview.completedAt || comparisonReview.summary.completedAt || null,
+          completedByName: comparisonReview.completedByName || comparisonReview.summary.completedByName || "",
+          completedOnDate: comparisonReview.completedOnDate || comparisonReview.summary.completedOnDate || "",
+          canUndoLatestCompletion: comparisonReview.canUndoLatestCompletion === true || comparisonReview.summary.canUndoLatestCompletion === true,
+        }
+      : comparisonReview.summary,
+  };
 }
 
 function resolveAnalysisLandingFromEntry(entry = {}) {
@@ -2330,6 +2369,7 @@ function getMailingListHistoryActionLabel(actionType) {
     "manual-add-state": "Add State",
     "manual-remove-state": "Remove State",
     "restore-analysis-delete": "Restore on Delete",
+    "undo-analysis-complete": "Undo Analysis Complete",
   };
   return labels[normalized] || normalized || "Update";
 }
@@ -5592,6 +5632,7 @@ function summarizeComparisonReview() {
 }
 
 async function completeComparisonReview() {
+  ensureReviewCompletionFields();
   syncComparisonRequestsFromLinks();
   const completeButton = el("complete-comparison-review-button");
   const summaryMode = state.analysis.reviewSummaryMode || "review";
@@ -5643,6 +5684,16 @@ async function completeComparisonReview() {
     setStatus("analysis-comparison-selection-status", "Approve the summary before continuing.");
     return;
   }
+  const reviewerName = String(state.analysis.reviewCompletedByName || "").trim();
+  const reviewerDate = normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate();
+  if (!reviewerName) {
+    setStatus("analysis-comparison-selection-status", "Enter the reviewer name before completing.");
+    const reviewerInput = el("analysis-review-completed-by-name");
+    if (reviewerInput instanceof HTMLInputElement) {
+      reviewerInput.focus();
+    }
+    return;
+  }
   if (completeButton) {
     completeButton.disabled = true;
   }
@@ -5665,7 +5716,7 @@ async function completeComparisonReview() {
         commitComparisonSetup: true,
         completedAt: completionTimestamp,
         referenceListChanges: changes,
-        referenceListActor: "Local User",
+        referenceListActor: reviewerName,
         referenceListSourceName: state.analysis.runName || getDefaultAnalysisName(),
         referenceListReason:
           state.analysis.reviewSummaryNotes ||
@@ -5675,6 +5726,8 @@ async function completeComparisonReview() {
             summary: actualSummary,
             notes: state.analysis.reviewSummaryNotes || "",
             completedAt: completionTimestamp,
+            completedByName: reviewerName,
+            completedOnDate: reviewerDate,
             totals: {
               added: totalAdds,
               removed: totalRemoves,
@@ -5685,8 +5738,18 @@ async function completeComparisonReview() {
       },
     });
     const savedSetup = savedSetupResponse.setup || {};
+    state.referenceLists = Array.isArray(savedSetupResponse.lists) ? savedSetupResponse.lists : state.referenceLists;
     state.analysis.currentSetupId = savedSetup.id || state.analysis.currentSetupId;
     persistAnalysisSetupId(state.analysis.currentSetupId);
+    state.analysis.reviewSummary = state.analysis.reviewSummary
+      ? {
+          ...state.analysis.reviewSummary,
+          completedAt: completionTimestamp,
+          completedByName: reviewerName,
+          completedOnDate: reviewerDate,
+          canUndoLatestCompletion: true,
+        }
+      : state.analysis.reviewSummary;
     await loadReferenceLists();
     state.analysis.reviewBaselineLists = cloneData(state.referenceLists || []);
     state.analysis.reviewWorkingLists = cloneData(state.referenceLists || []);
@@ -5714,6 +5777,35 @@ async function completeComparisonReview() {
       const approvedNow = Boolean(state.analysis.reviewSummaryApproved);
       completeButton.disabled = !approvedNow || !canNowComplete;
     }
+  }
+}
+
+async function undoLatestCompletedComparisonReview() {
+  const setupId = String(state.analysis.currentSetupId || "").trim();
+  if (!setupId) {
+    setStatus("analysis-comparison-selection-status", "Open the completed analysis you want to undo first.");
+    return;
+  }
+  if (!confirm("Undo the most recent completed analysis and restore the mailing lists to their previous state?")) {
+    return;
+  }
+
+  setStatus("analysis-comparison-selection-status", "Undoing the most recent completed analysis...");
+  try {
+    const actor = String(state.analysis.reviewCompletedByName || "").trim() || "Local User";
+    const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(setupId)}/undo-complete`, {
+      method: "POST",
+      body: { actor },
+    });
+    const setup = response.setup || {};
+    state.referenceLists = Array.isArray(response.lists) ? response.lists : state.referenceLists;
+    loadSetupIntoWorkspace(setup);
+    state.analysis.reviewSummaryApproved = false;
+    await loadReferenceLists();
+    renderAnalysisComparisonReviewPanel();
+    setStatus("analysis-comparison-selection-status", "The most recent completed analysis was undone and the mailing lists were restored.");
+  } catch (error) {
+    setStatus("analysis-comparison-selection-status", `Unable to undo the most recent completion: ${error.message}`);
   }
 }
 
@@ -8464,6 +8556,10 @@ function renderAnalysisComparisonSummaryView() {
   const canComplete = !!state.analysis.reviewSummary && !summary.violations?.length;
   const approved = Boolean(state.analysis.reviewSummaryApproved);
   const runNotes = String(summary.runNotes || state.analysis.runNotes || "").trim();
+  ensureReviewCompletionFields();
+  const reviewerName = String(state.analysis.reviewCompletedByName || "").trim();
+  const reviewerDate = normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate();
+  const canUndoMostRecent = Boolean(summary.canUndoLatestCompletion);
   const runNotesMarkup = runNotes
     ? `<article class="panel analysis-review-summary-notes-card">
         <h4>Run Notes</h4>
@@ -8502,10 +8598,24 @@ function renderAnalysisComparisonSummaryView() {
           <input id="analysis-review-summary-approved" type="checkbox" ${approved ? "checked" : ""} />
           I approve this summary and want to move to completed review.
         </label>
+        <div class="analysis-pull-grid">
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-completed-by-name">Name</label>
+            <input id="analysis-review-completed-by-name" class="field-input" type="text" value="${esc(reviewerName)}" placeholder="Required to complete" />
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-completed-on-date">Date</label>
+            <input id="analysis-review-completed-on-date" class="field-input" type="date" value="${esc(reviewerDate)}" />
+          </div>
+        </div>
         <div class="field-stack">
           <label class="field-label" for="analysis-review-summary-notes">Review Notes</label>
           <textarea id="analysis-review-summary-notes" class="field-input multiline-input" rows="3">${esc(state.analysis.reviewSummaryNotes || "")}</textarea>
         </div>
+        ${summary.completedAt
+          ? `<p class="analysis-comparison-helper">Completed by ${esc(summary.completedByName || reviewerName || "Unknown")} on ${esc(formatDateOnly(summary.completedOnDate || reviewerDate) || "Not set")}.</p>`
+          : ""}
+        ${canUndoMostRecent ? '<button id="undo-latest-comparison-complete-button" class="secondary-button">Undo Most Recent Completion</button>' : ""}
       </article>
 
       <div class="analysis-review-summary-grid">
@@ -8545,7 +8655,28 @@ function renderAnalysisComparisonSummaryView() {
     notesInput.value = state.analysis.reviewSummaryNotes || "";
     notesInput.addEventListener("input", () => {
       state.analysis.reviewSummaryNotes = notesInput.value || "";
+      persistAnalysisSetupDraft();
       broadcastAnalysisReviewState("summary-notes");
+    });
+  }
+
+  const reviewerNameInput = el("analysis-review-completed-by-name");
+  if (reviewerNameInput instanceof HTMLInputElement) {
+    reviewerNameInput.value = reviewerName;
+    reviewerNameInput.addEventListener("input", () => {
+      state.analysis.reviewCompletedByName = reviewerNameInput.value || "";
+      persistAnalysisSetupDraft();
+      broadcastAnalysisReviewState("summary-reviewer-name");
+    });
+  }
+
+  const reviewerDateInput = el("analysis-review-completed-on-date");
+  if (reviewerDateInput instanceof HTMLInputElement) {
+    reviewerDateInput.value = reviewerDate;
+    reviewerDateInput.addEventListener("input", () => {
+      state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(reviewerDateInput.value || "") || getTodayIsoDate();
+      persistAnalysisSetupDraft();
+      broadcastAnalysisReviewState("summary-reviewer-date");
     });
   }
 
@@ -9913,6 +10044,8 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   state.analysis.reviewSummary = null;
   state.analysis.reviewSummaryMode = "review";
   state.analysis.reviewSummaryNotes = "";
+  state.analysis.reviewCompletedByName = "";
+  state.analysis.reviewCompletedOnDate = getTodayIsoDate();
   state.analysis.setupHydrated = false;
   state.analysis.lastSetupLoadSource = "";
   if (clearPersistedSetup) {
@@ -9970,6 +10103,8 @@ function loadSetupIntoWorkspace(setup) {
   state.analysis.reviewSummary = comparisonReview?.summary || null;
   state.analysis.reviewSummaryMode = "review";
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
+  state.analysis.reviewCompletedByName = String(setup.reviewState?.reviewCompletedByName || comparisonReview?.completedByName || "").trim();
+  state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(setup.reviewState?.reviewCompletedOnDate || comparisonReview?.completedOnDate || "") || getTodayIsoDate();
   state.analysis.setupHydrated = true;
   state.analysis.lastSetupLoadSource = "persistent-storage";
   syncAnalysisMeta({
@@ -10021,6 +10156,8 @@ function loadRunIntoWorkspace(run) {
   state.analysis.reviewSummary = comparisonReview?.summary || null;
   state.analysis.reviewSummaryMode = "review";
   state.analysis.reviewSummaryNotes = comparisonReview?.notes || "";
+  state.analysis.reviewCompletedByName = String(run.reviewState?.reviewCompletedByName || comparisonReview?.completedByName || "").trim();
+  state.analysis.reviewCompletedOnDate = normalizeIsoDateInput(run.reviewState?.reviewCompletedOnDate || comparisonReview?.completedOnDate || "") || getTodayIsoDate();
   syncAnalysisMeta({
     runName: run.runName || "",
     notes: run.notes ?? state.analysis.runNotes,
@@ -10074,13 +10211,17 @@ function buildAnalysisPayload(statusOverride) {
       lastEditedComparisonId: String(state.analysis.lastEditedComparisonId || "").trim(),
       reviewPrimaryReportIds: normalizeReviewSyncMap(state.analysis.reviewPrimaryReportIds),
       reviewSelectedScfs: normalizeReviewSyncMap(state.analysis.reviewSelectedScfs),
+      reviewCompletedByName: String(state.analysis.reviewCompletedByName || "").trim(),
+      reviewCompletedOnDate: normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate(),
     },
     results: state.analysis.reviewSummary
-      ? {
+        ? {
           comparisonReview: {
             summary: state.analysis.reviewSummary,
             notes: state.analysis.reviewSummaryNotes || "",
             completedAt: new Date().toISOString(),
+            completedByName: String(state.analysis.reviewCompletedByName || "").trim(),
+            completedOnDate: normalizeIsoDateInput(state.analysis.reviewCompletedOnDate || "") || getTodayIsoDate(),
           },
         }
       : null,
@@ -11013,6 +11154,11 @@ function bindAnalysisButtons() {
 
     if (target.id === "complete-comparison-review-button" && !target.disabled) {
       void completeComparisonReview();
+      return;
+    }
+
+    if (target.id === "undo-latest-comparison-complete-button" && !target.disabled) {
+      void undoLatestCompletedComparisonReview();
     }
   });
 
