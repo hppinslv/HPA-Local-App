@@ -7228,6 +7228,11 @@ function getNavigatorEntryMetricNumericValue(entry, metricKey) {
 }
 
 function isZeroNavigatorMetricEntry(entry, metricKey) {
+  const metricLabel = getReviewMetricDisplayName(metricKey);
+  const displayValue = String(getRowMetricDisplayValue(entry?.row || {}, metricLabel) || "").trim();
+  if (/^0(?:\.0+)?%?$/.test(displayValue)) {
+    return true;
+  }
   return getNavigatorEntryMetricNumericValue(entry, metricKey) === 0;
 }
 
@@ -9317,8 +9322,14 @@ function renderAnalysisComparisonSummaryView() {
     state.analysis.reviewSummaryMode = "review";
     state.analysis.reviewSummaryApproved = false;
     scheduleReviewStateAutosave("summary-back");
-    renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("summary-back");
+    setStatus("analysis-comparison-selection-status", "Reloading comparison review...");
+    loadAnalysisReports()
+      .catch(() => null)
+      .finally(() => {
+        renderAnalysisComparisonReviewPanel();
+        scheduleAnalysisComparisonReviewRender(20);
+      });
   });
 
   el("analysis-review-summary-print-button")?.addEventListener("click", () => {
@@ -9464,6 +9475,15 @@ function renderAnalysisComparisonReviewPanel() {
   }
 
   const { comparison, reports, primaryReport, primaryRows, selectedScf } = context;
+  if (!reports.length || !primaryReport) {
+    container.innerHTML = '<div class="empty-state-block">Reloading comparison reports...</div>';
+    void loadAnalysisReports()
+      .catch(() => null)
+      .finally(() => {
+        scheduleAnalysisComparisonReviewRender(40);
+      });
+    return;
+  }
   const listType = String(comparison.keyCodeGroup || "NHCL").trim().toUpperCase();
   const targetListType = listType.toLowerCase();
   const selectedPrimaryRow = findReportRowByScf(primaryReport, selectedScf)?.row || null;
@@ -10253,6 +10273,10 @@ function renderAnalysisComparisonReviewPanel() {
       primaryNavigatorRows,
       metricKey
     );
+    const visibleZeroRateScfs = primaryNavigatorRows
+      .filter((entry) => isZeroNavigatorMetricEntry(entry, metricKey))
+      .map((entry) => normalizeScf(entry?.scf))
+      .filter(Boolean);
     console.info("[analysis-zero-rate-removal]", {
       selectedComparisonId: comparison.id,
       selectedComparisonName: getComparisonDisplayName(comparison),
@@ -10262,6 +10286,7 @@ function renderAnalysisComparisonReviewPanel() {
       metricKey,
       metricLabel,
       totalScfsChecked: removalResult.checkedCount,
+      visibleZeroRateScfs,
       zeroRateScfsFound: removalResult.foundZeroRateScfs,
       skippedAlreadyNotOnWorkingList: removalResult.skippedAlreadyRemovedScfs,
       skippedAlreadyDnm: removalResult.skippedDnmScfs,
@@ -10296,7 +10321,9 @@ function renderAnalysisComparisonReviewPanel() {
       "analysis-comparison-selection-status",
       removalResult.removedCount
         ? `${removalResult.removedCount} SCF(s) with 0.00% ${metricLabel} were marked for pending removal from the working ${listType} list using ${primaryReportDisplayName} only. They remain visible in the review list.`
-        : !removalResult.foundZeroRateScfs.length
+        : !removalResult.foundZeroRateScfs.length && visibleZeroRateScfs.length
+          ? `Zero-rate SCFs are visible in the report (${visibleZeroRateScfs.join(", ")}), but they could not be matched into the working ${listType} removal set yet. Refreshing review data may be needed.`
+          : !removalResult.foundZeroRateScfs.length
           ? `No zero-rate SCFs were found in ${primaryReportDisplayName} for ${metricLabel}.`
           : removalResult.skippedDnmScfs.length && !removalResult.skippedAlreadyRemovedScfs.length
             ? `Zero-rate SCFs were found, but they are already DNM and not on the working ${listType} list.`
