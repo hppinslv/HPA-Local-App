@@ -1581,6 +1581,7 @@ function normalizeAnalysisReviewState(value = {}) {
         listType: String(entry.listType || "").trim().toLowerCase(),
         removalKind: String(entry.removalKind || "zero-rate").trim().toLowerCase(),
         metricKey: String(entry.metricKey || "soldRate").trim() || "soldRate",
+        fieldUsed: String(entry.fieldUsed || "").trim(),
         checkedCount: Number(entry.checkedCount || 0),
         totalMailedRemoved: Number(entry.totalMailedRemoved || 0),
         removedScfs,
@@ -1621,6 +1622,7 @@ function normalizeAnalysisReviewState(value = {}) {
             removedCount: Number(source.zeroRemovalLastResult.removedCount || 0),
             totalMailedRemoved: Number(source.zeroRemovalLastResult.totalMailedRemoved || 0),
             message: String(source.zeroRemovalLastResult.message || "").trim(),
+            checkedAt: String(source.zeroRemovalLastResult.checkedAt || "").trim(),
           }
         : null,
     };

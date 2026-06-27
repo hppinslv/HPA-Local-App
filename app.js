@@ -1761,6 +1761,7 @@ function normalizeReviewZeroRateRemovals(source) {
       listType: String(entry.listType || "").trim().toLowerCase(),
       removalKind: String(entry.removalKind || "zero-rate").trim().toLowerCase(),
       metricKey: String(entry.metricKey || "soldRate").trim() || "soldRate",
+      fieldUsed: String(entry.fieldUsed || "").trim(),
       checkedCount: Number(entry.checkedCount || 0),
       totalMailedRemoved: Number(entry.totalMailedRemoved || 0),
       removedScfs,
@@ -1804,6 +1805,7 @@ function normalizeReviewZeroRemovalDiagnostics(source) {
           removedCount: Number(source.zeroRemovalLastResult.removedCount || 0),
           totalMailedRemoved: Number(source.zeroRemovalLastResult.totalMailedRemoved || 0),
           message: String(source.zeroRemovalLastResult.message || "").trim(),
+          checkedAt: String(source.zeroRemovalLastResult.checkedAt || "").trim(),
         }
       : null,
   };
@@ -5968,6 +5970,141 @@ function getEffectiveComparisonReviewSummary() {
   }
 }
 
+function buildWorkingCopyCleanupSummary() {
+  const diagnostics = normalizeReviewZeroRemovalDiagnostics(state.analysis.reviewZeroRemovalDiagnostics || null);
+  const activeActions = getActiveZeroRateRemovalActions().filter((entry) => entry.isPending);
+  const entries = activeActions.map((action) => ({
+    id: action.id,
+    status: "removed",
+    listType: String(action.listType || "").trim().toLowerCase(),
+    comparisonName: String(action.comparisonName || diagnostics?.comparisonName || "").trim(),
+    primaryReportName: String(action.primaryReportName || "").trim(),
+    fieldUsed: String(action.fieldUsed || diagnostics?.zeroRemovalFieldUsed || "").trim(),
+    checkedCount: Number(action.checkedCount || diagnostics?.totalReportRowsChecked || 0),
+    removedCount: Number(action.activeRemovedCount || 0),
+    totalMailedRemoved: Number(action.totalMailedRemoved || 0),
+    scfs: ensureArray(action.activeRemovedScfs).map((scf) => normalizeScf(scf)).filter(Boolean),
+    foundScfs: ensureArray(action.foundZeroRateScfs).map((scf) => normalizeScf(scf)).filter(Boolean),
+    skippedAlreadyRemovedScfs: ensureArray(action.skippedAlreadyRemovedScfs).map((scf) => normalizeScf(scf)).filter(Boolean),
+    skippedDnmScfs: ensureArray(action.skippedDnmScfs).map((scf) => normalizeScf(scf)).filter(Boolean),
+    createdAt: String(action.createdAt || diagnostics?.zeroRemovalLastResult?.checkedAt || "").trim(),
+    message: [
+      `Removed ${Number(action.activeRemovedCount || 0)} zero-mailed SCF(s)`,
+      action.primaryReportName ? `from ${action.primaryReportName}` : "",
+      action.fieldUsed || diagnostics?.zeroRemovalFieldUsed ? `using ${action.fieldUsed || diagnostics?.zeroRemovalFieldUsed}` : "",
+    ].filter(Boolean).join(" "),
+  }));
+
+  const lastResult = diagnostics?.zeroRemovalLastResult && typeof diagnostics.zeroRemovalLastResult === "object"
+    ? diagnostics.zeroRemovalLastResult
+    : null;
+
+  if (!entries.length && lastResult && lastResult.status && lastResult.status !== "undone") {
+    entries.push({
+      id: "",
+      status: String(lastResult.status || "").trim(),
+      listType: "",
+      comparisonName: String(diagnostics?.comparisonName || "").trim(),
+      primaryReportName: "",
+      fieldUsed: String(diagnostics?.zeroRemovalFieldUsed || "").trim(),
+      checkedCount: Number(diagnostics?.totalReportRowsChecked || 0),
+      removedCount: Number(lastResult.removedCount || 0),
+      totalMailedRemoved: Number(lastResult.totalMailedRemoved || 0),
+      scfs: [],
+      foundScfs: [],
+      skippedAlreadyRemovedScfs: [],
+      skippedDnmScfs: [],
+      createdAt: String(lastResult.checkedAt || "").trim(),
+      message: String(lastResult.message || "").trim(),
+    });
+  }
+
+  return {
+    entries,
+    hasVisibleResult: entries.length > 0,
+  };
+}
+
+function mergeWorkingCopyCleanupIntoSummary(summary, cleanupSummary) {
+  const nextSummary = cloneData(summary || {});
+  if (!cleanupSummary?.entries?.length) {
+    return nextSummary;
+  }
+
+  if (!nextSummary.lists || typeof nextSummary.lists !== "object") {
+    nextSummary.lists = {};
+  }
+  ["nhcl", "rfc"].forEach((listType) => {
+    if (!nextSummary.lists[listType] || typeof nextSummary.lists[listType] !== "object") {
+      nextSummary.lists[listType] = { added: [], removed: [], blocked: [], addedCount: 0, removedCount: 0, blockedCount: 0 };
+    }
+  });
+  if (!nextSummary.summary || typeof nextSummary.summary !== "object") {
+    nextSummary.summary = { nhclAdded: 0, nhclRemoved: 0, rfcAdded: 0, rfcRemoved: 0, blockedCount: 0 };
+  }
+
+  cleanupSummary.entries
+    .filter((entry) => entry.status === "removed" && entry.listType && entry.scfs.length)
+    .forEach((entry) => {
+      const listType = entry.listType;
+      const removedRows = ensureArray(nextSummary.lists?.[listType]?.removed);
+      const removedSet = new Set(removedRows.map((row) => normalizeScf(row?.scf)).filter(Boolean));
+      entry.scfs.forEach((scf) => {
+        if (removedSet.has(scf)) {
+          return;
+        }
+        removedRows.push({
+          scf,
+          state: "",
+          reason: "Zero mailed quantity cleanup",
+        });
+        removedSet.add(scf);
+      });
+      removedRows.sort((a, b) => String(a?.scf || "").localeCompare(String(b?.scf || "")));
+      nextSummary.lists[listType].removed = removedRows;
+      nextSummary.lists[listType].removedCount = removedRows.length;
+      if (listType === "nhcl") {
+        nextSummary.summary.nhclRemoved = removedRows.length;
+      } else if (listType === "rfc") {
+        nextSummary.summary.rfcRemoved = removedRows.length;
+      }
+    });
+
+  return nextSummary;
+}
+
+function renderWorkingCopyCleanupSummaryCard(cleanupSummary, readOnly = false) {
+  if (!cleanupSummary?.entries?.length) {
+    return "";
+  }
+
+  return `
+    <article class="panel analysis-review-summary-card">
+      <h4>Working Copy Cleanup Summary</h4>
+      <div class="analysis-review-summary-list analysis-review-summary-list-rows">
+        ${cleanupSummary.entries.map((entry) => `
+          <div class="analysis-review-summary-row-item">
+            <strong>${esc(entry.message || "Working copy cleanup result")}</strong>
+            ${entry.comparisonName ? `<span>${esc(entry.comparisonName)}</span>` : ""}
+            ${entry.primaryReportName ? `<span>${esc(entry.primaryReportName)}</span>` : ""}
+            ${entry.fieldUsed ? `<span>Field: ${esc(entry.fieldUsed)}</span>` : ""}
+            ${entry.checkedCount ? `<span>Rows checked: ${Number(entry.checkedCount).toLocaleString("en-US")}</span>` : ""}
+            <span>Rows removed: ${Number(entry.removedCount || 0).toLocaleString("en-US")}</span>
+            <span>Mailed removed: ${Number(entry.totalMailedRemoved || 0).toLocaleString("en-US")}</span>
+            ${entry.scfs.length ? `<span>SCFs: ${esc(entry.scfs.join(", "))}</span>` : ""}
+            ${entry.skippedAlreadyRemovedScfs.length ? `<span>Already not on working list: ${esc(entry.skippedAlreadyRemovedScfs.join(", "))}</span>` : ""}
+            ${entry.skippedDnmScfs.length ? `<span>Already DNM: ${esc(entry.skippedDnmScfs.join(", "))}</span>` : ""}
+            ${entry.createdAt ? `<span>${esc(formatDate(entry.createdAt))}</span>` : ""}
+            ${entry.id && entry.status === "removed" && !readOnly
+              ? `<button class="secondary-button table-action-button" data-zero-rate-undo-action="${esc(entry.id)}">Undo</button>`
+              : ""}
+          </div>
+        `).join("")}
+      </div>
+    </article>
+  `;
+}
+
 function getReviewWorkingListPayload() {
   return (ensureArray(state.analysis.reviewWorkingLists) || []).map((entry) => ({
     type: entry.type,
@@ -6026,9 +6163,7 @@ function buildZeroRateRemovalReviewNotesText() {
 }
 
 function getEffectiveAnalysisReviewNotes() {
-  const manualNotes = getManualAnalysisReviewNotes(state.analysis.reviewSummaryNotes);
-  const zeroRateNotes = buildZeroRateRemovalReviewNotesText();
-  return [manualNotes, zeroRateNotes].filter(Boolean).join("\n\n");
+  return getManualAnalysisReviewNotes(state.analysis.reviewSummaryNotes);
 }
 
 function ensureComparisonReviewPanelToolbar() {
@@ -8213,6 +8348,10 @@ function restoreZeroRateRemovalAction(actionId) {
         ? { ...entry, undoneAt: entry.undoneAt || new Date().toISOString() }
         : entry
     );
+    state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics({
+      ...(state.analysis.reviewZeroRemovalDiagnostics || {}),
+      zeroRemovalLastResult: null,
+    });
     return { restoredCount: 0, restoredScfs: [] };
   }
   list.items = [...ensureArray(list.items), ...restoreRows.map((entry) => ({
@@ -8226,6 +8365,10 @@ function restoreZeroRateRemovalAction(actionId) {
       ? { ...entry, undoneAt: new Date().toISOString() }
       : entry
   );
+  state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics({
+    ...(state.analysis.reviewZeroRemovalDiagnostics || {}),
+    zeroRemovalLastResult: null,
+  });
   invalidateComparisonReviewSummary();
   return {
     restoredCount: restoreRows.length,
@@ -9626,7 +9769,8 @@ function renderReviewSummaryPrintListMarkup(title, rows = []) {
 }
 
 function buildAnalysisReviewPrintWindowDocument() {
-  const summary = getEffectiveComparisonReviewSummary();
+  const cleanupSummary = buildWorkingCopyCleanupSummary();
+  const summary = mergeWorkingCopyCleanupIntoSummary(getEffectiveComparisonReviewSummary(), cleanupSummary);
   const listSummary = summary.lists || {};
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
   const rfc = listSummary.rfc || { added: [], removed: [], blocked: [] };
@@ -9733,6 +9877,21 @@ function buildAnalysisReviewPrintWindowDocument() {
   ${reviewNotes
     ? `<section class="analysis-print-card"><h2>Review Notes</h2><div class="analysis-print-notes">${esc(reviewNotes)}</div></section>`
     : ""}
+  ${cleanupSummary?.entries?.length
+    ? `<section class="analysis-print-card"><h2>Working Copy Cleanup Summary</h2><div class="analysis-print-notes">${esc(cleanupSummary.entries.map((entry) => {
+        const parts = [
+          entry.message,
+          entry.comparisonName,
+          entry.primaryReportName,
+          entry.fieldUsed ? `Field: ${entry.fieldUsed}` : "",
+          entry.checkedCount ? `Rows checked: ${entry.checkedCount}` : "",
+          `Rows removed: ${entry.removedCount || 0}`,
+          `Mailed removed: ${entry.totalMailedRemoved || 0}`,
+          entry.scfs.length ? `SCFs: ${entry.scfs.join(", ")}` : "",
+        ].filter(Boolean);
+        return parts.join(" | ");
+      }).join("\n"))}</div></section>`
+    : ""}
 
   ${renderReviewSummaryPrintListMarkup("NHCL - Added", nhcl.added)}
   ${renderReviewSummaryPrintListMarkup("NHCL - Removed", nhcl.removed)}
@@ -9764,8 +9923,8 @@ function openAnalysisReviewPrintSummary() {
 
 function renderAnalysisComparisonSummaryView() {
   const container = el("analysis-comparison-results");
-  const summary = getEffectiveComparisonReviewSummary();
-  const zeroRateSummary = buildZeroRateRemovalSummary();
+  const cleanupSummary = buildWorkingCopyCleanupSummary();
+  const summary = mergeWorkingCopyCleanupIntoSummary(getEffectiveComparisonReviewSummary(), cleanupSummary);
   const readOnly = isCurrentAnalysisReadOnly();
   const listSummary = summary.lists || {};
   const nhcl = listSummary.nhcl || { added: [], removed: [], blocked: [] };
@@ -9811,6 +9970,7 @@ function renderAnalysisComparisonSummaryView() {
       </article>
 
       ${runNotesMarkup}
+      ${renderWorkingCopyCleanupSummaryCard(cleanupSummary, readOnly)}
 
       <article class="panel analysis-review-finalize-card">
         <h4>Approval Required Before Completion</h4>
@@ -9832,27 +9992,6 @@ function renderAnalysisComparisonSummaryView() {
         <div class="field-stack">
           <label class="field-label" for="analysis-review-summary-notes">Review Notes</label>
           <textarea id="analysis-review-summary-notes" class="field-input multiline-input" rows="3"${readOnly ? " disabled" : ""}>${esc(reviewNotesValue)}</textarea>
-          ${zeroRateSummary.actions.length
-            ? `<div class="analysis-comparison-helper">
-                <strong>Pending zero-rate working-copy removals</strong><br />
-                ${esc(buildZeroRateRemovalReviewNotesText()).replace(/\n/g, "<br />")}
-              </div>`
-            : ""}
-          ${zeroRateSummary.actions.length && !readOnly
-            ? `<div class="analysis-review-summary-list analysis-review-summary-list-rows">
-                ${zeroRateSummary.actions.map((action) => `
-                  <div class="analysis-review-summary-row-item">
-                    <strong>${esc(action.comparisonName || action.comparisonId || "Comparison")}</strong>
-                    <span>${esc(action.primaryReportName || action.primaryReportId || "Primary report")}</span>
-                    <span>${esc(String(action.listType || "").toUpperCase())} list</span>
-                    <span>${esc(getReviewMetricDisplayName(action.metricKey))}</span>
-                    <span>${Number(action.activeRemovedCount || 0)} removed</span>
-                    <span>${esc(action.activeRemovedScfs.join(", "))}</span>
-                    <button class="secondary-button table-action-button" data-zero-rate-undo-action="${esc(action.id)}">Undo</button>
-                  </div>
-                `).join("")}
-              </div>`
-            : ""}
         </div>
         ${summary.completedAt
           ? `<p class="analysis-comparison-helper">Completed by ${esc(summary.completedByName || reviewerName || "Unknown")} on ${esc(formatDateOnly(summary.completedOnDate || reviewerDate) || "Not set")}.</p>`
@@ -10905,6 +11044,7 @@ function renderAnalysisComparisonReviewPanel() {
         removedCount: Number(removalResult.removedCount || 0),
         totalMailedRemoved: Number(removalResult.totalMailedRemoved || 0),
         message: lastResultMessage,
+        checkedAt: new Date().toISOString(),
       },
     });
     console.info("[analysis-zero-rate-removal]", {
@@ -10937,6 +11077,7 @@ function renderAnalysisComparisonReviewPanel() {
         listType: targetListType,
         removalKind: "zero-quantity",
         metricKey,
+        fieldUsed: checkedField,
         checkedCount: removalResult.checkedCount,
         totalMailedRemoved: removalResult.totalMailedRemoved,
         removedScfs: removalResult.removedScfs,

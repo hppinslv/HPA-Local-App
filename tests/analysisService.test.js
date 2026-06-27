@@ -454,6 +454,7 @@ test("review working-list changes persist before completion and reload with the 
           listType: "nhcl",
           removalKind: "zero-quantity",
           metricKey: "soldRate",
+          fieldUsed: "Sum of Mailed",
           checkedCount: 25,
           totalMailedRemoved: 0,
           removedScfs: ["010"],
@@ -463,6 +464,28 @@ test("review working-list changes persist before completion and reload with the 
           createdAt: "2026-06-26T15:30:00.000Z",
         },
       ],
+      reviewZeroRemovalDiagnostics: {
+        setupId: "setup_1",
+        comparisonName: "NHCL Compare",
+        selectedPrimaryReportId: "report_a",
+        resolvedSavedReportId: "report_a",
+        totalReportRowsChecked: 25,
+        zeroRemovalFieldUsed: "Sum of Mailed",
+        zeroRemovalCandidateCount: 1,
+        zeroValueCount: 1,
+        blankOrNullCount: 0,
+        nonNumericCount: 0,
+        zeroRemovalSampleRows: [
+          { scf: "010", rawMailedValue: "0", parsedMailedValue: 0, wouldRemove: true },
+        ],
+        zeroRemovalLastResult: {
+          status: "removed",
+          removedCount: 1,
+          totalMailedRemoved: 0,
+          message: "Removed 1 zero-mailed SCF(s) from the working copy.",
+          checkedAt: "2026-06-26T15:31:00.000Z",
+        },
+      },
     },
   }));
 
@@ -488,6 +511,7 @@ test("review working-list changes persist before completion and reload with the 
       listType: "nhcl",
       removalKind: "zero-quantity",
       metricKey: "soldRate",
+      fieldUsed: "Sum of Mailed",
       checkedCount: 25,
       totalMailedRemoved: 0,
       removedScfs: ["010"],
@@ -498,6 +522,28 @@ test("review working-list changes persist before completion and reload with the 
       undoneAt: "",
     },
   ]);
+  assert.deepEqual(reloaded.reviewState.reviewZeroRemovalDiagnostics, {
+    setupId: "setup_1",
+    comparisonName: "NHCL Compare",
+    selectedPrimaryReportId: "report_a",
+    resolvedSavedReportId: "report_a",
+    totalReportRowsChecked: 25,
+    zeroRemovalFieldUsed: "Sum of Mailed",
+    zeroRemovalCandidateCount: 1,
+    zeroValueCount: 1,
+    blankOrNullCount: 0,
+    nonNumericCount: 0,
+    zeroRemovalSampleRows: [
+      { scf: "010", rawMailedValue: "0", parsedMailedValue: 0, wouldRemove: true },
+    ],
+    zeroRemovalLastResult: {
+      status: "removed",
+      removedCount: 1,
+      totalMailedRemoved: 0,
+      message: "Removed 1 zero-mailed SCF(s) from the working copy.",
+      checkedAt: "2026-06-26T15:31:00.000Z",
+    },
+  });
 });
 
 test("empty local draft style saves cannot overwrite a committed comparison setup", (t) => {
