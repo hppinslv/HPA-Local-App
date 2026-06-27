@@ -91,8 +91,12 @@ const state = {
     selectedComparisonId: "",
     lastEditedComparisonId: "",
     reviewTableSort: { key: "soldRate", direction: "desc" },
-    reviewThresholdMetric: "soldRate",
-    reviewThresholdValue: "",
+    reviewSoldRateOperator: ">",
+    reviewSoldRateMin: "",
+    reviewConvertedRateOperator: "!=",
+    reviewConvertedRateValue: "",
+    reviewMailedOperator: ">",
+    reviewMailedMin: "",
     reviewBulkMetric: "soldRate",
     reviewBulkThresholdValue: "",
     reviewBulkPreview: null,
@@ -1903,8 +1907,12 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
     reviewCompletedByName: String(state.analysis.reviewCompletedByName || "").trim(),
     reviewCompletedOnDate: String(state.analysis.reviewCompletedOnDate || "").trim(),
     reviewTableSort: cloneData(state.analysis.reviewTableSort || { key: "soldRate", direction: "desc" }),
-    reviewThresholdMetric: String(state.analysis.reviewThresholdMetric || "soldRate").trim(),
-    reviewThresholdValue: String(state.analysis.reviewThresholdValue || ""),
+    reviewSoldRateOperator: String(state.analysis.reviewSoldRateOperator || ">").trim() || ">",
+    reviewSoldRateMin: String(state.analysis.reviewSoldRateMin || ""),
+    reviewConvertedRateOperator: String(state.analysis.reviewConvertedRateOperator || "!=").trim() || "!=",
+    reviewConvertedRateValue: String(state.analysis.reviewConvertedRateValue || ""),
+    reviewMailedOperator: String(state.analysis.reviewMailedOperator || ">").trim() || ">",
+    reviewMailedMin: String(state.analysis.reviewMailedMin || ""),
     reviewBulkMetric: String(state.analysis.reviewBulkMetric || "soldRate").trim(),
     reviewBulkThresholdValue: String(state.analysis.reviewBulkThresholdValue || ""),
     reviewPageSize: String(state.analysis.reviewPageSize || 100),
@@ -1968,8 +1976,15 @@ function applyAnalysisReviewSync(message) {
     state.analysis.reviewTableSort = message.reviewTableSort && typeof message.reviewTableSort === "object"
       ? cloneData(message.reviewTableSort)
       : { key: "soldRate", direction: "desc" };
-    state.analysis.reviewThresholdMetric = String(message.reviewThresholdMetric || "soldRate").trim();
-    state.analysis.reviewThresholdValue = String(message.reviewThresholdValue || "");
+    state.analysis.reviewSoldRateOperator = String(message.reviewSoldRateOperator || ">").trim() || ">";
+    state.analysis.reviewSoldRateMin = String(message.reviewSoldRateMin || "");
+    state.analysis.reviewConvertedRateOperator = String(message.reviewConvertedRateOperator || "!=").trim() || "!=";
+    state.analysis.reviewConvertedRateValue = String(
+      message.reviewConvertedRateValue
+      || (String(message.reviewConvertedRateMode || "any").trim() === "notZero" ? "0" : "")
+    );
+    state.analysis.reviewMailedOperator = String(message.reviewMailedOperator || ">").trim() || ">";
+    state.analysis.reviewMailedMin = String(message.reviewMailedMin || "");
     state.analysis.reviewBulkMetric = String(message.reviewBulkMetric || "soldRate").trim();
     state.analysis.reviewBulkThresholdValue = String(message.reviewBulkThresholdValue || "");
     state.analysis.reviewPageSize = String(message.reviewPageSize || 100);
@@ -7893,6 +7908,39 @@ function parseReviewRateThreshold(thresholdValue, rows = [], metricKey = "soldRa
   };
 }
 
+function isValidReviewFilterOperator(operator) {
+  return [">", ">=", "<", "<=", "=", "!="].includes(String(operator || "").trim());
+}
+
+function normalizeReviewFilterOperator(operator, fallback = ">") {
+  const normalized = String(operator || "").trim();
+  return isValidReviewFilterOperator(normalized) ? normalized : fallback;
+}
+
+function compareReviewFilterValues(leftValue, operator, rightValue) {
+  const left = Number(leftValue);
+  const right = Number(rightValue);
+  if (!Number.isFinite(left) || !Number.isFinite(right)) {
+    return false;
+  }
+  switch (normalizeReviewFilterOperator(operator)) {
+    case ">":
+      return left > right;
+    case ">=":
+      return left >= right;
+    case "<":
+      return left < right;
+    case "<=":
+      return left <= right;
+    case "=":
+      return left === right;
+    case "!=":
+      return left !== right;
+    default:
+      return false;
+  }
+}
+
 function buildPrimaryNavigatorRows(report) {
   return getUnifiedReportScfEntries(report).map((entry) => ({
     scf: entry.scf,
@@ -7999,14 +8047,36 @@ function prefetchAnalysisReportScfMetrics(report, scfs) {
 }
 
 function getSortedFilteredPrimaryRows(rows = [], comparisonId = state.analysis.selectedComparisonId) {
-  const thresholdMetric = String(state.analysis.reviewThresholdMetric || "soldRate").trim();
-  const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
-  const parsedThreshold = parseReviewRateThreshold(thresholdValue, rows, thresholdMetric);
+  const soldRateOperator = normalizeReviewFilterOperator(state.analysis.reviewSoldRateOperator, ">");
+  const soldRateMinRaw = String(state.analysis.reviewSoldRateMin || "").trim();
+  const convertedRateOperator = normalizeReviewFilterOperator(state.analysis.reviewConvertedRateOperator, "!=");
+  const convertedRateValueRaw = String(state.analysis.reviewConvertedRateValue || "").trim();
+  const mailedOperator = normalizeReviewFilterOperator(state.analysis.reviewMailedOperator, ">");
+  const mailedMinRaw = String(state.analysis.reviewMailedMin || "").trim();
+  const parsedSoldRateThreshold = parseReviewRateThreshold(soldRateMinRaw, rows, "soldRate");
+  const parsedConvertedRateThreshold = parseReviewRateThreshold(convertedRateValueRaw, rows, "convertedRate");
+  const parsedMailedMin = parseLooseMetricNumberDetailed(mailedMinRaw);
   const filteredRows = rows.filter((entry) => {
-    if (!parsedThreshold) {
-      return true;
+    if (
+      parsedSoldRateThreshold
+      && !compareReviewFilterValues(Number(entry?.soldRate || 0), soldRateOperator, parsedSoldRateThreshold.compareValue)
+    ) {
+      return false;
     }
-    return Number(entry?.[thresholdMetric] || 0) >= parsedThreshold.compareValue;
+    if (
+      parsedConvertedRateThreshold
+      && !compareReviewFilterValues(Number(entry?.convertedRate || 0), convertedRateOperator, parsedConvertedRateThreshold.compareValue)
+    ) {
+      return false;
+    }
+    if (
+      !parsedMailedMin.isBlank
+      && parsedMailedMin.isNumeric
+      && !compareReviewFilterValues(Number(entry?.mailed || 0), mailedOperator, parsedMailedMin.numericValue)
+    ) {
+      return false;
+    }
+    return true;
   });
   const activeNavigatorScfFilterSet = new Set(
     ensureArray(state.analysis.activeNavigatorScfFilter).map((entry) => normalizeScf(entry)).filter(Boolean)
@@ -8433,6 +8503,12 @@ function resetAnalysisWorkingState(options = {}) {
   state.analysis.reviewBulkPreview = null;
   state.analysis.selectedNavigatorScfs = [];
   state.analysis.activeNavigatorScfFilter = [];
+  state.analysis.reviewSoldRateOperator = ">";
+  state.analysis.reviewSoldRateMin = "";
+  state.analysis.reviewConvertedRateOperator = "!=";
+  state.analysis.reviewConvertedRateValue = "";
+  state.analysis.reviewMailedOperator = ">";
+  state.analysis.reviewMailedMin = "";
   state.analysis.reviewSummaryApproved = false;
   stripAutoAnalysisReviewNotes();
   invalidateComparisonReviewSummary();
@@ -10473,8 +10549,12 @@ function renderAnalysisComparisonReviewPanel() {
   const visibleRows = sortedFilteredRows.slice(pagination.startIndex, pagination.endIndex);
   const selectedNavigatorEntry = sortedFilteredRows.find((entry) => entry.scf === effectiveSelectedScf) || null;
   const primaryReportDisplayName = primaryReport ? getAnalysisReportDisplayName(primaryReport) : "the selected primary report";
-  const thresholdMetric = String(state.analysis.reviewThresholdMetric || "soldRate").trim();
-  const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
+  const soldRateOperatorValue = normalizeReviewFilterOperator(state.analysis.reviewSoldRateOperator, ">");
+  const soldRateMinValue = String(state.analysis.reviewSoldRateMin || "").trim();
+  const convertedRateOperatorValue = normalizeReviewFilterOperator(state.analysis.reviewConvertedRateOperator, "!=");
+  const convertedRateValue = String(state.analysis.reviewConvertedRateValue || "").trim();
+  const mailedOperatorValue = normalizeReviewFilterOperator(state.analysis.reviewMailedOperator, ">");
+  const mailedMinValue = String(state.analysis.reviewMailedMin || "").trim();
   const bulkMetric = String(state.analysis.reviewBulkMetric || "soldRate").trim();
   const bulkThresholdValue = String(state.analysis.reviewBulkThresholdValue || "").trim();
   const selectedNavigatorScfSet = getSelectedNavigatorScfSet();
@@ -10823,19 +10903,40 @@ function renderAnalysisComparisonReviewPanel() {
         </div>
         <div class="analysis-review-filter-bar">
           <div class="field-stack">
-            <label class="field-label" for="analysis-review-threshold-metric">Show SCFs Above</label>
-            <select id="analysis-review-threshold-metric" class="field-input">
-              <option value="soldRate"${thresholdMetric === "soldRate" ? " selected" : ""}>Sold Rate</option>
-              <option value="inForceRate"${thresholdMetric === "inForceRate" ? " selected" : ""}>In Force Rate</option>
-              <option value="convertedRate"${thresholdMetric === "convertedRate" ? " selected" : ""}>Converted Rate</option>
-            </select>
+            <label class="field-label" for="analysis-review-sold-rate-min">Sold Rate Filter</label>
+            <div class="action-row">
+              <select id="analysis-review-sold-rate-operator" class="field-input">
+                ${[">", ">=", "<", "<=", "=", "!="].map((operator) => `
+                  <option value="${operator}"${soldRateOperatorValue === operator ? " selected" : ""}>${operator}</option>
+                `).join("")}
+              </select>
+              <input id="analysis-review-sold-rate-min" class="field-input" type="text" inputmode="decimal" value="${esc(soldRateMinValue)}" placeholder="ex: .6" />
+            </div>
           </div>
           <div class="field-stack">
-            <label class="field-label" for="analysis-review-threshold-value">Percent</label>
-            <input id="analysis-review-threshold-value" class="field-input" type="text" inputmode="decimal" value="${esc(thresholdValue)}" placeholder="ex: 2.50 or .025" />
+            <label class="field-label" for="analysis-review-converted-rate-operator">Converted Rate Filter</label>
+            <div class="action-row">
+              <select id="analysis-review-converted-rate-operator" class="field-input">
+                ${[">", ">=", "<", "<=", "=", "!="].map((operator) => `
+                  <option value="${operator}"${convertedRateOperatorValue === operator ? " selected" : ""}>${operator}</option>
+                `).join("")}
+              </select>
+              <input id="analysis-review-converted-rate-value" class="field-input" type="text" inputmode="decimal" value="${esc(convertedRateValue)}" placeholder="ex: 0" />
+            </div>
           </div>
           <div class="field-stack">
-            <label class="field-label" for="analysis-review-threshold-clear">Reset Filter</label>
+            <label class="field-label" for="analysis-review-mailed-min">Mailed Filter</label>
+            <div class="action-row">
+              <select id="analysis-review-mailed-operator" class="field-input">
+                ${[">", ">=", "<", "<=", "=", "!="].map((operator) => `
+                  <option value="${operator}"${mailedOperatorValue === operator ? " selected" : ""}>${operator}</option>
+                `).join("")}
+              </select>
+              <input id="analysis-review-mailed-min" class="field-input" type="text" inputmode="decimal" value="${esc(mailedMinValue)}" placeholder="ex: 200" />
+            </div>
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-threshold-clear">Reset Filters</label>
             <button id="analysis-review-threshold-clear" class="secondary-button">Show All SCFs</button>
           </div>
           <div class="field-stack">
@@ -11027,7 +11128,6 @@ function renderAnalysisComparisonReviewPanel() {
       setStatus("analysis-comparison-selection-status", "Enter a valid 3-digit SCF to open it.");
       return;
     }
-    state.analysis.reviewThresholdValue = "";
     setStatus(
       "analysis-comparison-selection-status",
       primaryNavigatorRows.some((entry) => entry.scf === requestedScf)
@@ -11074,39 +11174,87 @@ function renderAnalysisComparisonReviewPanel() {
   });
   });
 
-  el("analysis-review-threshold-metric")?.addEventListener("change", (event) => {
-    state.analysis.reviewThresholdMetric = String(event.target.value || "soldRate").trim();
+  const commitNavigatorCompositeFilters = (nextValues = {}) => {
+    state.analysis.reviewSoldRateOperator = normalizeReviewFilterOperator(
+      nextValues.soldRateOperator ?? state.analysis.reviewSoldRateOperator,
+      ">"
+    );
+    state.analysis.reviewSoldRateMin = String(
+      nextValues.soldRateValue ?? state.analysis.reviewSoldRateMin ?? ""
+    ).trim();
+    state.analysis.reviewConvertedRateOperator = normalizeReviewFilterOperator(
+      nextValues.convertedRateOperator ?? state.analysis.reviewConvertedRateOperator,
+      "!="
+    );
+    state.analysis.reviewConvertedRateValue = String(
+      nextValues.convertedRateValue ?? state.analysis.reviewConvertedRateValue ?? ""
+    ).trim();
+    state.analysis.reviewMailedOperator = normalizeReviewFilterOperator(
+      nextValues.mailedOperator ?? state.analysis.reviewMailedOperator,
+      ">"
+    );
+    state.analysis.reviewMailedMin = String(
+      nextValues.mailedValue ?? state.analysis.reviewMailedMin ?? ""
+    ).trim();
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
-    broadcastAnalysisReviewState("threshold-metric");
-    focusComparisonReviewSummary();
-    focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
-  });
-
-  const commitNavigatorThresholdValue = (rawValue) => {
-    state.analysis.reviewThresholdValue = String(rawValue || "").trim();
-    state.analysis.reviewPageNumber = 1;
-    renderAnalysisComparisonReviewPanel();
-    broadcastAnalysisReviewState("threshold-value");
+    broadcastAnalysisReviewState("navigator-filter");
     focusComparisonReviewSummary();
     focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
   };
 
-  el("analysis-review-threshold-value")?.addEventListener("change", (event) => {
-    commitNavigatorThresholdValue(event.target.value || "");
+  el("analysis-review-sold-rate-operator")?.addEventListener("change", (event) => {
+    commitNavigatorCompositeFilters({ soldRateOperator: event.target.value || ">" });
   });
 
-  el("analysis-review-threshold-value")?.addEventListener("keydown", (event) => {
+  el("analysis-review-sold-rate-min")?.addEventListener("change", (event) => {
+    commitNavigatorCompositeFilters({ soldRateValue: event.target.value || "" });
+  });
+
+  el("analysis-review-sold-rate-min")?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    commitNavigatorThresholdValue(event.target.value || "");
+    commitNavigatorCompositeFilters({ soldRateValue: event.target.value || "" });
+  });
+
+  el("analysis-review-converted-rate-operator")?.addEventListener("change", (event) => {
+    commitNavigatorCompositeFilters({ convertedRateOperator: event.target.value || "!=" });
+  });
+
+  el("analysis-review-converted-rate-value")?.addEventListener("change", (event) => {
+    commitNavigatorCompositeFilters({ convertedRateValue: event.target.value || "" });
+  });
+
+  el("analysis-review-converted-rate-value")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitNavigatorCompositeFilters({ convertedRateValue: event.target.value || "" });
+  });
+
+  el("analysis-review-mailed-operator")?.addEventListener("change", (event) => {
+    commitNavigatorCompositeFilters({ mailedOperator: event.target.value || ">" });
+  });
+
+  el("analysis-review-mailed-min")?.addEventListener("change", (event) => {
+    commitNavigatorCompositeFilters({ mailedValue: event.target.value || "" });
+  });
+
+  el("analysis-review-mailed-min")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitNavigatorCompositeFilters({ mailedValue: event.target.value || "" });
   });
 
   el("analysis-review-threshold-clear")?.addEventListener("click", () => {
-    state.analysis.reviewThresholdValue = "";
+    state.analysis.reviewSoldRateOperator = ">";
+    state.analysis.reviewSoldRateMin = "";
+    state.analysis.reviewConvertedRateOperator = "!=";
+    state.analysis.reviewConvertedRateValue = "";
+    state.analysis.reviewMailedOperator = ">";
+    state.analysis.reviewMailedMin = "";
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
-    broadcastAnalysisReviewState("threshold-clear");
+    broadcastAnalysisReviewState("navigator-filter-clear");
     focusComparisonReviewSummary();
     focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
   });
