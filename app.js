@@ -98,6 +98,8 @@ const state = {
     reviewBulkPreview: null,
     reviewPageSize: 100,
     reviewPageNumber: 1,
+    selectedNavigatorScfs: [],
+    activeNavigatorScfFilter: [],
     reviewPrimaryReportIds: {},
     reviewSelectedScfs: {},
     reviewExcludedScfs: {},
@@ -1907,6 +1909,8 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
     reviewBulkThresholdValue: String(state.analysis.reviewBulkThresholdValue || ""),
     reviewPageSize: String(state.analysis.reviewPageSize || 100),
     reviewPageNumber: Number(state.analysis.reviewPageNumber || 1) || 1,
+    selectedNavigatorScfs: ensureArray(state.analysis.selectedNavigatorScfs).map((entry) => normalizeScf(entry)).filter(Boolean),
+    activeNavigatorScfFilter: ensureArray(state.analysis.activeNavigatorScfFilter).map((entry) => normalizeScf(entry)).filter(Boolean),
     reviewSyncVersion: nextVersion,
     panel: state.analysis.panel || "home",
     route: state.route || "dashboard",
@@ -1970,6 +1974,8 @@ function applyAnalysisReviewSync(message) {
     state.analysis.reviewBulkThresholdValue = String(message.reviewBulkThresholdValue || "");
     state.analysis.reviewPageSize = String(message.reviewPageSize || 100);
     state.analysis.reviewPageNumber = Number(message.reviewPageNumber || 1) || 1;
+    state.analysis.selectedNavigatorScfs = ensureArray(message.selectedNavigatorScfs).map((entry) => normalizeScf(entry)).filter(Boolean);
+    state.analysis.activeNavigatorScfFilter = ensureArray(message.activeNavigatorScfFilter).map((entry) => normalizeScf(entry)).filter(Boolean);
     state.analysis.reviewSyncVersion = messageVersion;
   } finally {
     setAnalysisReviewSyncing(false);
@@ -8002,15 +8008,63 @@ function getSortedFilteredPrimaryRows(rows = [], comparisonId = state.analysis.s
     }
     return Number(entry?.[thresholdMetric] || 0) >= parsedThreshold.compareValue;
   });
+  const activeNavigatorScfFilterSet = new Set(
+    ensureArray(state.analysis.activeNavigatorScfFilter).map((entry) => normalizeScf(entry)).filter(Boolean)
+  );
+  const navigatorRows = activeNavigatorScfFilterSet.size
+    ? filteredRows.filter((entry) => activeNavigatorScfFilterSet.has(normalizeScf(entry?.scf)))
+    : filteredRows;
 
   const sortKey = String(state.analysis.reviewTableSort?.key || "soldRate").trim();
   const sortDirection = state.analysis.reviewTableSort?.direction === "asc" ? "asc" : "desc";
   const directionFactor = sortDirection === "asc" ? 1 : -1;
-  return [...filteredRows].sort((a, b) => {
+  return [...navigatorRows].sort((a, b) => {
     if (sortKey === "scf") {
       return a.scf.localeCompare(b.scf) * directionFactor;
     }
     return (Number(a?.[sortKey] || 0) - Number(b?.[sortKey] || 0)) * directionFactor;
+  });
+}
+
+function getSelectedNavigatorScfSet() {
+  return new Set(
+    ensureArray(state.analysis.selectedNavigatorScfs)
+      .map((entry) => normalizeScf(entry))
+      .filter(Boolean)
+  );
+}
+
+function toggleSelectedNavigatorScf(scf, shouldSelect) {
+  const normalizedScf = normalizeScf(scf);
+  if (!normalizedScf) {
+    return;
+  }
+  const next = getSelectedNavigatorScfSet();
+  if (shouldSelect) {
+    next.add(normalizedScf);
+  } else {
+    next.delete(normalizedScf);
+  }
+  state.analysis.selectedNavigatorScfs = Array.from(next);
+}
+
+function applySelectedNavigatorFilter() {
+  const selected = Array.from(getSelectedNavigatorScfSet());
+  state.analysis.activeNavigatorScfFilter = selected;
+  state.analysis.reviewPageNumber = 1;
+  console.info("[analysis-navigator-filter]", {
+    action: "apply",
+    selectedCount: selected.length,
+    scfs: selected,
+  });
+}
+
+function clearSelectedNavigatorFilter() {
+  state.analysis.selectedNavigatorScfs = [];
+  state.analysis.activeNavigatorScfFilter = [];
+  state.analysis.reviewPageNumber = 1;
+  console.info("[analysis-navigator-filter]", {
+    action: "clear",
   });
 }
 
@@ -8377,6 +8431,8 @@ function resetAnalysisWorkingState(options = {}) {
   state.analysis.reviewZeroRateRemovals = [];
   state.analysis.reviewZeroRemovalDiagnostics = null;
   state.analysis.reviewBulkPreview = null;
+  state.analysis.selectedNavigatorScfs = [];
+  state.analysis.activeNavigatorScfFilter = [];
   state.analysis.reviewSummaryApproved = false;
   stripAutoAnalysisReviewNotes();
   invalidateComparisonReviewSummary();
@@ -10421,6 +10477,10 @@ function renderAnalysisComparisonReviewPanel() {
   const thresholdValue = String(state.analysis.reviewThresholdValue || "").trim();
   const bulkMetric = String(state.analysis.reviewBulkMetric || "soldRate").trim();
   const bulkThresholdValue = String(state.analysis.reviewBulkThresholdValue || "").trim();
+  const selectedNavigatorScfSet = getSelectedNavigatorScfSet();
+  const activeNavigatorScfFilterSet = new Set(
+    ensureArray(state.analysis.activeNavigatorScfFilter).map((entry) => normalizeScf(entry)).filter(Boolean)
+  );
   const bulkPreview =
     state.analysis.reviewBulkPreview &&
     state.analysis.reviewBulkPreview.comparisonId === comparison.id &&
@@ -10814,16 +10874,26 @@ function renderAnalysisComparisonReviewPanel() {
               <button id="analysis-review-next-scf" class="secondary-button"${selectedIndex < 0 || selectedIndex >= sortedFilteredRows.length - 1 ? " disabled" : ""}>Next SCF</button>
             </div>
           </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-apply-selected-filter">Selected SCFs</label>
+            <div class="action-row">
+              <button id="analysis-review-apply-selected-filter" class="secondary-button"${selectedNavigatorScfSet.size ? "" : " disabled"}>Apply Selected Filter</button>
+              <button id="analysis-review-clear-selected-filter" class="secondary-button"${(selectedNavigatorScfSet.size || activeNavigatorScfFilterSet.size) ? "" : " disabled"}>Clear Selected Filter</button>
+            </div>
+          </div>
         </div>
         <div class="analysis-review-table-meta">
           <span>Primary report SCFs: ${primaryNavigatorRows.length}</span>
           <span>Showing after filter: ${sortedFilteredRows.length}</span>
+          <span>Selected SCFs: ${selectedNavigatorScfSet.size}</span>
+          <span>Selected filter: ${activeNavigatorScfFilterSet.size ? `${activeNavigatorScfFilterSet.size} SCF(s)` : "Off"}</span>
           <span>Current mailed pieces: ${selectedNavigatorEntry ? selectedNavigatorEntry.mailed.toLocaleString("en-US") : "-"}</span>
         </div>
         <div class="table-wrap analysis-review-primary-table">
           <table>
             <thead>
               <tr>
+                <th>Select</th>
                 <th class="sortable-column" data-review-sort-key="scf">SCF${state.analysis.reviewTableSort.key === "scf" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
                 <th class="sortable-column" data-review-sort-key="mailed">Mailed${state.analysis.reviewTableSort.key === "mailed" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
                 <th class="sortable-column" data-review-sort-key="soldRate">Sold Rate${state.analysis.reviewTableSort.key === "soldRate" ? (state.analysis.reviewTableSort.direction === "desc" ? " ↓" : " ↑") : ""}</th>
@@ -10845,6 +10915,7 @@ function renderAnalysisComparisonReviewPanel() {
                       : "Not on working list";
                 return `
                 <tr class="${entry.scf === effectiveSelectedScf ? "is-selected-row" : ""}" data-review-row-scf="${esc(entry.scf)}" tabindex="0">
+                  <td><input type="checkbox" data-review-select-scf="${esc(entry.scf)}" ${selectedNavigatorScfSet.has(entry.scf) ? "checked" : ""} /></td>
                   <td>${esc(entry.scf)}</td>
                   <td>${entry.mailed.toLocaleString("en-US")}</td>
                   <td>${esc(getRowMetricDisplayValue(entry.row, "Sold Rate"))}</td>
@@ -10854,7 +10925,7 @@ function renderAnalysisComparisonReviewPanel() {
                   <td><button class="secondary-button table-action-button" data-review-scf="${esc(entry.scf)}">Open</button></td>
                 </tr>
               `;
-              }).join("") : `<tr><td colspan="7" class="empty-cell">No SCFs were found in the selected primary report for this filter.</td></tr>`}
+              }).join("") : `<tr><td colspan="8" class="empty-cell">No SCFs were found in the selected primary report for this filter.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -10874,6 +10945,8 @@ function renderAnalysisComparisonReviewPanel() {
     const nextId = String(event.target.value || "").trim();
     state.analysis.selectedComparisonId = nextId;
     state.analysis.lastEditedComparisonId = nextId;
+    state.analysis.selectedNavigatorScfs = [];
+    state.analysis.activeNavigatorScfFilter = [];
     state.analysis.reviewPageNumber = 1;
     scheduleReviewStateAutosave("comparison-select");
     renderAnalysisComparisonReviewPanel();
@@ -10884,6 +10957,8 @@ function renderAnalysisComparisonReviewPanel() {
     const nextReportId = String(event.target.value || "").trim();
     state.analysis.reviewPrimaryReportIds[comparison.id] = nextReportId;
     state.analysis.reviewSelectedScfs[comparison.id] = "";
+    state.analysis.selectedNavigatorScfs = [];
+    state.analysis.activeNavigatorScfFilter = [];
     state.analysis.reviewPageNumber = 1;
     scheduleReviewStateAutosave("primary-report-select");
     renderAnalysisComparisonReviewPanel();
@@ -11037,7 +11112,7 @@ function renderAnalysisComparisonReviewPanel() {
   all("[data-review-row-scf]").forEach((row) => {
     row.addEventListener("click", (event) => {
       const target = event.target;
-      if (target instanceof HTMLElement && target.closest("[data-review-scf]")) {
+      if (target instanceof HTMLElement && target.closest("[data-review-scf], [data-review-select-scf]")) {
         return;
       }
       const scf = row.getAttribute("data-review-row-scf");
@@ -11049,11 +11124,46 @@ function renderAnalysisComparisonReviewPanel() {
       if (event.key !== "Enter" && event.key !== " ") {
         return;
       }
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("[data-review-select-scf]")) {
+        return;
+      }
       event.preventDefault();
       const scf = row.getAttribute("data-review-row-scf");
       if (!scf) return;
       selectComparisonReviewScf(comparison.id, scf, { preservePage: true });
     });
+  });
+
+  all("[data-review-select-scf]").forEach((input) => {
+    input.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    input.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+      const scf = String(target.getAttribute("data-review-select-scf") || "").trim();
+      toggleSelectedNavigatorScf(scf, target.checked);
+      renderAnalysisComparisonReviewPanel();
+      console.info("[analysis-navigator-filter]", {
+        action: "select",
+        scf: normalizeScf(scf),
+        checked: target.checked,
+        selectedCount: ensureArray(state.analysis.selectedNavigatorScfs).length,
+      });
+    });
+  });
+
+  el("analysis-review-apply-selected-filter")?.addEventListener("click", () => {
+    applySelectedNavigatorFilter();
+    renderAnalysisComparisonReviewPanel();
+  });
+
+  el("analysis-review-clear-selected-filter")?.addEventListener("click", () => {
+    clearSelectedNavigatorFilter();
+    renderAnalysisComparisonReviewPanel();
   });
 
   el("analysis-review-bulk-metric")?.addEventListener("change", (event) => {
