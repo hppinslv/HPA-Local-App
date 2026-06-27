@@ -1603,22 +1603,38 @@ function normalizeAnalysisReviewState(value = {}) {
       resolvedSavedReportId: String(source.resolvedSavedReportId || "").trim(),
       totalReportRowsChecked: Number(source.totalReportRowsChecked || 0),
       zeroRemovalFieldUsed: String(source.zeroRemovalFieldUsed || "").trim(),
+      zeroRemovalMetricKey: String(source.zeroRemovalMetricKey || "").trim(),
+      zeroRemovalMetricLabel: String(source.zeroRemovalMetricLabel || "").trim(),
       zeroRemovalCandidateCount: Number(source.zeroRemovalCandidateCount || 0),
       zeroValueCount: Number(source.zeroValueCount || 0),
       blankOrNullCount: Number(source.blankOrNullCount || 0),
       nonNumericCount: Number(source.nonNumericCount || 0),
+      zeroRemovalOnWorkingListCount: Number(source.zeroRemovalOnWorkingListCount || 0),
+      zeroRemovalAlreadyOffListCount: Number(source.zeroRemovalAlreadyOffListCount || 0),
+      zeroRemovalAlreadyDnmCount: Number(source.zeroRemovalAlreadyDnmCount || 0),
       zeroRemovalSampleRows: ensureArray(source.zeroRemovalSampleRows).map((entry) => {
         const hasMetricShape = Object.prototype.hasOwnProperty.call(entry || {}, "rawMetricValue")
           || Object.prototype.hasOwnProperty.call(entry || {}, "parsedMetricValue");
         return hasMetricShape
           ? {
               scf: normalizeScf(entry?.scf),
+              metricKey: String(entry?.metricKey || "").trim(),
+              metricLabel: String(entry?.metricLabel || "").trim(),
+              metricFieldKey: String(entry?.metricFieldKey || "").trim(),
+              displayedMetricValue:
+                entry?.displayedMetricValue === null || entry?.displayedMetricValue === undefined
+                  ? ""
+                  : String(entry.displayedMetricValue),
               rawMetricValue:
                 entry?.rawMetricValue === null || entry?.rawMetricValue === undefined
                   ? ""
                   : String(entry.rawMetricValue),
               parsedMetricValue: Number(entry?.parsedMetricValue || 0),
+              parsedDisplayedMetricValue: Number(entry?.parsedDisplayedMetricValue || 0),
+              parsedRawMetricValue: Number(entry?.parsedRawMetricValue || 0),
               wouldRemove: entry?.wouldRemove === true,
+              onWorkingList: entry?.onWorkingList === true,
+              onDoNotMailList: entry?.onDoNotMailList === true,
             }
           : {
               scf: normalizeScf(entry?.scf),
@@ -3195,7 +3211,12 @@ function getAnalysisSetupReviewDebug(setupId = "") {
           convertedRateFieldKeys: [],
         },
     zeroRemovalFieldUsed: String(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalFieldUsed || "").trim(),
+    zeroRemovalMetricKey: String(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalMetricKey || "").trim(),
+    zeroRemovalMetricLabel: String(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalMetricLabel || "").trim(),
     zeroRemovalCandidateCount: Number(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalCandidateCount || 0),
+    zeroRemovalOnWorkingListCount: Number(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalOnWorkingListCount || 0),
+    zeroRemovalAlreadyOffListCount: Number(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalAlreadyOffListCount || 0),
+    zeroRemovalAlreadyDnmCount: Number(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalAlreadyDnmCount || 0),
     zeroRemovalSampleRows: ensureArray(setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalSampleRows),
     zeroRemovalLastResult: setup?.reviewState?.reviewZeroRemovalDiagnostics?.zeroRemovalLastResult || null,
   };

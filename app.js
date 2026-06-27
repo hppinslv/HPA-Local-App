@@ -1784,12 +1784,23 @@ function normalizeReviewZeroRemovalDiagnostics(source) {
     return hasMetricShape
       ? {
           scf: normalizeScf(entry?.scf),
+          metricKey: String(entry?.metricKey || "").trim(),
+          metricLabel: String(entry?.metricLabel || "").trim(),
+          metricFieldKey: String(entry?.metricFieldKey || "").trim(),
+          displayedMetricValue:
+            entry?.displayedMetricValue === null || entry?.displayedMetricValue === undefined
+              ? ""
+              : String(entry.displayedMetricValue),
           rawMetricValue:
             entry?.rawMetricValue === null || entry?.rawMetricValue === undefined
               ? ""
               : String(entry.rawMetricValue),
           parsedMetricValue: Number(entry?.parsedMetricValue || 0),
+          parsedDisplayedMetricValue: Number(entry?.parsedDisplayedMetricValue || 0),
+          parsedRawMetricValue: Number(entry?.parsedRawMetricValue || 0),
           wouldRemove: entry?.wouldRemove === true,
+          onWorkingList: entry?.onWorkingList === true,
+          onDoNotMailList: entry?.onDoNotMailList === true,
         }
       : {
           scf: normalizeScf(entry?.scf),
@@ -1808,10 +1819,15 @@ function normalizeReviewZeroRemovalDiagnostics(source) {
     resolvedSavedReportId: String(source.resolvedSavedReportId || "").trim(),
     totalReportRowsChecked: Number(source.totalReportRowsChecked || 0),
     zeroRemovalFieldUsed: String(source.zeroRemovalFieldUsed || "").trim(),
+    zeroRemovalMetricKey: String(source.zeroRemovalMetricKey || "").trim(),
+    zeroRemovalMetricLabel: String(source.zeroRemovalMetricLabel || "").trim(),
     zeroRemovalCandidateCount: Number(source.zeroRemovalCandidateCount || 0),
     zeroValueCount: Number(source.zeroValueCount || 0),
     blankOrNullCount: Number(source.blankOrNullCount || 0),
     nonNumericCount: Number(source.nonNumericCount || 0),
+    zeroRemovalOnWorkingListCount: Number(source.zeroRemovalOnWorkingListCount || 0),
+    zeroRemovalAlreadyOffListCount: Number(source.zeroRemovalAlreadyOffListCount || 0),
+    zeroRemovalAlreadyDnmCount: Number(source.zeroRemovalAlreadyDnmCount || 0),
     zeroRemovalSampleRows: sampleRows.slice(0, 10),
     zeroRemovalLastResult: source.zeroRemovalLastResult && typeof source.zeroRemovalLastResult === "object"
       ? {
@@ -6070,7 +6086,11 @@ function mergeWorkingCopyCleanupIntoSummary(summary, cleanupSummary) {
         removedRows.push({
           scf,
           state: "",
-          reason: entry.fieldUsed ? `Zero ${entry.fieldUsed} cleanup` : "Zero-value cleanup",
+          reason: [
+            entry.fieldUsed ? `Zero ${entry.fieldUsed} cleanup` : "Zero-value cleanup",
+            entry.primaryReportName ? `from ${entry.primaryReportName}` : "",
+            "working copy only",
+          ].filter(Boolean).join(" | "),
         });
         removedSet.add(scf);
       });
@@ -8041,19 +8061,40 @@ function removeWorkingListEntriesAtZeroRate(listType, rows = [], metricKey) {
   const normalizedMetricKey = String(metricKey || "soldRate").trim();
   const metricLabel = getReviewMetricDisplayName(normalizedMetricKey);
   const checkedRows = ensureArray(rows);
-  const sampleRows = checkedRows.slice(0, 10).map((entry) => {
-    const rawMetricValue = getRowMetricDisplayValue(entry?.row || {}, metricLabel);
-    const parsedMetricValue = parseLooseMetricNumber(rawMetricValue);
-    return {
-      scf: normalizeScf(entry?.scf),
-      rawMetricValue,
-      parsedMetricValue,
-      wouldRemove: isZeroNavigatorMetricEntry(entry, normalizedMetricKey),
-    };
-  }).filter((entry) => entry.scf);
 
   ensureComparisonReviewWorkingLists();
   const list = getWorkingReferenceList(normalizedListType);
+  const currentScfs = new Set(ensureArray(list?.items).map((entry) => normalizeScf(entry?.scf)).filter(Boolean));
+  const dnmScfs = getDnmReferenceScfSet();
+  const metricFieldUsage = new Map();
+  const sampleRows = checkedRows.slice(0, 20).map((entry) => {
+    const scf = normalizeScf(entry?.scf);
+    const metricMatch = getRowMetricMatchByAliases(entry?.row || {}, [metricLabel]);
+    const displayMetricValue = getRowMetricDisplayValue(entry?.row || {}, metricLabel);
+    const rawMetricValue =
+      metricMatch.value === null || metricMatch.value === undefined
+        ? ""
+        : String(metricMatch.value).trim();
+    const parsedDisplayMetricValue = parseLooseMetricNumber(displayMetricValue);
+    const parsedRawMetricValue = parseLooseMetricNumber(rawMetricValue);
+    const isZero = isZeroNavigatorMetricEntry(entry, normalizedMetricKey);
+    if (metricMatch.key) {
+      metricFieldUsage.set(metricMatch.key, Number(metricFieldUsage.get(metricMatch.key) || 0) + 1);
+    }
+    return {
+      scf,
+      metricKey: normalizedMetricKey,
+      metricLabel,
+      metricFieldKey: String(metricMatch.key || "").trim(),
+      displayedMetricValue: String(displayMetricValue || "").trim(),
+      rawMetricValue,
+      parsedDisplayedMetricValue,
+      parsedRawMetricValue,
+      wouldRemove: isZero,
+      onWorkingList: currentScfs.has(scf),
+      onDoNotMailList: dnmScfs.has(scf),
+    };
+  }).filter((entry) => entry.scf);
   if (!list) {
     return {
       removedCount: 0,
@@ -8071,12 +8112,11 @@ function removeWorkingListEntriesAtZeroRate(listType, rows = [], metricKey) {
         blankOrNullCount: 0,
         nonNumericCount: 0,
         zeroRemovalSampleRows: sampleRows,
+        zeroRemovalMetricKey: normalizedMetricKey,
+        zeroRemovalMetricLabel: metricLabel,
       },
     };
   }
-
-  const currentScfs = new Set(ensureArray(list.items).map((entry) => normalizeScf(entry?.scf)).filter(Boolean));
-  const dnmScfs = getDnmReferenceScfSet();
   const foundZeroRateScfs = [];
   const skippedAlreadyRemovedScfs = [];
   const skippedDnmScfs = [];
@@ -8127,12 +8167,17 @@ function removeWorkingListEntriesAtZeroRate(listType, rows = [], metricKey) {
     totalMailedRemoved,
     diagnostics: {
       totalReportRowsChecked: checkedRows.length,
-      zeroRemovalFieldUsed: metricLabel,
+      zeroRemovalFieldUsed: [...metricFieldUsage.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || metricLabel,
       zeroRemovalCandidateCount: zeroValueCount,
       zeroValueCount,
       blankOrNullCount: 0,
       nonNumericCount: 0,
       zeroRemovalSampleRows: sampleRows,
+      zeroRemovalMetricKey: normalizedMetricKey,
+      zeroRemovalMetricLabel: metricLabel,
+      zeroRemovalOnWorkingListCount: foundZeroRateScfs.filter((scf) => currentScfs.has(scf)).length,
+      zeroRemovalAlreadyOffListCount: skippedAlreadyRemovedScfs.length,
+      zeroRemovalAlreadyDnmCount: skippedDnmScfs.length,
     },
   };
 }
@@ -11080,11 +11125,17 @@ function renderAnalysisComparisonReviewPanel() {
     const diagnostics = removalResult.diagnostics || {};
     const checkedField = String(diagnostics.zeroRemovalFieldUsed || "").trim();
     const checkedRowCount = Number(diagnostics.totalReportRowsChecked || 0);
+    const zeroCandidateCount = Number(diagnostics.zeroRemovalCandidateCount || 0);
+    const onWorkingListCount = Number(diagnostics.zeroRemovalOnWorkingListCount || 0);
+    const alreadyOffListCount = Number(diagnostics.zeroRemovalAlreadyOffListCount || 0);
+    const alreadyDnmCount = Number(diagnostics.zeroRemovalAlreadyDnmCount || 0);
     const lastResultMessage = !checkedField
       ? `Could not remove zeroes because ${metricLabel} was not available.`
       : removalResult.removedCount
         ? `Removed ${removalResult.removedCount} zero-value SCF(s) from the working copy using ${checkedField}.`
-        : `Checked ${checkedRowCount} SCFs using ${checkedField}. No zero-value SCFs found.`;
+        : zeroCandidateCount > 0
+          ? `Checked ${checkedRowCount} SCFs using ${checkedField}. Found ${zeroCandidateCount} zero-value SCF(s), but ${alreadyOffListCount} were already off the working list and ${alreadyDnmCount} were already DNM.`
+          : `Checked ${checkedRowCount} SCFs using ${checkedField}. No zero-value SCFs found.`;
     state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics({
       ...diagnostics,
       setupId: String(state.analysis.currentSetupId || "").trim(),
@@ -11108,6 +11159,8 @@ function renderAnalysisComparisonReviewPanel() {
       selectedPrimaryReportName: primaryReportDisplayName,
       listType: targetListType,
       removalKind: "zero-metric",
+      selectedCleanupMetricLabel: metricLabel,
+      selectedCleanupMetricKey: metricKey,
       totalScfsChecked: checkedRowCount,
       metricFieldUsed: checkedField,
       zeroMetricScfsFound: removalResult.foundZeroRateScfs,
@@ -11119,6 +11172,15 @@ function renderAnalysisComparisonReviewPanel() {
       skippedAlreadyDnm: removalResult.skippedDnmScfs,
       removedScfs: removalResult.removedScfs,
       totalMailedRemoved: removalResult.totalMailedRemoved,
+    });
+    console.info("[analysis-zero-rate-removal-sample]", {
+      setupId: String(state.analysis.currentSetupId || "").trim(),
+      selectedComparisonId: comparison.id,
+      selectedPrimaryReportId: primaryReport.id,
+      selectedCleanupMetricLabel: metricLabel,
+      selectedCleanupMetricKey: metricKey,
+      totalZeroCandidatesFound: zeroCandidateCount,
+      firstCheckedRows: ensureArray(diagnostics.zeroRemovalSampleRows || []).slice(0, 20),
     });
     if (checkedField && removalResult.removedCount > 0) {
       recordZeroRateRemovalAction({
@@ -11143,7 +11205,9 @@ function renderAnalysisComparisonReviewPanel() {
         ? `Bulk removal decision: could not remove zero-value ${listType} SCFs because ${metricLabel} was not available in ${primaryReportDisplayName}.`
         : removalResult.removedCount
           ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) with 0 ${checkedField} for pending removal using ${primaryReportDisplayName} only.`
-          : `Bulk removal decision: checked ${checkedRowCount} ${listType} SCF(s) using ${checkedField} in ${primaryReportDisplayName}; no zero-value SCFs were found.`
+          : zeroCandidateCount > 0
+            ? `Bulk removal decision: checked ${checkedRowCount} ${listType} SCF(s) using ${checkedField} in ${primaryReportDisplayName}; found ${zeroCandidateCount} zero-value SCF(s), but ${alreadyOffListCount} were already off the working list and ${alreadyDnmCount} were already DNM.`
+            : `Bulk removal decision: checked ${checkedRowCount} ${listType} SCF(s) using ${checkedField} in ${primaryReportDisplayName}; no zero-value SCFs were found.`
     );
     invalidateComparisonReviewSummary();
     state.analysis.reviewBulkPreview = null;
