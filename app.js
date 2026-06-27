@@ -93,6 +93,8 @@ const state = {
     reviewTableSort: { key: "soldRate", direction: "desc" },
     reviewSoldRateOperator: ">",
     reviewSoldRateMin: "",
+    reviewInForceRateOperator: ">",
+    reviewInForceRateValue: "",
     reviewConvertedRateOperator: "!=",
     reviewConvertedRateValue: "",
     reviewMailedOperator: ">",
@@ -1909,6 +1911,8 @@ function getAnalysisReviewSyncPayload(reason = "state-change") {
     reviewTableSort: cloneData(state.analysis.reviewTableSort || { key: "soldRate", direction: "desc" }),
     reviewSoldRateOperator: String(state.analysis.reviewSoldRateOperator || ">").trim() || ">",
     reviewSoldRateMin: String(state.analysis.reviewSoldRateMin || ""),
+    reviewInForceRateOperator: String(state.analysis.reviewInForceRateOperator || ">").trim() || ">",
+    reviewInForceRateValue: String(state.analysis.reviewInForceRateValue || ""),
     reviewConvertedRateOperator: String(state.analysis.reviewConvertedRateOperator || "!=").trim() || "!=",
     reviewConvertedRateValue: String(state.analysis.reviewConvertedRateValue || ""),
     reviewMailedOperator: String(state.analysis.reviewMailedOperator || ">").trim() || ">",
@@ -1978,6 +1982,8 @@ function applyAnalysisReviewSync(message) {
       : { key: "soldRate", direction: "desc" };
     state.analysis.reviewSoldRateOperator = String(message.reviewSoldRateOperator || ">").trim() || ">";
     state.analysis.reviewSoldRateMin = String(message.reviewSoldRateMin || "");
+    state.analysis.reviewInForceRateOperator = String(message.reviewInForceRateOperator || ">").trim() || ">";
+    state.analysis.reviewInForceRateValue = String(message.reviewInForceRateValue || "");
     state.analysis.reviewConvertedRateOperator = String(message.reviewConvertedRateOperator || "!=").trim() || "!=";
     state.analysis.reviewConvertedRateValue = String(
       message.reviewConvertedRateValue
@@ -8049,17 +8055,26 @@ function prefetchAnalysisReportScfMetrics(report, scfs) {
 function getSortedFilteredPrimaryRows(rows = [], comparisonId = state.analysis.selectedComparisonId) {
   const soldRateOperator = normalizeReviewFilterOperator(state.analysis.reviewSoldRateOperator, ">");
   const soldRateMinRaw = String(state.analysis.reviewSoldRateMin || "").trim();
+  const inForceRateOperator = normalizeReviewFilterOperator(state.analysis.reviewInForceRateOperator, ">");
+  const inForceRateValueRaw = String(state.analysis.reviewInForceRateValue || "").trim();
   const convertedRateOperator = normalizeReviewFilterOperator(state.analysis.reviewConvertedRateOperator, "!=");
   const convertedRateValueRaw = String(state.analysis.reviewConvertedRateValue || "").trim();
   const mailedOperator = normalizeReviewFilterOperator(state.analysis.reviewMailedOperator, ">");
   const mailedMinRaw = String(state.analysis.reviewMailedMin || "").trim();
   const parsedSoldRateThreshold = parseReviewRateThreshold(soldRateMinRaw, rows, "soldRate");
+  const parsedInForceRateThreshold = parseReviewRateThreshold(inForceRateValueRaw, rows, "inForceRate");
   const parsedConvertedRateThreshold = parseReviewRateThreshold(convertedRateValueRaw, rows, "convertedRate");
   const parsedMailedMin = parseLooseMetricNumberDetailed(mailedMinRaw);
   const filteredRows = rows.filter((entry) => {
     if (
       parsedSoldRateThreshold
       && !compareReviewFilterValues(Number(entry?.soldRate || 0), soldRateOperator, parsedSoldRateThreshold.compareValue)
+    ) {
+      return false;
+    }
+    if (
+      parsedInForceRateThreshold
+      && !compareReviewFilterValues(Number(entry?.inForceRate || 0), inForceRateOperator, parsedInForceRateThreshold.compareValue)
     ) {
       return false;
     }
@@ -8505,6 +8520,8 @@ function resetAnalysisWorkingState(options = {}) {
   state.analysis.activeNavigatorScfFilter = [];
   state.analysis.reviewSoldRateOperator = ">";
   state.analysis.reviewSoldRateMin = "";
+  state.analysis.reviewInForceRateOperator = ">";
+  state.analysis.reviewInForceRateValue = "";
   state.analysis.reviewConvertedRateOperator = "!=";
   state.analysis.reviewConvertedRateValue = "";
   state.analysis.reviewMailedOperator = ">";
@@ -10551,6 +10568,8 @@ function renderAnalysisComparisonReviewPanel() {
   const primaryReportDisplayName = primaryReport ? getAnalysisReportDisplayName(primaryReport) : "the selected primary report";
   const soldRateOperatorValue = normalizeReviewFilterOperator(state.analysis.reviewSoldRateOperator, ">");
   const soldRateMinValue = String(state.analysis.reviewSoldRateMin || "").trim();
+  const inForceRateOperatorValue = normalizeReviewFilterOperator(state.analysis.reviewInForceRateOperator, ">");
+  const inForceRateValue = String(state.analysis.reviewInForceRateValue || "").trim();
   const convertedRateOperatorValue = normalizeReviewFilterOperator(state.analysis.reviewConvertedRateOperator, "!=");
   const convertedRateValue = String(state.analysis.reviewConvertedRateValue || "").trim();
   const mailedOperatorValue = normalizeReviewFilterOperator(state.analysis.reviewMailedOperator, ">");
@@ -10561,6 +10580,15 @@ function renderAnalysisComparisonReviewPanel() {
   const activeNavigatorScfFilterSet = new Set(
     ensureArray(state.analysis.activeNavigatorScfFilter).map((entry) => normalizeScf(entry)).filter(Boolean)
   );
+  const hasMetricFilters = Boolean(
+    soldRateMinValue
+    || inForceRateValue
+    || convertedRateValue
+    || mailedMinValue
+  );
+  const filterSummaryLabel = hasMetricFilters || activeNavigatorScfFilterSet.size
+    ? `Filters active${hasMetricFilters ? " for metrics" : ""}${activeNavigatorScfFilterSet.size ? `${hasMetricFilters ? " and" : ""} selected SCFs` : ""}.`
+    : "Showing all SCFs. No navigator filters are active.";
   const bulkPreview =
     state.analysis.reviewBulkPreview &&
     state.analysis.reviewBulkPreview.comparisonId === comparison.id &&
@@ -10900,6 +10928,7 @@ function renderAnalysisComparisonReviewPanel() {
         <div class="panel-heading">
           <h3>Primary Report Navigator</h3>
           <p>${esc(primaryReport ? getAnalysisReportDisplayName(primaryReport) : "No primary report selected")}</p>
+          <p><strong>${esc(filterSummaryLabel)}</strong></p>
         </div>
         <div class="analysis-review-filter-bar">
           <div class="field-stack">
@@ -10911,6 +10940,17 @@ function renderAnalysisComparisonReviewPanel() {
                 `).join("")}
               </select>
               <input id="analysis-review-sold-rate-min" class="field-input" type="text" inputmode="decimal" value="${esc(soldRateMinValue)}" placeholder="ex: .6" />
+            </div>
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="analysis-review-in-force-rate-operator">In Force Rate Filter</label>
+            <div class="action-row">
+              <select id="analysis-review-in-force-rate-operator" class="field-input">
+                ${[">", ">=", "<", "<=", "=", "!="].map((operator) => `
+                  <option value="${operator}"${inForceRateOperatorValue === operator ? " selected" : ""}>${operator}</option>
+                `).join("")}
+              </select>
+              <input id="analysis-review-in-force-rate-value" class="field-input" type="text" inputmode="decimal" value="${esc(inForceRateValue)}" placeholder="ex: .6" />
             </div>
           </div>
           <div class="field-stack">
@@ -11182,6 +11222,13 @@ function renderAnalysisComparisonReviewPanel() {
     state.analysis.reviewSoldRateMin = String(
       nextValues.soldRateValue ?? state.analysis.reviewSoldRateMin ?? ""
     ).trim();
+    state.analysis.reviewInForceRateOperator = normalizeReviewFilterOperator(
+      nextValues.inForceRateOperator ?? state.analysis.reviewInForceRateOperator,
+      ">"
+    );
+    state.analysis.reviewInForceRateValue = String(
+      nextValues.inForceRateValue ?? state.analysis.reviewInForceRateValue ?? ""
+    ).trim();
     state.analysis.reviewConvertedRateOperator = normalizeReviewFilterOperator(
       nextValues.convertedRateOperator ?? state.analysis.reviewConvertedRateOperator,
       "!="
@@ -11217,6 +11264,20 @@ function renderAnalysisComparisonReviewPanel() {
     commitNavigatorCompositeFilters({ soldRateValue: event.target.value || "" });
   });
 
+  el("analysis-review-in-force-rate-operator")?.addEventListener("change", (event) => {
+    commitNavigatorCompositeFilters({ inForceRateOperator: event.target.value || ">" });
+  });
+
+  el("analysis-review-in-force-rate-value")?.addEventListener("change", (event) => {
+    commitNavigatorCompositeFilters({ inForceRateValue: event.target.value || "" });
+  });
+
+  el("analysis-review-in-force-rate-value")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitNavigatorCompositeFilters({ inForceRateValue: event.target.value || "" });
+  });
+
   el("analysis-review-converted-rate-operator")?.addEventListener("change", (event) => {
     commitNavigatorCompositeFilters({ convertedRateOperator: event.target.value || "!=" });
   });
@@ -11248,6 +11309,8 @@ function renderAnalysisComparisonReviewPanel() {
   el("analysis-review-threshold-clear")?.addEventListener("click", () => {
     state.analysis.reviewSoldRateOperator = ">";
     state.analysis.reviewSoldRateMin = "";
+    state.analysis.reviewInForceRateOperator = ">";
+    state.analysis.reviewInForceRateValue = "";
     state.analysis.reviewConvertedRateOperator = "!=";
     state.analysis.reviewConvertedRateValue = "";
     state.analysis.reviewMailedOperator = ">";
