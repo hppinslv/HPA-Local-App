@@ -8364,6 +8364,30 @@ function stripAutoAnalysisReviewNotes() {
   state.analysis.reviewSummaryNotes = getManualAnalysisReviewNotes(state.analysis.reviewSummaryNotes);
 }
 
+function resetAnalysisWorkingState(options = {}) {
+  const readOnly = options.readOnly === true;
+  if (readOnly || isCurrentAnalysisReadOnly()) {
+    setStatus("analysis-comparison-selection-status", "Completed analyses are read-only. Undo completion before resetting.");
+    return false;
+  }
+
+  ensureComparisonReviewWorkingLists();
+  state.analysis.reviewWorkingLists = cloneData(state.analysis.reviewBaselineLists || []);
+  state.analysis.reviewZeroRateRemovals = [];
+  state.analysis.reviewZeroRemovalDiagnostics = null;
+  state.analysis.reviewBulkPreview = null;
+  state.analysis.reviewSummaryApproved = false;
+  stripAutoAnalysisReviewNotes();
+  invalidateComparisonReviewSummary();
+  scheduleReviewStateAutosave("restore-working-lists");
+  broadcastAnalysisReviewState("restore-working-lists");
+  setStatus(
+    "analysis-comparison-selection-status",
+    "Analysis was reset to the starting mailing lists."
+  );
+  return true;
+}
+
 function recordZeroRateRemovalAction(action = {}) {
   const normalizedAction = normalizeReviewZeroRateRemovals([{
     ...action,
@@ -10048,6 +10072,7 @@ function renderAnalysisComparisonSummaryView() {
             <p>Review what will be added and removed for NHCL and RFC, confirm the notes, then approve before completing.</p>
           </div>
           <div class="action-row">
+            <button id="analysis-review-summary-reset-button" class="secondary-button"${readOnly ? " disabled" : ""}>Reset Analysis</button>
             <button id="analysis-review-summary-print-button" class="secondary-button">Print Summary</button>
             <button id="analysis-review-summary-back-button" class="secondary-button"${readOnly ? " disabled" : ""}>Back to Review</button>
           </div>
@@ -10122,6 +10147,19 @@ function renderAnalysisComparisonSummaryView() {
         renderAnalysisComparisonReviewPanel();
         scheduleAnalysisComparisonReviewRender(20);
       });
+  });
+
+  el("analysis-review-summary-reset-button")?.addEventListener("click", () => {
+    if (readOnly) {
+      return;
+    }
+    if (!confirm("Reset this analysis and restore the pending mailing lists back to where they were at the beginning?")) {
+      return;
+    }
+    if (!resetAnalysisWorkingState()) {
+      return;
+    }
+    renderAnalysisComparisonSummaryView();
   });
 
   el("analysis-review-summary-print-button")?.addEventListener("click", () => {
@@ -10553,7 +10591,7 @@ function renderAnalysisComparisonReviewPanel() {
     : `
           ${detachedActionButtons}
           <button id="analysis-review-export-button" class="secondary-button">Export Working ${esc(listType)}</button>
-          <button id="analysis-review-restore-button" class="secondary-button"${readOnly ? " disabled" : ""}>Reset Decisions</button>
+          <button id="analysis-review-restore-button" class="secondary-button"${readOnly ? " disabled" : ""}>Reset Analysis</button>
         `
         ;
 
@@ -11107,114 +11145,123 @@ function renderAnalysisComparisonReviewPanel() {
   });
 
   el("analysis-review-bulk-remove-zeroes-button")?.addEventListener("click", () => {
-    if (!comparison?.id) {
-      setStatus("analysis-comparison-selection-status", "Choose a comparison before removing zero-value SCFs.");
-      return;
-    }
-    if (!primaryReport?.id) {
-      setStatus("analysis-comparison-selection-status", "Select a primary report before removing zero-value SCFs.");
-      return;
-    }
-    const metricKey = String(state.analysis.reviewBulkMetric || "soldRate").trim();
-    const metricLabel = getReviewMetricDisplayName(metricKey);
-    const removalResult = removeWorkingListEntriesAtZeroRate(
-      targetListType,
-      primaryNavigatorRows,
-      metricKey
-    );
-    const diagnostics = removalResult.diagnostics || {};
-    const checkedField = String(diagnostics.zeroRemovalFieldUsed || "").trim();
-    const checkedRowCount = Number(diagnostics.totalReportRowsChecked || 0);
-    const zeroCandidateCount = Number(diagnostics.zeroRemovalCandidateCount || 0);
-    const onWorkingListCount = Number(diagnostics.zeroRemovalOnWorkingListCount || 0);
-    const alreadyOffListCount = Number(diagnostics.zeroRemovalAlreadyOffListCount || 0);
-    const alreadyDnmCount = Number(diagnostics.zeroRemovalAlreadyDnmCount || 0);
-    const lastResultMessage = !checkedField
-      ? `Could not remove zeroes because ${metricLabel} was not available.`
-      : removalResult.removedCount
-        ? `Removed ${removalResult.removedCount} zero-value SCF(s) from the working copy using ${checkedField}.`
-        : zeroCandidateCount > 0
-          ? `Checked ${checkedRowCount} SCFs using ${checkedField}. Found ${zeroCandidateCount} zero-value SCF(s), but ${alreadyOffListCount} were already off the working list and ${alreadyDnmCount} were already DNM.`
-          : `Checked ${checkedRowCount} SCFs using ${checkedField}. No zero-value SCFs found.`;
-    state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics({
-      ...diagnostics,
-      setupId: String(state.analysis.currentSetupId || "").trim(),
-      comparisonName: getComparisonDisplayName(comparison),
-      selectedPrimaryReportId: String(primaryReport?.id || "").trim(),
-      resolvedSavedReportId: String(primaryReport?.id || "").trim(),
-      zeroRemovalLastResult: {
-        status: !checkedField ? "error" : removalResult.removedCount ? "removed" : "checked",
-        removedCount: Number(removalResult.removedCount || 0),
-        totalMailedRemoved: Number(removalResult.totalMailedRemoved || 0),
-        message: lastResultMessage,
-        checkedAt: new Date().toISOString(),
-      },
-    });
-    console.info("[analysis-zero-rate-removal]", {
-      setupId: String(state.analysis.currentSetupId || "").trim(),
-      selectedComparisonId: comparison.id,
-      selectedComparisonName: getComparisonDisplayName(comparison),
-      selectedPrimaryReportId: primaryReport.id,
-      resolvedSavedReportId: primaryReport.id,
-      selectedPrimaryReportName: primaryReportDisplayName,
-      listType: targetListType,
-      removalKind: "zero-metric",
-      selectedCleanupMetricLabel: metricLabel,
-      selectedCleanupMetricKey: metricKey,
-      totalScfsChecked: checkedRowCount,
-      metricFieldUsed: checkedField,
-      zeroMetricScfsFound: removalResult.foundZeroRateScfs,
-      zeroValueCount: Number(diagnostics.zeroValueCount || 0),
-      blankOrNullCount: Number(diagnostics.blankOrNullCount || 0),
-      nonNumericCount: Number(diagnostics.nonNumericCount || 0),
-      zeroRemovalSampleRows: diagnostics.zeroRemovalSampleRows || [],
-      skippedAlreadyNotOnWorkingList: removalResult.skippedAlreadyRemovedScfs,
-      skippedAlreadyDnm: removalResult.skippedDnmScfs,
-      removedScfs: removalResult.removedScfs,
-      totalMailedRemoved: removalResult.totalMailedRemoved,
-    });
-    console.info("[analysis-zero-rate-removal-sample]", {
-      setupId: String(state.analysis.currentSetupId || "").trim(),
-      selectedComparisonId: comparison.id,
-      selectedPrimaryReportId: primaryReport.id,
-      selectedCleanupMetricLabel: metricLabel,
-      selectedCleanupMetricKey: metricKey,
-      totalZeroCandidatesFound: zeroCandidateCount,
-      firstCheckedRows: ensureArray(diagnostics.zeroRemovalSampleRows || []).slice(0, 20),
-    });
-    if (checkedField && removalResult.removedCount > 0) {
-      recordZeroRateRemovalAction({
-        comparisonId: comparison.id,
+    try {
+      setStatus("analysis-comparison-selection-status", "Checking zero-value SCFs...");
+      if (!comparison?.id) {
+        setStatus("analysis-comparison-selection-status", "Choose a comparison before removing zero-value SCFs.");
+        return;
+      }
+      if (!primaryReport?.id) {
+        setStatus("analysis-comparison-selection-status", "Select a primary report before removing zero-value SCFs.");
+        return;
+      }
+      const metricKey = String(state.analysis.reviewBulkMetric || "soldRate").trim();
+      const metricLabel = getReviewMetricDisplayName(metricKey);
+      const removalResult = removeWorkingListEntriesAtZeroRate(
+        targetListType,
+        primaryNavigatorRows,
+        metricKey
+      );
+      const diagnostics = removalResult.diagnostics || {};
+      const checkedField = String(diagnostics.zeroRemovalFieldUsed || "").trim();
+      const checkedRowCount = Number(diagnostics.totalReportRowsChecked || 0);
+      const zeroCandidateCount = Number(diagnostics.zeroRemovalCandidateCount || 0);
+      const onWorkingListCount = Number(diagnostics.zeroRemovalOnWorkingListCount || 0);
+      const alreadyOffListCount = Number(diagnostics.zeroRemovalAlreadyOffListCount || 0);
+      const alreadyDnmCount = Number(diagnostics.zeroRemovalAlreadyDnmCount || 0);
+      const lastResultMessage = !checkedField
+        ? `Could not remove zeroes because ${metricLabel} was not available.`
+        : removalResult.removedCount
+          ? `Removed ${removalResult.removedCount} zero-value SCF(s) from the working copy using ${checkedField}.`
+          : zeroCandidateCount > 0
+            ? `Checked ${checkedRowCount} SCFs using ${checkedField}. Found ${zeroCandidateCount} zero-value SCF(s); ${onWorkingListCount} were on the working list, ${alreadyOffListCount} were already off the working list, and ${alreadyDnmCount} were already DNM.`
+            : `Checked ${checkedRowCount} SCFs using ${checkedField}. No zero-value SCFs found.`;
+      state.analysis.reviewZeroRemovalDiagnostics = normalizeReviewZeroRemovalDiagnostics({
+        ...diagnostics,
+        setupId: String(state.analysis.currentSetupId || "").trim(),
         comparisonName: getComparisonDisplayName(comparison),
-        primaryReportId: primaryReport.id,
-        primaryReportName: primaryReportDisplayName,
+        selectedPrimaryReportId: String(primaryReport?.id || "").trim(),
+        resolvedSavedReportId: String(primaryReport?.id || "").trim(),
+        zeroRemovalLastResult: {
+          status: !checkedField ? "error" : removalResult.removedCount ? "removed" : "checked",
+          removedCount: Number(removalResult.removedCount || 0),
+          totalMailedRemoved: Number(removalResult.totalMailedRemoved || 0),
+          message: lastResultMessage,
+          checkedAt: new Date().toISOString(),
+        },
+      });
+      console.info("[analysis-zero-rate-removal]", {
+        setupId: String(state.analysis.currentSetupId || "").trim(),
+        selectedComparisonId: comparison.id,
+        selectedComparisonName: getComparisonDisplayName(comparison),
+        selectedPrimaryReportId: primaryReport.id,
+        resolvedSavedReportId: primaryReport.id,
+        selectedPrimaryReportName: primaryReportDisplayName,
         listType: targetListType,
         removalKind: "zero-metric",
-        metricKey,
-        fieldUsed: checkedField,
-        checkedCount: removalResult.checkedCount,
-        totalMailedRemoved: removalResult.totalMailedRemoved,
+        selectedCleanupMetricLabel: metricLabel,
+        selectedCleanupMetricKey: metricKey,
+        totalScfsChecked: checkedRowCount,
+        metricFieldUsed: checkedField,
+        zeroMetricScfsFound: removalResult.foundZeroRateScfs,
+        zeroValueCount: Number(diagnostics.zeroValueCount || 0),
+        blankOrNullCount: Number(diagnostics.blankOrNullCount || 0),
+        nonNumericCount: Number(diagnostics.nonNumericCount || 0),
+        zeroRemovalSampleRows: diagnostics.zeroRemovalSampleRows || [],
+        skippedAlreadyNotOnWorkingList: removalResult.skippedAlreadyRemovedScfs,
+        skippedAlreadyDnm: removalResult.skippedDnmScfs,
         removedScfs: removalResult.removedScfs,
-        foundZeroRateScfs: removalResult.foundZeroRateScfs,
-        skippedAlreadyRemovedScfs: removalResult.skippedAlreadyRemovedScfs,
-        skippedDnmScfs: removalResult.skippedDnmScfs,
+        totalMailedRemoved: removalResult.totalMailedRemoved,
       });
+      console.info("[analysis-zero-rate-removal-sample]", {
+        setupId: String(state.analysis.currentSetupId || "").trim(),
+        selectedComparisonId: comparison.id,
+        selectedPrimaryReportId: primaryReport.id,
+        selectedCleanupMetricLabel: metricLabel,
+        selectedCleanupMetricKey: metricKey,
+        totalZeroCandidatesFound: zeroCandidateCount,
+        firstCheckedRows: ensureArray(diagnostics.zeroRemovalSampleRows || []).slice(0, 20),
+      });
+      if (checkedField && removalResult.removedCount > 0) {
+        recordZeroRateRemovalAction({
+          comparisonId: comparison.id,
+          comparisonName: getComparisonDisplayName(comparison),
+          primaryReportId: primaryReport.id,
+          primaryReportName: primaryReportDisplayName,
+          listType: targetListType,
+          removalKind: "zero-metric",
+          metricKey,
+          fieldUsed: checkedField,
+          checkedCount: removalResult.checkedCount,
+          totalMailedRemoved: removalResult.totalMailedRemoved,
+          removedScfs: removalResult.removedScfs,
+          foundZeroRateScfs: removalResult.foundZeroRateScfs,
+          skippedAlreadyRemovedScfs: removalResult.skippedAlreadyRemovedScfs,
+          skippedDnmScfs: removalResult.skippedDnmScfs,
+        });
+      }
+      appendAnalysisReviewNote(
+        !checkedField
+          ? `Bulk removal decision: could not remove zero-value ${listType} SCFs because ${metricLabel} was not available in ${primaryReportDisplayName}.`
+          : removalResult.removedCount
+            ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) with 0 ${checkedField} for pending removal using ${primaryReportDisplayName} only.`
+            : zeroCandidateCount > 0
+              ? `Bulk removal decision: checked ${checkedRowCount} ${listType} SCF(s) using ${checkedField} in ${primaryReportDisplayName}; found ${zeroCandidateCount} zero-value SCF(s), with ${onWorkingListCount} on the working list, ${alreadyOffListCount} already off the working list, and ${alreadyDnmCount} already DNM.`
+              : `Bulk removal decision: checked ${checkedRowCount} ${listType} SCF(s) using ${checkedField} in ${primaryReportDisplayName}; no zero-value SCFs were found.`
+      );
+      invalidateComparisonReviewSummary();
+      state.analysis.reviewBulkPreview = null;
+      scheduleReviewStateAutosave("bulk-remove-zeroes");
+      renderAnalysisComparisonReviewPanel();
+      broadcastAnalysisReviewState("bulk-remove-zeroes");
+      setStatus("analysis-comparison-selection-status", lastResultMessage);
+    } catch (error) {
+      console.error("[analysis-zero-rate-removal-error]", error);
+      setStatus(
+        "analysis-comparison-selection-status",
+        `Remove All Zeroes failed: ${error instanceof Error ? error.message : String(error || "Unknown error")}`
+      );
     }
-    appendAnalysisReviewNote(
-      !checkedField
-        ? `Bulk removal decision: could not remove zero-value ${listType} SCFs because ${metricLabel} was not available in ${primaryReportDisplayName}.`
-        : removalResult.removedCount
-          ? `Bulk removal decision: marked ${removalResult.removedCount} ${listType} SCF(s) with 0 ${checkedField} for pending removal using ${primaryReportDisplayName} only.`
-          : zeroCandidateCount > 0
-            ? `Bulk removal decision: checked ${checkedRowCount} ${listType} SCF(s) using ${checkedField} in ${primaryReportDisplayName}; found ${zeroCandidateCount} zero-value SCF(s), but ${alreadyOffListCount} were already off the working list and ${alreadyDnmCount} were already DNM.`
-            : `Bulk removal decision: checked ${checkedRowCount} ${listType} SCF(s) using ${checkedField} in ${primaryReportDisplayName}; no zero-value SCFs were found.`
-    );
-    invalidateComparisonReviewSummary();
-    state.analysis.reviewBulkPreview = null;
-    scheduleReviewStateAutosave("bulk-remove-zeroes");
-    renderAnalysisComparisonReviewPanel();
-    broadcastAnalysisReviewState("bulk-remove-zeroes");
-    setStatus("analysis-comparison-selection-status", lastResultMessage);
   });
 
   el("analysis-review-bulk-cancel-button")?.addEventListener("click", () => {
@@ -11288,25 +11335,13 @@ function renderAnalysisComparisonReviewPanel() {
   });
 
   el("analysis-review-restore-button")?.addEventListener("click", () => {
-    if (effectiveDnmStatus.isDoNotMail) {
-      setStatus(
-        "analysis-comparison-selection-status",
-        `SCF ${effectiveSelectedScf} is on Do Not Mail; restore is not available from this SCF card.`
-      );
+    if (!confirm("Reset this analysis and restore the pending mailing lists back to where they were at the beginning?")) {
       return;
     }
-    state.analysis.reviewWorkingLists = cloneData(state.analysis.reviewBaselineLists || []);
-    state.analysis.reviewZeroRateRemovals = [];
-    stripAutoAnalysisReviewNotes();
-    appendAnalysisReviewNote("Review reset: restored working lists to the live start point.");
-    invalidateComparisonReviewSummary();
-    scheduleReviewStateAutosave("restore-working-lists");
+    if (!resetAnalysisWorkingState()) {
+      return;
+    }
     renderAnalysisComparisonReviewPanel();
-    broadcastAnalysisReviewState("restore-working-lists");
-    setStatus(
-      "analysis-comparison-selection-status",
-      "Working lists were restored to the live start point."
-    );
   });
 }
 
