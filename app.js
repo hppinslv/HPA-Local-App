@@ -8061,26 +8061,29 @@ function getSortedFilteredPrimaryRows(rows = [], comparisonId = state.analysis.s
   const convertedRateValueRaw = String(state.analysis.reviewConvertedRateValue || "").trim();
   const mailedOperator = normalizeReviewFilterOperator(state.analysis.reviewMailedOperator, ">");
   const mailedMinRaw = String(state.analysis.reviewMailedMin || "").trim();
-  const parsedSoldRateThreshold = parseReviewRateThreshold(soldRateMinRaw, rows, "soldRate");
-  const parsedInForceRateThreshold = parseReviewRateThreshold(inForceRateValueRaw, rows, "inForceRate");
-  const parsedConvertedRateThreshold = parseReviewRateThreshold(convertedRateValueRaw, rows, "convertedRate");
+  const parsedSoldRateThreshold = parseLooseMetricNumberDetailed(soldRateMinRaw);
+  const parsedInForceRateThreshold = parseLooseMetricNumberDetailed(inForceRateValueRaw);
+  const parsedConvertedRateThreshold = parseLooseMetricNumberDetailed(convertedRateValueRaw);
   const parsedMailedMin = parseLooseMetricNumberDetailed(mailedMinRaw);
   const filteredRows = rows.filter((entry) => {
     if (
-      parsedSoldRateThreshold
-      && !compareReviewFilterValues(Number(entry?.soldRate || 0), soldRateOperator, parsedSoldRateThreshold.compareValue)
+      !parsedSoldRateThreshold.isBlank
+      && parsedSoldRateThreshold.isNumeric
+      && !compareReviewFilterValues(getNavigatorEntryMetricNumericValue(entry, "soldRate"), soldRateOperator, parsedSoldRateThreshold.numericValue)
     ) {
       return false;
     }
     if (
-      parsedInForceRateThreshold
-      && !compareReviewFilterValues(Number(entry?.inForceRate || 0), inForceRateOperator, parsedInForceRateThreshold.compareValue)
+      !parsedInForceRateThreshold.isBlank
+      && parsedInForceRateThreshold.isNumeric
+      && !compareReviewFilterValues(getNavigatorEntryMetricNumericValue(entry, "inForceRate"), inForceRateOperator, parsedInForceRateThreshold.numericValue)
     ) {
       return false;
     }
     if (
-      parsedConvertedRateThreshold
-      && !compareReviewFilterValues(Number(entry?.convertedRate || 0), convertedRateOperator, parsedConvertedRateThreshold.compareValue)
+      !parsedConvertedRateThreshold.isBlank
+      && parsedConvertedRateThreshold.isNumeric
+      && !compareReviewFilterValues(getNavigatorEntryMetricNumericValue(entry, "convertedRate"), convertedRateOperator, parsedConvertedRateThreshold.numericValue)
     ) {
       return false;
     }
@@ -10586,8 +10589,14 @@ function renderAnalysisComparisonReviewPanel() {
     || convertedRateValue
     || mailedMinValue
   );
+  const activeMetricFilters = [
+    soldRateMinValue ? `Sold Rate ${soldRateOperatorValue} ${soldRateMinValue}` : "",
+    inForceRateValue ? `In Force Rate ${inForceRateOperatorValue} ${inForceRateValue}` : "",
+    convertedRateValue ? `Converted Rate ${convertedRateOperatorValue} ${convertedRateValue}` : "",
+    mailedMinValue ? `Mailed ${mailedOperatorValue} ${mailedMinValue}` : "",
+  ].filter(Boolean);
   const filterSummaryLabel = hasMetricFilters || activeNavigatorScfFilterSet.size
-    ? `Filters active${hasMetricFilters ? " for metrics" : ""}${activeNavigatorScfFilterSet.size ? `${hasMetricFilters ? " and" : ""} selected SCFs` : ""}.`
+    ? `Filters active${activeMetricFilters.length ? `: ${activeMetricFilters.join(", ")}` : ""}${activeNavigatorScfFilterSet.size ? `${activeMetricFilters.length ? " | " : ": "}Selected SCFs ${activeNavigatorScfFilterSet.size}` : ""}.`
     : "Showing all SCFs. No navigator filters are active.";
   const bulkPreview =
     state.analysis.reviewBulkPreview &&
