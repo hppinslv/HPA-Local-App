@@ -10720,7 +10720,7 @@ function renderAnalysisComparisonReviewPanel() {
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-bulk-threshold">Percent</label>
-            <input id="analysis-review-bulk-threshold" class="field-input" type="number" min="0" step="0.001" value="${esc(bulkThresholdValue)}" placeholder="ex: 2.50 or .025" />
+            <input id="analysis-review-bulk-threshold" class="field-input" type="text" inputmode="decimal" value="${esc(bulkThresholdValue)}" placeholder="ex: 2.50 or .025" />
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-bulk-calculate-button">Preview impact</label>
@@ -10832,7 +10832,7 @@ function renderAnalysisComparisonReviewPanel() {
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-threshold-value">Percent</label>
-            <input id="analysis-review-threshold-value" class="field-input" type="number" min="0" step="0.001" value="${esc(thresholdValue)}" placeholder="ex: 2.50 or .025" />
+            <input id="analysis-review-threshold-value" class="field-input" type="text" inputmode="decimal" value="${esc(thresholdValue)}" placeholder="ex: 2.50 or .025" />
           </div>
           <div class="field-stack">
             <label class="field-label" for="analysis-review-threshold-clear">Reset Filter</label>
@@ -11083,13 +11083,23 @@ function renderAnalysisComparisonReviewPanel() {
     focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
   });
 
-  el("analysis-review-threshold-value")?.addEventListener("input", (event) => {
-    state.analysis.reviewThresholdValue = String(event.target.value || "").trim();
+  const commitNavigatorThresholdValue = (rawValue) => {
+    state.analysis.reviewThresholdValue = String(rawValue || "").trim();
     state.analysis.reviewPageNumber = 1;
     renderAnalysisComparisonReviewPanel();
     broadcastAnalysisReviewState("threshold-value");
     focusComparisonReviewSummary();
     focusSelectedReviewRow(state.analysis.reviewSelectedScfs[comparison.id] || effectiveSelectedScf);
+  };
+
+  el("analysis-review-threshold-value")?.addEventListener("change", (event) => {
+    commitNavigatorThresholdValue(event.target.value || "");
+  });
+
+  el("analysis-review-threshold-value")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitNavigatorThresholdValue(event.target.value || "");
   });
 
   el("analysis-review-threshold-clear")?.addEventListener("click", () => {
@@ -11173,13 +11183,23 @@ function renderAnalysisComparisonReviewPanel() {
     broadcastAnalysisReviewState("bulk-metric");
   });
 
-  el("analysis-review-bulk-threshold")?.addEventListener("input", (event) => {
-    state.analysis.reviewBulkThresholdValue = String(event.target.value || "").trim();
+  const commitBulkThresholdValue = (rawValue) => {
+    state.analysis.reviewBulkThresholdValue = String(rawValue || "").trim();
     if (state.analysis.reviewBulkPreview) {
       state.analysis.reviewBulkPreview = null;
       renderAnalysisComparisonReviewPanel();
     }
     broadcastAnalysisReviewState("bulk-threshold");
+  };
+
+  el("analysis-review-bulk-threshold")?.addEventListener("change", (event) => {
+    commitBulkThresholdValue(event.target.value || "");
+  });
+
+  el("analysis-review-bulk-threshold")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitBulkThresholdValue(event.target.value || "");
   });
 
   el("analysis-review-bulk-calculate-button")?.addEventListener("click", () => {
