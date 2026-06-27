@@ -6260,6 +6260,7 @@ function renderComparisonReviewPanelShell() {
       </div>
       <button id="open-comparison-review-popup-button" class="secondary-button"${detachedWindow ? " disabled" : ""}>${detachedWindow ? "Opened In New Window" : "Open In New Window"}</button>
       <button id="back-to-comparison-setup-button" class="secondary-button">Back to Set Up Comparison</button>
+      <button id="reset-analysis-review-button" class="secondary-button"${readOnly ? " disabled" : ""}>Reset Analysis</button>
       <button id="summarize-comparison-review-button" class="secondary-button"${readOnly ? " disabled" : ""}>Summarize Review</button>
       <button id="complete-comparison-review-button" class="primary-button" disabled>Complete Analysis</button>
       <button id="exit-comparison-review-button" class="secondary-button${detachedWindow ? "" : " is-hidden"}">${detachedWindow ? "Close Window" : "Exit"}</button>
@@ -8088,7 +8089,7 @@ function removeWorkingListEntriesAtZeroRate(listType, rows = [], metricKey) {
       metricFieldKey: String(metricMatch.key || "").trim(),
       displayedMetricValue: String(displayMetricValue || "").trim(),
       rawMetricValue,
-      parsedDisplayedMetricValue,
+      parsedDisplayedMetricValue: parsedDisplayMetricValue,
       parsedRawMetricValue,
       wouldRemove: isZero,
       onWorkingList: currentScfs.has(scf),
@@ -13021,6 +13022,17 @@ function bindAnalysisButtons() {
 
     if (target.id === "summarize-comparison-review-button" && !target.disabled) {
       summarizeComparisonReview();
+      return;
+    }
+
+    if (target.id === "reset-analysis-review-button" && !target.disabled) {
+      if (!confirm("Reset this analysis and restore the pending mailing lists back to where they were at the beginning?")) {
+        return;
+      }
+      if (!resetAnalysisWorkingState()) {
+        return;
+      }
+      renderAnalysisComparisonReviewPanel();
       return;
     }
 
