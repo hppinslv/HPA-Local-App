@@ -1607,15 +1607,29 @@ function normalizeAnalysisReviewState(value = {}) {
       zeroValueCount: Number(source.zeroValueCount || 0),
       blankOrNullCount: Number(source.blankOrNullCount || 0),
       nonNumericCount: Number(source.nonNumericCount || 0),
-      zeroRemovalSampleRows: ensureArray(source.zeroRemovalSampleRows).map((entry) => ({
-        scf: normalizeScf(entry?.scf),
-        rawMailedValue:
-          entry?.rawMailedValue === null || entry?.rawMailedValue === undefined
-            ? ""
-            : String(entry.rawMailedValue),
-        parsedMailedValue: Number(entry?.parsedMailedValue || 0),
-        wouldRemove: entry?.wouldRemove === true,
-      })).filter((entry) => entry.scf).slice(0, 10),
+      zeroRemovalSampleRows: ensureArray(source.zeroRemovalSampleRows).map((entry) => {
+        const hasMetricShape = Object.prototype.hasOwnProperty.call(entry || {}, "rawMetricValue")
+          || Object.prototype.hasOwnProperty.call(entry || {}, "parsedMetricValue");
+        return hasMetricShape
+          ? {
+              scf: normalizeScf(entry?.scf),
+              rawMetricValue:
+                entry?.rawMetricValue === null || entry?.rawMetricValue === undefined
+                  ? ""
+                  : String(entry.rawMetricValue),
+              parsedMetricValue: Number(entry?.parsedMetricValue || 0),
+              wouldRemove: entry?.wouldRemove === true,
+            }
+          : {
+              scf: normalizeScf(entry?.scf),
+              rawMailedValue:
+                entry?.rawMailedValue === null || entry?.rawMailedValue === undefined
+                  ? ""
+                  : String(entry.rawMailedValue),
+              parsedMailedValue: Number(entry?.parsedMailedValue || 0),
+              wouldRemove: entry?.wouldRemove === true,
+            };
+      }).filter((entry) => entry.scf).slice(0, 10),
       zeroRemovalLastResult: source.zeroRemovalLastResult && typeof source.zeroRemovalLastResult === "object"
         ? {
             status: String(source.zeroRemovalLastResult.status || "").trim(),
