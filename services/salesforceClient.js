@@ -94,7 +94,7 @@ const ANALYSIS_METRIC_LABELS = {
   convertedCount: ["Sum of Converted", "Converted"],
   totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
   inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
-  totalConvertedMonthlyPremiums: ["Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium"],
+  totalConvertedMonthlyPremiums: ["Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium"],
 };
 
 function getAnalysisMetricValue(row = {}, labels = []) {
@@ -1821,7 +1821,8 @@ SELECT HPA_SCF__c,
        HPA_In_Force__c,
        Monthly_Premium_Formula__c,
        HPA_In_Force_Monthly_Premium__c,
-       HPATotal_Converted_Monthly_Premiums__c
+       HPATotal_Converted_Monthly_Premiums__c,
+       Payments_Minus_Credits__c
 FROM Opportunity
 WHERE ${whereClauses.join("\nAND ")}
 ORDER BY HPA_SCF__c, HPA_Key__c
@@ -1835,6 +1836,7 @@ ORDER BY HPA_SCF__c, HPA_Key__c
     "Total Monthly Premium": parseNumber(record.Monthly_Premium_Formula__c),
     "In Force Monthly Premium": parseNumber(record.HPA_In_Force_Monthly_Premium__c),
     "Total Converted Monthly Premiums": parseNumber(record.HPATotal_Converted_Monthly_Premiums__c),
+    "Payments Minus Credits": parseNumber(record.Payments_Minus_Credits__c),
   })).filter((row) => row["SCF Grouping"]);
 
   return buildFlatRowsFromDetailExport(detailRows);
@@ -2513,6 +2515,8 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     );
     const rowConvertedPremium = parseNumber(
       getLikelyColumnValue(row, [
+        "Payments Minus Credits",
+        "Payments_Minus_Credits__c",
         "Total Converted Monthly Premiums",
         "Sum of Total Converted Monthly Premiums",
         "Converted Monthly Premium",
@@ -2975,7 +2979,9 @@ function buildAnalysisDollarDiagnostics(reportId, filters, datasets = {}) {
 
   const summaryValues = Array.isArray(merged.summaryValues) ? merged.summaryValues : [];
   const soldCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Opp Count");
-  const convertedCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Sold");
+  const convertedCount =
+    extractAnalysisSummaryMetricValue(summaryValues, "Sum of Converted")
+    || extractAnalysisSummaryMetricValue(summaryValues, "Sum of Sold");
   const inForceCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of In Force");
   const totalMonthlyPremium = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Total Monthly Premium");
   const inForceMonthlyPremium = extractAnalysisSummaryMetricValue(summaryValues, "Sum of In Force Monthly Premium");

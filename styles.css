@@ -2191,7 +2191,9 @@ textarea {
 }
 
 #ach-return-export-table .table-action-cell {
-  min-width: 0;
+  min-width: 120px;
+  width: 120px;
+  white-space: nowrap;
 }
 
 #ach-return-export-table .secondary-button.table-action-button,

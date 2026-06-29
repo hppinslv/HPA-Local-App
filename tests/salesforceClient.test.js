@@ -180,6 +180,27 @@ test("converted count uses one certificate per positive converted premium row in
   assert.equal(convertedCount, 1);
 });
 
+test("payments minus credits greater than zero counts the certificate as converted", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "812",
+      Key: "N",
+      Mailed: 166,
+      "Opp Count": 9,
+      "In Force": 5,
+      "Sum of Sold": 9,
+      "Payments Minus Credits": 19038.1,
+      "Total Converted Monthly Premiums": 0,
+      "Sold Rate": 3.082991454,
+      "In Force Rate": 3.082991454,
+    },
+  ]);
+
+  const row = getAggregateRow(dataset, "812");
+  assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Sum of Converted"], "1");
+});
+
 test("zero mailed rows return zero rates without dividing by zero", () => {
   const rates = calculateAnalysisCountRates({
     mailed: 0,

@@ -4683,6 +4683,7 @@ function renderAchReturnSpreadsheetRow(row, options = {}) {
   const visualStatus = options.visualStatus || row.import_result_status || row.validation_status || "ready";
   return `
     <tr class="cc-import-row is-${esc(String(visualStatus || "ready").toLowerCase())}">
+      ${options.includeActions ? `<td class="table-action-cell">${options.actionsHtml || ""}</td>` : ""}
       ${options.includeCreated ? `<td>${esc(formatDate(row.created_at || row.creditDate || ""))}</td>` : ""}
       <td>${esc(row.refundName || "")}</td>
       <td>${esc(row.policyId || "")}</td>
@@ -4701,7 +4702,6 @@ function renderAchReturnSpreadsheetRow(row, options = {}) {
       <td><span class="cc-status-pill is-${esc(String(visualStatus || "ready").toLowerCase())}">${esc(String(statusValue || "").replaceAll("_", " "))}</span></td>
       <td>${esc(row.creditBatchId || "")}</td>
       ${options.includeImportColumns ? `<td>${esc(importResult)}</td><td>${esc(row.imported_salesforce_id || "")}</td>` : ""}
-      ${options.includeActions ? `<td class="table-action-cell">${options.actionsHtml || ""}</td>` : ""}
     </tr>
   `;
 }
@@ -6843,7 +6843,7 @@ function createComparisonLink(index = 0, source = {}) {
     matchField: String(source.matchField || "SCF Grouping").trim() || "SCF Grouping",
     metricColumns: Array.isArray(source.metricColumns) && source.metricColumns.length
       ? source.metricColumns
-      : ["Sum of Mailed", "Sum of Opp Count", "Sum of In Force", "Sum of Sold", "Sold Rate"],
+      : ["Sum of Mailed", "Sum of Opp Count", "Sum of In Force", "Sum of Converted", "Sold Rate"],
     createdAt: source.createdAt || source.created_at || now,
     updatedAt: source.updatedAt || source.updated_at || now,
   };
@@ -7107,7 +7107,10 @@ function resolveNavigatorSoldCount(row = {}) {
 
 function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = null) {
   const convertedPremium = precomputedConvertedPremium === null
-    ? getRowMetricNumber(row, "Total Converted Monthly Premiums")
+    ? Math.max(
+        getRowMetricNumber(row, "Payments Minus Credits"),
+        getRowMetricNumber(row, "Total Converted Monthly Premiums")
+      )
     : Number(precomputedConvertedPremium || 0);
   const explicitConvertedCount = Number.isFinite(Number(row?.appConvertedCount))
     ? Number(row.appConvertedCount)
@@ -7993,7 +7996,10 @@ function logPrimaryNavigatorRateTrace(report, rows = [], scfs = ["010", "011", "
         mailed: getRowMetricNumber(entry.row, "Sum of Mailed"),
         soldCount: getRowMetricNumber(entry.row, "Sum of Opp Count"),
         inForceCount: getRowMetricNumber(entry.row, "Sum of In Force"),
-        convertedCount: getRowMetricNumber(entry.row, "Sum of Sold"),
+        convertedCount: Math.max(
+          getRowMetricNumber(entry.row, "Sum of Converted"),
+          getRowMetricNumber(entry.row, "Sum of Sold")
+        ),
         convertedPremiumTotal: getRowMetricNumber(entry.row, "Sum of Total Converted Monthly Premiums"),
         soldRate: getRowMetricNumber(entry.row, "Sold Rate"),
         inForceRate: getRowMetricNumber(entry.row, "In Force Rate"),
