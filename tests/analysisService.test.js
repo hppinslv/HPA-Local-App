@@ -174,6 +174,45 @@ test("live fallback can supplement zero saved summary values without clobbering 
   assert.equal(merged["Sold Rate"], "0.1336898396");
 });
 
+test("saved analysis reports relabel sum of sold to sum of converted in view and export columns", () => {
+  const tempDir = createTempAnalysisDir();
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-reports.json"),
+    JSON.stringify([
+      {
+        id: "report_1",
+        runId: "run_1",
+        pullId: "pull_1",
+        report_type: "analysis-report",
+        report_name: "Test Report",
+        run_month: "June",
+        run_year: 2026,
+        created_at: "2026-06-29T00:00:00.000Z",
+        updated_at: "2026-06-29T00:00:00.000Z",
+        completed_at: "2026-06-29T00:00:00.000Z",
+        status: "complete",
+        result_count: 1,
+        export_row_count: 1,
+        input_row_count: 1,
+        summaryValues: [{ key: "Sum of Sold", label: "Sum of Sold", value: "1" }],
+        columns: [{ key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold" }],
+        rows: [{ "Sum of Sold": "1" }],
+        exportColumns: [{ key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold" }],
+        exportRows: [{ "Sum of Sold": "1" }],
+      },
+    ], null, 2)
+  );
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const [report] = service.listAnalysisReports();
+
+  assert.equal(report.columns[0].label, "Sum of Converted");
+  assert.equal(report.summaryValues[0].label, "Sum of Converted");
+  assert.equal(report.rows[0]["Sum of Converted"], "1");
+  assert.equal(report.exportColumns[0].label, "Sum of Converted");
+  assert.equal(report.exportRows[0]["Sum of Converted"], "1");
+});
+
 test("analysis report names use Refinance title format with run date", () => {
   const reportName = buildAnalysisReportName(
     {

@@ -10659,21 +10659,6 @@ function renderAnalysisComparisonReviewPanel() {
       : isMetricLoading
         ? "Loading..."
         : "-";
-    const averagePremiumDisplay = row
-      ? formatCurrencyMetricValue(row.averageMonthlyPremium)
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
-    const highPremiumDisplay = row
-      ? formatCurrencyMetricValue(row.highPremium)
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
-    const lowPremiumDisplay = row
-      ? formatCurrencyMetricValue(row.lowPremium)
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
     const cardStatusLabel = !row && isMetricLoading
       ? "Loading exact report metrics..."
       : hasMetricError && row
@@ -10719,20 +10704,6 @@ function renderAnalysisComparisonReviewPanel() {
           <div>
             <span class="field-label">Total Mailed</span>
             <strong>${esc(displayedTotalMailed)}</strong>
-          </div>
-        </div>
-        <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
-          <div>
-            <span class="field-label">Average Premium</span>
-            <strong>${esc(averagePremiumDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">Hi Premium</span>
-            <strong>${esc(highPremiumDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">Lo Premium</span>
-            <strong>${esc(lowPremiumDisplay)}</strong>
           </div>
         </div>
       </article>

@@ -2980,6 +2980,12 @@ function serializeAnalysisRun(run) {
 }
 
 function serializeAnalysisReport(report) {
+  const columns = relabelAnalysisColumns(ensureArray(report.columns));
+  const summaryValues = relabelAnalysisSummaryValues(ensureArray(report.summaryValues));
+  const rows = relabelAnalysisRows(ensureArray(report.rows), ensureArray(report.columns));
+  const exportColumns = relabelAnalysisColumns(ensureArray(report.exportColumns));
+  const exportRows = relabelAnalysisRows(ensureArray(report.exportRows), ensureArray(report.exportColumns));
+
   return {
     id: report.id,
     runId: report.runId,
@@ -3020,11 +3026,11 @@ function serializeAnalysisReport(report) {
     results_summary: report.results_summary || "",
     createdBy: report.created_by || DEFAULT_ACTOR,
     created_by: report.created_by || DEFAULT_ACTOR,
-    columns: ensureArray(report.columns),
-    summaryValues: ensureArray(report.summaryValues),
-    rows: ensureArray(report.rows),
-    exportColumns: ensureArray(report.exportColumns),
-    exportRows: ensureArray(report.exportRows),
+    columns,
+    summaryValues,
+    rows,
+    exportColumns,
+    exportRows,
     warningMessage: report.warning_message || "",
     warning_message: report.warning_message || "",
     diagnostics: report.diagnostics || null,
