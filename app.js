@@ -10731,18 +10731,6 @@ function renderAnalysisComparisonReviewPanel() {
         </div>
         <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
           <div>
-            <span class="field-label">Sold</span>
-            <strong>${esc(soldCountDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">Converted</span>
-            <strong>${esc(convertedCountDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">In Force</span>
-            <strong>${esc(inForceCountDisplay)}</strong>
-          </div>
-          <div>
             <span class="field-label">Total Mailed</span>
             <strong>${esc(displayedTotalMailed)}</strong>
           </div>
@@ -11956,11 +11944,8 @@ function renderPullResultCard(pull, options = {}) {
       ? pull.summaryValues
       : [];
   const analysisLabelHints = {
-    "Applications Received": "application received",
     "Sold Rate": "salesforce premium formula",
-    "Inforce (policy currently in effect)": "currently in force",
     "In Force Rate": "salesforce in-force premium formula",
-    "Sum of Converted": "received at least one payment",
     "Converted Rate": "salesforce converted premium formula",
   };
   const renderAnalysisLabelHtml = (label, suffix = "") => {
