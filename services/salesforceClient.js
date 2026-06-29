@@ -90,7 +90,8 @@ const ANALYSIS_METRIC_LABELS = {
   mailed: ["Sum of Mailed", "Sum of Mail", "Mailed"],
   oppCount: ["Sum of Opp Count", "Applications Received", "Opp Count", "Application Count"],
   inForce: ["Sum of In Force", "Inforce (policy currently in effect)", "In Force"],
-  sold: ["Sum of Sold", "Sum of Converted", "Sold", "Converted"],
+  sold: ["Sum of Sold", "Sold"],
+  convertedCount: ["Sum of Converted", "Converted"],
   totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
   inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
   totalConvertedMonthlyPremiums: ["Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium"],
@@ -153,7 +154,7 @@ function resolveAnalysisSoldOpportunityCount(row = {}) {
 
 function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = null) {
   applyAnalysisMetricAliases(row);
-  const explicitConvertedCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
+  const explicitConvertedCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ?? 0);
   const convertedPremium = resolveAnalysisConvertedPremiumValue(row, precomputedConvertedPremium);
   if (convertedPremium > 0) {
     return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
@@ -1955,7 +1956,7 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
     acc.mailed += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.mailed) ?? 0);
     acc.oppCount += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.oppCount) ?? 0);
     acc.inForce += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
-    acc.sold += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.sold) ?? 0);
+    acc.sold += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ?? 0);
     acc.totalMonthlyPremium += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
     acc.inForceMonthlyPremium += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium) ?? 0);
     acc.totalConvertedMonthlyPremiums += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0);
@@ -1979,6 +1980,7 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
     { key: "Sum of Opp Count", label: "Sum of Opp Count", value: Math.round(totals.oppCount).toLocaleString("en-US") },
     { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(totals.inForce).toLocaleString("en-US") },
     { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(totals.sold).toLocaleString("en-US") },
+    { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(totals.sold).toLocaleString("en-US") },
     { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: totals.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: totals.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: totals.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
@@ -2025,6 +2027,11 @@ function fillAnalysisRateFallbacks(row = {}) {
   setAnalysisMetricAliases(
     row,
     ANALYSIS_METRIC_LABELS.sold,
+    Math.round(convertedCount).toLocaleString("en-US")
+  );
+  setAnalysisMetricAliases(
+    row,
+    ANALYSIS_METRIC_LABELS.convertedCount,
     Math.round(convertedCount).toLocaleString("en-US")
   );
   row.salesforceSoldRate = explicitSoldRate;
@@ -2646,6 +2653,10 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "sum of in force": Math.round(entry.inForce).toLocaleString("en-US"),
         "Sum of Sold": Math.round(entry.sold).toLocaleString("en-US"),
         "sum of sold": Math.round(entry.sold).toLocaleString("en-US"),
+        "Sum of Converted": Math.round(entry.sold).toLocaleString("en-US"),
+        "sum of converted": Math.round(entry.sold).toLocaleString("en-US"),
+        Converted: Math.round(entry.sold).toLocaleString("en-US"),
+        converted: Math.round(entry.sold).toLocaleString("en-US"),
         "Sum of Total Monthly Premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of total monthly premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of In Force Monthly Premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
@@ -2676,6 +2687,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
       { key: "Sum of In Force", label: "Sum of In Force", normalized: "sum of in force", dataType: "double" },
       { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
+      { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", normalized: "sum of total monthly premium", dataType: "currency" },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", normalized: "sum of in force monthly premium", dataType: "currency" },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
@@ -2689,6 +2701,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of Opp Count", label: "Sum of Opp Count", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.oppCount, 0)).toLocaleString("en-US") },
       { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForce, 0)).toLocaleString("en-US") },
       { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
+      { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForceMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalConvertedMonthlyPremiums, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },

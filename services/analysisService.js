@@ -146,7 +146,9 @@ function summarizeAnalysisRateRow(row = {}) {
     "Application Count",
   ]);
   const inForceCount = getAnalysisMetricNumber(row, ["Sum of In Force", "In Force"]);
-  const convertedCount = getAnalysisMetricNumber(row, ["Sum of Sold", "Sold", "Converted", "Sum of Converted"]);
+  const convertedCount = Number.isFinite(Number(row?.appConvertedCount))
+    ? Number(row.appConvertedCount)
+    : getAnalysisMetricNumber(row, ["Sum of Converted", "Converted", "Sum of Sold", "Sold"]);
   const convertedPremiumTotal = getAnalysisMetricNumber(row, [
     "Sum of Total Converted Monthly Premiums",
     "Total Converted Monthly Premiums",

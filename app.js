@@ -7109,7 +7109,12 @@ function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = 
   const convertedPremium = precomputedConvertedPremium === null
     ? getRowMetricNumber(row, "Total Converted Monthly Premiums")
     : Number(precomputedConvertedPremium || 0);
-  const explicitConvertedCount = getRowMetricNumber(row, "Sold");
+  const explicitConvertedCount = Number.isFinite(Number(row?.appConvertedCount))
+    ? Number(row.appConvertedCount)
+    : Math.max(
+        getRowMetricNumber(row, "Sum of Converted"),
+        getRowMetricNumber(row, "Converted")
+      );
   if (convertedPremium > 0) {
     return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
   }
@@ -7259,6 +7264,10 @@ function normalizeAnalysisMetricRow(row = {}) {
   normalizedRow["sum of opp count"] = formatNavigatorCount(soldCount);
   normalizedRow["Sum of Sold"] = formatNavigatorCount(convertedCount);
   normalizedRow["sum of sold"] = formatNavigatorCount(convertedCount);
+  normalizedRow["Sum of Converted"] = formatNavigatorCount(convertedCount);
+  normalizedRow["sum of converted"] = formatNavigatorCount(convertedCount);
+  normalizedRow["Converted"] = formatNavigatorCount(convertedCount);
+  normalizedRow["converted"] = formatNavigatorCount(convertedCount);
   normalizedRow["Sold Rate"] = safeSoldRate.toFixed(10);
   normalizedRow["sold rate"] = safeSoldRate.toFixed(10);
   normalizedRow["In Force Rate"] = safeInForceRate.toFixed(10);
@@ -7276,6 +7285,7 @@ function normalizeAnalysisMetricRow(row = {}) {
       ? Number(inForceRate)
       : null;
   normalizedRow.appConvertedRate = convertedRate;
+  normalizedRow.appConvertedCount = convertedCount;
 
   return normalizedRow;
 }
@@ -7392,6 +7402,10 @@ function buildSyntheticNavigatorRow({
     "sum of in force": formatNavigatorCount(safeInForce),
     "Sum of Sold": formatNavigatorCount(safeSold),
     "sum of sold": formatNavigatorCount(safeSold),
+    "Sum of Converted": formatNavigatorCount(safeSold),
+    "sum of converted": formatNavigatorCount(safeSold),
+    Converted: formatNavigatorCount(safeSold),
+    converted: formatNavigatorCount(safeSold),
     "Sum of Total Monthly Premium": formatAnalysisCurrency(safeTotalMonthlyPremium),
     "sum of total monthly premium": formatAnalysisCurrency(safeTotalMonthlyPremium),
     "Sum of In Force Monthly Premium": formatAnalysisCurrency(safeInForceMonthlyPremium),
@@ -7402,6 +7416,7 @@ function buildSyntheticNavigatorRow({
     salesforceInForceRate: resolvedSalesforceInForceRate,
     salesforceConvertedRate: Number.isFinite(Number(salesforceConvertedRate)) ? Number(salesforceConvertedRate) : null,
     appConvertedRate: safeConvertedRate,
+    appConvertedCount: safeSold,
     "Sold Rate": safeSoldRate.toFixed(10),
     "sold rate": safeSoldRate.toFixed(10),
     "In Force Rate": safeInForceRate.toFixed(10),
@@ -10655,7 +10670,15 @@ function renderAnalysisComparisonReviewPanel() {
         ? "Loading..."
         : "-";
     const convertedCountDisplay = row
-      ? formatWholeNumber(getRowMetricValue(row, "Sum of Sold"))
+      ? formatWholeNumber(
+          Number.isFinite(Number(row?.appConvertedCount))
+            ? Number(row.appConvertedCount)
+            : Math.max(
+                getRowMetricNumber(row, "Sum of Converted"),
+                getRowMetricNumber(row, "Converted"),
+                getRowMetricNumber(row, "Sum of Sold")
+              )
+        )
       : isMetricLoading
         ? "Loading..."
         : "-";

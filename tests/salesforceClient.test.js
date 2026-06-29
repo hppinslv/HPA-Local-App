@@ -162,8 +162,22 @@ test("converted rate uses app converted logic with the Salesforce rate basis whe
 
   const row = getAggregateRow(dataset, "999");
   assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Sum of Converted"], "1");
   assert.equal(row["Converted Rate"], "3.0829914540");
   assert.notEqual(row["Converted Rate"], "100.0000000000");
+});
+
+test("converted count uses one certificate per positive converted premium row instead of sold count", () => {
+  const convertedCount = resolveAnalysisConvertedCount(
+    {
+      "Sum of Opp Count": 9,
+      "Sum of Sold": 9,
+      "Sum of Converted": 0,
+      "Total Converted Monthly Premiums": 76.05,
+    }
+  );
+
+  assert.equal(convertedCount, 1);
 });
 
 test("zero mailed rows return zero rates without dividing by zero", () => {
