@@ -34,6 +34,7 @@ const SCORE_HISTORY_VISIBLE_PERIODS = ["Current Month", "Last Month", "Last Year
 const SCORE_HISTORY_VISIBLE_PAYMENT_TYPES = ["ACH", "Credit Card", "Check"];
 
 const DEFAULT_ANALYSIS_REPORT_ID = "00OQm000003PIxhMAG";
+const ANALYSIS_CONVERTED_RATE_PREMIUM_BASIS = 14.86;
 const ANALYSIS_SETUP_STORAGE_KEY = "hpa.analysis.currentSetupId";
 const ANALYSIS_SETUP_DRAFT_STORAGE_KEY = "hpa.analysis.currentSetupDraft";
 const ANALYSIS_KEY_CODE_GROUPS = ["NHCL", "RFC"];
@@ -7121,6 +7122,9 @@ function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = 
   if (convertedPremium > 0) {
     return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
   }
+  if (explicitConvertedCount > 0) {
+    return explicitConvertedCount;
+  }
   return 0;
 }
 
@@ -7169,39 +7173,20 @@ function calculateNavigatorRates({
 
 function calculateNavigatorConvertedRate({
   convertedCount = 0,
-  soldCount = 0,
-  inForceCount = 0,
-  soldRate = null,
-  inForceRate = null,
-  convertedRate = null,
+  totalConvertedMonthlyPremiums = 0,
   mailed = 0,
 } = {}) {
   const safeConvertedCount = Number(convertedCount || 0);
   if (!(safeConvertedCount > 0)) {
     return 0;
   }
-
-  const numericSoldCount = Number(soldCount || 0);
-  const numericSoldRate = Number(soldRate);
-  if (numericSoldCount > 0 && Number.isFinite(numericSoldRate) && numericSoldRate > 0) {
-    return (safeConvertedCount / numericSoldCount) * numericSoldRate;
+  const safeMailed = Number(mailed || 0);
+  const safeConvertedPremiumTotal = Number(totalConvertedMonthlyPremiums || 0);
+  if (!(safeMailed > 0) || !(safeConvertedPremiumTotal > 0)) {
+    return 0;
   }
 
-  const numericInForceCount = Number(inForceCount || 0);
-  const numericInForceRate = Number(inForceRate);
-  if (numericInForceCount > 0 && Number.isFinite(numericInForceRate) && numericInForceRate > 0) {
-    return (safeConvertedCount / numericInForceCount) * numericInForceRate;
-  }
-
-  const explicitConvertedRate = Number(convertedRate);
-  if (Number.isFinite(explicitConvertedRate) && explicitConvertedRate > 0) {
-    return explicitConvertedRate;
-  }
-
-  return calculateNavigatorRates({
-    mailed,
-    convertedCount: safeConvertedCount,
-  }).convertedRate;
+  return (safeConvertedPremiumTotal * 100) / (safeMailed * ANALYSIS_CONVERTED_RATE_PREMIUM_BASIS);
 }
 
 function formatAnalysisCurrency(value) {
@@ -7243,14 +7228,10 @@ function normalizeAnalysisMetricRow(row = {}) {
   const soldRate = resolveNavigatorExplicitRate(row, "Sold Rate");
   const inForceRate = resolveNavigatorExplicitRate(row, "In Force Rate");
   const convertedRate = Number.isFinite(Number(row.appConvertedRate))
-    ? Number(row.appConvertedRate)
-    : calculateNavigatorConvertedRate({
+      ? Number(row.appConvertedRate)
+      : calculateNavigatorConvertedRate({
         convertedCount,
-        soldCount,
-        inForceCount,
-        soldRate,
-        inForceRate,
-        convertedRate: resolveNavigatorExplicitRate(row, "Converted Rate"),
+        totalConvertedMonthlyPremiums,
         mailed,
       });
   const safeSoldRate = Number.isFinite(Number(soldRate)) ? Number(soldRate) : fallbackRates.soldRate;
@@ -7522,11 +7503,7 @@ function buildExportScfAggregateMap(report) {
     current.totalConvertedMonthlyPremiums += rowConvertedPremium;
     current.appConvertedRate = calculateNavigatorConvertedRate({
       convertedCount: current.sold,
-      soldCount: current.oppCount,
-      inForceCount: current.inForce,
-      soldRate: current.salesforceSoldRate,
-      inForceRate: current.salesforceInForceRate,
-      convertedRate: current.salesforceConvertedRate,
+      totalConvertedMonthlyPremiums: current.totalConvertedMonthlyPremiums,
       mailed: current.mailed,
     });
     aggregateMap.set(scf, current);
@@ -9273,13 +9250,13 @@ function legacyCreateComparisonLink(index = 0) {
     reportAId: "",
     reportBId: "",
     matchField: "SCF Grouping",
-    metricColumns: [
-      "Sum of Mailed",
-      "Sum of Opp Count",
-      "Sum of In Force",
-      "Sum of Sold",
-      "Sold Rate",
-    ],
+      metricColumns: [
+        "Sum of Mailed",
+        "Sum of Opp Count",
+        "Sum of In Force",
+        "Sum of Converted",
+        "Sold Rate",
+      ],
     label: `Comparison ${index + 1}`,
     comparisonName: `Comparison ${index + 1}`,
   };
@@ -9289,7 +9266,7 @@ function readComparisonMetricColumns(link) {
   if (Array.isArray(link?.metricColumns) && link.metricColumns.length) {
     return link.metricColumns;
   }
-  return ["Sum of Mailed", "Sum of Opp Count", "Sum of In Force", "Sum of Sold", "Sold Rate"];
+  return ["Sum of Mailed", "Sum of Opp Count", "Sum of In Force", "Sum of Converted", "Sold Rate"];
 }
 
 function legacyRenderComparisonResultCards() {
@@ -9427,7 +9404,7 @@ function legacyRenderAnalysisComparePanel() {
             </div>
             <div class="field-stack analysis-pull-wide">
               <label class="field-label">Metrics to Compare</label>
-              <input class="field-input" data-comparison-field="metricColumns" data-comparison-id="${esc(link.id)}" type="text" value="${esc(metricText)}" placeholder="Sum of Mailed, Sum of Opp Count, Sum of In Force, Sum of Sold" />
+              <input class="field-input" data-comparison-field="metricColumns" data-comparison-id="${esc(link.id)}" type="text" value="${esc(metricText)}" placeholder="Sum of Mailed, Sum of Opp Count, Sum of In Force, Sum of Converted" />
             </div>
           </div>
         </article>

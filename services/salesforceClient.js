@@ -13,6 +13,7 @@ const {
 
 const SALESFORCE_API_VERSION = "v61.0";
 const DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS = 45000;
+const ANALYSIS_CONVERTED_RATE_PREMIUM_BASIS = 14.86;
 const salesforceDescribeCache = new Map();
 const ANALYSIS_DEBUG_FILE_PREFIX = "debug-analysis-salesforce-report";
 
@@ -159,6 +160,9 @@ function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = n
   if (convertedPremium > 0) {
     return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
   }
+  if (explicitConvertedCount > 0) {
+    return explicitConvertedCount;
+  }
   return 0;
 }
 
@@ -195,39 +199,20 @@ function calculateAnalysisCountRates({
 
 function calculateAnalysisConvertedRate({
   convertedCount = 0,
-  soldCount = 0,
-  inForceCount = 0,
-  soldRate = null,
-  inForceRate = null,
-  convertedRate = null,
+  totalConvertedMonthlyPremiums = 0,
   mailed = 0,
 } = {}) {
   const safeConvertedCount = parseNumber(convertedCount);
   if (!(safeConvertedCount > 0)) {
     return 0;
   }
-
-  const soldRateNumber = Number(soldRate);
-  const soldCountNumber = parseNumber(soldCount);
-  if (soldCountNumber > 0 && Number.isFinite(soldRateNumber) && soldRateNumber > 0) {
-    return (safeConvertedCount / soldCountNumber) * soldRateNumber;
+  const safeMailed = parseNumber(mailed);
+  const safeConvertedPremiumTotal = parseNumber(totalConvertedMonthlyPremiums);
+  if (!(safeMailed > 0) || !(safeConvertedPremiumTotal > 0)) {
+    return 0;
   }
 
-  const inForceRateNumber = Number(inForceRate);
-  const inForceCountNumber = parseNumber(inForceCount);
-  if (inForceCountNumber > 0 && Number.isFinite(inForceRateNumber) && inForceRateNumber > 0) {
-    return (safeConvertedCount / inForceCountNumber) * inForceRateNumber;
-  }
-
-  const explicitConvertedRate = Number(convertedRate);
-  if (Number.isFinite(explicitConvertedRate) && explicitConvertedRate > 0) {
-    return explicitConvertedRate;
-  }
-
-  return calculateAnalysisCountRates({
-    mailed,
-    convertedCount: safeConvertedCount,
-  }).convertedRate;
+  return (safeConvertedPremiumTotal * 100) / (safeMailed * ANALYSIS_CONVERTED_RATE_PREMIUM_BASIS);
 }
 
 function shouldPreferCandidateAnalysisMetric(currentValue, candidateValue) {
@@ -2013,11 +1998,7 @@ function fillAnalysisRateFallbacks(row = {}) {
   const nextInForceRate = explicitInForceRate ?? fallbackCountRates.inForceRate;
   const nextConvertedRate = calculateAnalysisConvertedRate({
     convertedCount,
-    soldCount,
-    inForceCount: inForce,
-    soldRate: explicitSoldRate,
-    inForceRate: explicitInForceRate,
-    convertedRate: explicitConvertedRate,
+    totalConvertedMonthlyPremiums,
     mailed,
   });
 
@@ -2635,11 +2616,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       const inForceRate = Number.isFinite(entry.salesforceInForceRate) ? entry.salesforceInForceRate : fallbackRates.inForceRate;
       const convertedRate = calculateAnalysisConvertedRate({
         convertedCount: entry.sold,
-        soldCount: entry.oppCount,
-        inForceCount: entry.inForce,
-        soldRate: entry.salesforceSoldRate,
-        inForceRate: entry.salesforceInForceRate,
-        convertedRate: entry.salesforceConvertedRate,
+        totalConvertedMonthlyPremiums: entry.totalConvertedMonthlyPremiums,
         mailed: entry.mailed,
       });
       const averageSoldPremium = entry.oppCount > 0 ? entry.applicationPremiumTotal / entry.oppCount : 0;
@@ -2730,10 +2707,12 @@ function summarizeAnalysisExportRows(rows = [], columns = []) {
     return buildFlatRowsFromDetailExport(normalizedRows);
   }
 
+  const normalizedSummaryRows = normalizedRows.map((row) => fillAnalysisRateFallbacks({ ...(row || {}) }));
+
   return {
     columns: Array.isArray(columns) ? columns : [],
-    rows: normalizedRows,
-    summaryValues: buildAnalysisSummaryValuesFromRows(normalizedRows),
+    rows: normalizedSummaryRows,
+    summaryValues: buildAnalysisSummaryValuesFromRows(normalizedSummaryRows),
   };
 }
 

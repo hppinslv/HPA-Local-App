@@ -60,11 +60,16 @@ test("SCF 893 keeps the Salesforce sold and in-force rates instead of recalculat
   ]);
 
   const row = getAggregateRow(dataset, "893");
+  const expectedConvertedRate = calculateAnalysisConvertedRate({
+    convertedCount: 1,
+    totalConvertedMonthlyPremiums: 75.62,
+    mailed: 166,
+  }).toFixed(10);
   assert.equal(row["Sum of Opp Count"], "1");
   assert.equal(row["Sum of Sold"], "1");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], expectedConvertedRate);
 });
 
 test("SCF 903 keeps the Salesforce sold rate instead of recalculating from mailed count", () => {
@@ -145,7 +150,7 @@ test("in-force rate displays the Salesforce in-force rate column exactly", () =>
   assert.equal(row["In Force Rate"], "4.1250000000");
 });
 
-test("converted rate uses app converted logic with the Salesforce rate basis when detail rows exist", () => {
+test("converted rate uses the corrected converted count over mailed when detail rows exist", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
       "SCF Grouping": "999",
@@ -161,10 +166,15 @@ test("converted rate uses app converted logic with the Salesforce rate basis whe
   ]);
 
   const row = getAggregateRow(dataset, "999");
+  const expectedConvertedRate = calculateAnalysisConvertedRate({
+    convertedCount: 1,
+    totalConvertedMonthlyPremiums: 100,
+    mailed: 166,
+  }).toFixed(10);
   assert.equal(row["Sum of Sold"], "1");
   assert.equal(row["Sum of Converted"], "1");
-  assert.equal(row["Converted Rate"], "3.0829914540");
-  assert.notEqual(row["Converted Rate"], "100.0000000000");
+  assert.equal(row["Converted Rate"], expectedConvertedRate);
+  assert.notEqual(row["Converted Rate"], "0.6024096386");
 });
 
 test("converted count uses one certificate per positive converted premium row instead of sold count", () => {
@@ -232,13 +242,18 @@ test("rows with SCF 10, 010, and numeric 10 aggregate together under 010", () =>
   ]);
 
   const row = getAggregateRow(dataset, "010");
+  const expectedConvertedRate = calculateAnalysisConvertedRate({
+    convertedCount: 1,
+    totalConvertedMonthlyPremiums: 15,
+    mailed: 166,
+  }).toFixed(10);
   assert.equal(row["Sum of Mailed"], "166");
   assert.equal(row["Sum of Opp Count"], "1");
   assert.equal(row["Sum of In Force"], "1");
   assert.equal(row["Sum of Sold"], "1");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], expectedConvertedRate);
 });
 
 test("aggregate-shaped saved rows are not mistaken for detail export rows", () => {
@@ -268,7 +283,7 @@ test("aggregate-shaped saved rows are not mistaken for detail export rows", () =
   );
 });
 
-test("summary-shaped export rows keep Salesforce formula rates instead of being rebuilt from counts", () => {
+test("summary-shaped export rows keep Salesforce sold and in-force rates while converted rate uses converted count", () => {
   const dataset = summarizeAnalysisExportRows(
     [
       {
@@ -278,6 +293,8 @@ test("summary-shaped export rows keep Salesforce formula rates instead of being 
         "Sum of Opp Count": "1",
         "Sum of In Force": "1",
         "Sum of Sold": "1",
+        "Sum of Total Converted Monthly Premiums": "$76.05",
+        "Sum of Converted": "1",
         "Sold Rate": "3.0829914540",
         "In Force Rate": "3.0829914540",
         "Converted Rate": "3.0829914540",
@@ -293,22 +310,22 @@ test("summary-shaped export rows keep Salesforce formula rates instead of being 
   );
 
   const row = getAggregateRow(dataset, "893");
+  const expectedConvertedRate = calculateAnalysisConvertedRate({
+    convertedCount: 1,
+    totalConvertedMonthlyPremiums: 76.05,
+    mailed: 166,
+  }).toFixed(10);
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], expectedConvertedRate);
 });
 
-test("calculateAnalysisConvertedRate falls back safely when Salesforce rate fields are missing", () => {
-  assert.equal(
-    calculateAnalysisConvertedRate({
-      convertedCount: 1,
-      soldCount: 0,
-      inForceCount: 0,
-      soldRate: null,
-      inForceRate: null,
-      convertedRate: null,
-      mailed: 166,
-    }),
-    0.6024096385542169
-  );
+test("calculateAnalysisConvertedRate uses converted premium dollars over mailed times 14.86", () => {
+  const actual = calculateAnalysisConvertedRate({
+    convertedCount: 1,
+    totalConvertedMonthlyPremiums: 76.05,
+    mailed: 166,
+  });
+  const expected = (76.05 * 100) / (166 * 14.86);
+  assert.ok(Math.abs(actual - expected) < 1e-12);
 });
