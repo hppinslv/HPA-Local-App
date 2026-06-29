@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const {
+  addReferenceListItems,
   buildAnalysisOverwriteProtection,
   buildAnalysisReportName,
   buildPersistedComparisonSetups,
@@ -455,6 +456,30 @@ test("review debug resolves saved primary report rows from pull ids", (t) => {
   assert.equal(debug.savedReportRowCount, 1);
   assert.ok(debug.fieldHints.scfFieldKeys.includes("SCF Grouping"));
   assert.ok(debug.fieldHints.mailedFieldKeys.includes("Sum of Mailed"));
+});
+
+test("manual DNM SCF add preserves the typed state/scope", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const result = service.addReferenceListItems({
+    listType: "dnm",
+    scfs: ["206"],
+    state: "Louisiana",
+    actor: "Local User",
+    sourceName: "manual-list-manager",
+  });
+
+  const entry = result.list.items.find((item) => item.scf === "206");
+  assert.ok(entry);
+  assert.equal(entry.scope, "Louisiana - just the AD&D");
+  assert.equal(entry.state, "Louisiana - just the AD&D");
+  assert.equal(entry.stateKey, "louisiana-add");
 });
 
 test("review working-list changes persist before completion and reload with the setup", (t) => {

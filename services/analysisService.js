@@ -4517,12 +4517,14 @@ function addReferenceListItems({
       return;
     }
 
-    const dnmGroup = normalizedType === "dnm" ? normalizeScopeForDnm(scope) : null;
+    const requestedDnmScope = scfStates[scf] || String(scope || "").trim();
+    const dnmGroup = normalizedType === "dnm" ? normalizeScopeForDnm(requestedDnmScope) : null;
+    const resolvedDnmScope = dnmGroup?.scope || requestedDnmScope;
 
     list.items.unshift({
       scf,
-      scope: dnmGroup?.scope || scfStates[scf] || String(scope || "").trim(),
-      state: normalizedType === "dnm" ? resolveListItemState({ state: dnmGroup?.scope }) : scfStates[scf] || "",
+      scope: normalizedType === "dnm" ? resolvedDnmScope : scfStates[scf] || String(scope || "").trim(),
+      state: normalizedType === "dnm" ? resolveListItemState({ state: resolvedDnmScope }) : scfStates[scf] || "",
       stateKey: dnmGroup?.key || "",
       addedAt: new Date().toISOString(),
       addedBy: String(actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR,
