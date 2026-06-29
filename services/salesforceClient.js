@@ -207,6 +207,11 @@ function calculateAnalysisConvertedRate({
   totalConvertedMonthlyPremiums = 0,
   mailed = 0,
 } = {}) {
+  const explicitConvertedRate = Number(convertedRate);
+  if (Number.isFinite(explicitConvertedRate) && explicitConvertedRate > 0) {
+    return explicitConvertedRate;
+  }
+
   const safeConvertedCount = parseNumber(convertedCount);
   if (!(safeConvertedCount > 0)) {
     return 0;
@@ -222,11 +227,6 @@ function calculateAnalysisConvertedRate({
   const inForceCountNumber = parseNumber(inForceCount);
   if (inForceCountNumber > 0 && Number.isFinite(inForceRateNumber) && inForceRateNumber > 0) {
     return (safeConvertedCount / inForceCountNumber) * inForceRateNumber;
-  }
-
-  const explicitConvertedRate = Number(convertedRate);
-  if (Number.isFinite(explicitConvertedRate) && explicitConvertedRate > 0) {
-    return explicitConvertedRate;
   }
 
   return calculateAnalysisCountRates({
