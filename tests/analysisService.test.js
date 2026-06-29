@@ -174,7 +174,7 @@ test("live fallback can supplement zero saved summary values without clobbering 
   assert.equal(merged["Sold Rate"], "0.1336898396");
 });
 
-test("saved analysis reports relabel sum of sold to sum of converted in view and export columns", () => {
+test("saved analysis reports keep sum of sold in view and export columns", () => {
   const tempDir = createTempAnalysisDir();
   fs.writeFileSync(
     path.join(tempDir, "analysis-reports.json"),
@@ -206,11 +206,11 @@ test("saved analysis reports relabel sum of sold to sum of converted in view and
   const service = loadAnalysisServiceWithTempDir(tempDir);
   const [report] = service.listAnalysisReports();
 
-  assert.equal(report.columns[0].label, "Sum of Converted");
-  assert.equal(report.summaryValues[0].label, "Sum of Converted");
-  assert.equal(report.rows[0]["Sum of Converted"], "1");
-  assert.equal(report.exportColumns[0].label, "Sum of Converted");
-  assert.equal(report.exportRows[0]["Sum of Converted"], "1");
+  assert.equal(report.columns[0].label, "Sum of Sold");
+  assert.equal(report.summaryValues[0].label, "Sum of Sold");
+  assert.equal(report.rows[0]["Sum of Sold"], "1");
+  assert.equal(report.exportColumns[0].label, "Sum of Sold");
+  assert.equal(report.exportRows[0]["Sum of Sold"], "1");
 });
 
 test("analysis report names use Refinance title format with run date", () => {
