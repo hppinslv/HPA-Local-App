@@ -2389,6 +2389,58 @@ function getWorkingReferenceList(type) {
   return source.find((item) => item.type === normalized) || null;
 }
 
+function backfillMissingReviewListTypes() {
+  const expectedTypes = ["nhcl", "rfc", "dnm", "candidate"];
+  const baselineSource = Array.isArray(state.analysis.reviewBaselineLists) && state.analysis.reviewBaselineLists.length
+    ? state.analysis.reviewBaselineLists
+    : state.referenceLists;
+  const workingSource = Array.isArray(state.analysis.reviewWorkingLists) && state.analysis.reviewWorkingLists.length
+    ? state.analysis.reviewWorkingLists
+    : [];
+
+  if (!Array.isArray(baselineSource) || !baselineSource.length) {
+    return;
+  }
+
+  const baselineTypes = new Set(baselineSource.map((entry) => String(entry?.type || "").trim().toLowerCase()).filter(Boolean));
+  const workingTypes = new Set(workingSource.map((entry) => String(entry?.type || "").trim().toLowerCase()).filter(Boolean));
+
+  let baselineChanged = false;
+  let workingChanged = false;
+  const nextBaseline = cloneData(baselineSource);
+  const nextWorking = cloneData(workingSource);
+
+  expectedTypes.forEach((type) => {
+    if (!baselineTypes.has(type)) {
+      const liveMatch = ensureArray(state.referenceLists).find((entry) => String(entry?.type || "").trim().toLowerCase() === type);
+      if (liveMatch) {
+        nextBaseline.push(cloneData(liveMatch));
+        baselineTypes.add(type);
+        baselineChanged = true;
+      }
+    }
+  });
+
+  expectedTypes.forEach((type) => {
+    if (workingTypes.has(type)) {
+      return;
+    }
+    const baselineMatch = nextBaseline.find((entry) => String(entry?.type || "").trim().toLowerCase() === type);
+    if (baselineMatch) {
+      nextWorking.push(cloneData(baselineMatch));
+      workingTypes.add(type);
+      workingChanged = true;
+    }
+  });
+
+  if (baselineChanged) {
+    state.analysis.reviewBaselineLists = nextBaseline;
+  }
+  if (workingChanged) {
+    state.analysis.reviewWorkingLists = nextWorking;
+  }
+}
+
 function ensureComparisonReviewWorkingLists() {
   if (
     Array.isArray(state.analysis.reviewBaselineLists)
@@ -2396,12 +2448,14 @@ function ensureComparisonReviewWorkingLists() {
     && Array.isArray(state.analysis.reviewWorkingLists)
     && state.analysis.reviewWorkingLists.length
   ) {
+    backfillMissingReviewListTypes();
     return;
   }
 
   const baseline = cloneData(state.referenceLists || []);
   state.analysis.reviewBaselineLists = baseline;
   state.analysis.reviewWorkingLists = cloneData(baseline);
+  backfillMissingReviewListTypes();
 }
 
 function hasReviewWorkingListSeedData() {
@@ -6325,17 +6379,15 @@ function buildSummaryRowSet(sourceRows) {
 }
 
 function buildListDeltasForCompletion(listType) {
+  ensureComparisonReviewWorkingLists();
   const listTypeNormalized = String(listType || "").trim().toLowerCase();
-  const baselineRows = buildSummaryRowSet(
-    (state.analysis.reviewBaselineLists || [])
-      .find((entry) => entry.type === listTypeNormalized)
-      ?.items || []
-  );
-  const workingRows = buildSummaryRowSet(
-    (state.analysis.reviewWorkingLists || [])
-      .find((entry) => entry.type === listTypeNormalized)
-      ?.items || []
-  );
+  const baselineEntry = (state.analysis.reviewBaselineLists || [])
+    .find((entry) => String(entry?.type || "").trim().toLowerCase() === listTypeNormalized);
+  const workingEntry = (state.analysis.reviewWorkingLists || [])
+    .find((entry) => String(entry?.type || "").trim().toLowerCase() === listTypeNormalized)
+    || baselineEntry;
+  const baselineRows = buildSummaryRowSet(baselineEntry?.items || []);
+  const workingRows = buildSummaryRowSet(workingEntry?.items || []);
   const added = [];
   const removed = [];
 
