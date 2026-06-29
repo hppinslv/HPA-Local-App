@@ -7106,7 +7106,8 @@ function resolveNavigatorSoldCount(row = {}) {
   return explicitSold > 0 ? explicitSold : 0;
 }
 
-function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = null) {
+function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = null, options = {}) {
+  const allowPremiumRowInference = options?.allowPremiumRowInference !== false;
   const convertedPremium = precomputedConvertedPremium === null
     ? Math.max(
         getRowMetricNumber(row, "Payments Minus Credits"),
@@ -7119,7 +7120,7 @@ function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = 
         getRowMetricNumber(row, "Sum of Converted"),
         getRowMetricNumber(row, "Converted")
       );
-  if (convertedPremium > 0) {
+  if (allowPremiumRowInference && convertedPremium > 0) {
     return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
   }
   if (explicitConvertedCount > 0) {
@@ -7218,7 +7219,9 @@ function normalizeAnalysisMetricRow(row = {}) {
   const totalMonthlyPremium = getRowMetricNumber(row, "Total Monthly Premium");
   const inForceMonthlyPremium = getRowMetricNumber(row, "In Force Monthly Premium");
   const totalConvertedMonthlyPremiums = getRowMetricNumber(row, "Total Converted Monthly Premiums");
-  const convertedCount = resolveNavigatorConvertedCount(row, totalConvertedMonthlyPremiums);
+  const convertedCount = resolveNavigatorConvertedCount(row, totalConvertedMonthlyPremiums, {
+    allowPremiumRowInference: false,
+  });
   const fallbackRates = calculateNavigatorRates({
     mailed,
     soldCount,
@@ -7488,7 +7491,9 @@ function buildExportScfAggregateMap(report) {
     current.mailed += getRowMetricNumber(row, "Mailed");
     current.oppCount += resolveNavigatorSoldCount(row);
     current.inForce += getRowMetricNumber(row, "In Force");
-    current.sold += resolveNavigatorConvertedCount(row, rowConvertedPremium);
+    current.sold += resolveNavigatorConvertedCount(row, rowConvertedPremium, {
+      allowPremiumRowInference: true,
+    });
     if ((current.salesforceSoldRate === null || current.salesforceSoldRate === 0) && Number.isFinite(Number(rowSalesforceSoldRate)) && Number(rowSalesforceSoldRate) !== 0) {
       current.salesforceSoldRate = Number(rowSalesforceSoldRate);
     }

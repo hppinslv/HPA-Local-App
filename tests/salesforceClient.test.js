@@ -211,6 +211,62 @@ test("payments minus credits greater than zero counts the certificate as convert
   assert.equal(row["Sum of Converted"], "1");
 });
 
+test("sum of converted counts every converted certificate row in the SCF, not just one", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "812",
+      Key: "N",
+      Mailed: 1000,
+      "Opp Count": 1,
+      "In Force": 1,
+      "Payments Minus Credits": 50,
+      "Total Converted Monthly Premiums": 0,
+      "Sold Rate": 1.5,
+      "In Force Rate": 1.0,
+    },
+    {
+      "SCF Grouping": "812",
+      Key: "N",
+      Mailed: 1000,
+      "Opp Count": 1,
+      "In Force": 1,
+      "Payments Minus Credits": 20,
+      "Total Converted Monthly Premiums": 0,
+      "Sold Rate": 1.5,
+      "In Force Rate": 1.0,
+    },
+    {
+      "SCF Grouping": "812",
+      Key: "N",
+      Mailed: 1000,
+      "Opp Count": 1,
+      "In Force": 1,
+      "Payments Minus Credits": 0,
+      "Total Converted Monthly Premiums": 0,
+      "Sold Rate": 1.5,
+      "In Force Rate": 1.0,
+    },
+  ]);
+
+  const row = getAggregateRow(dataset, "812");
+  assert.equal(row["Sum of Opp Count"], "3");
+  assert.equal(row["Sum of Converted"], "2");
+});
+
+test("summary rows do not collapse converted count to one from aggregate premium dollars alone", () => {
+  assert.equal(
+    resolveAnalysisConvertedCount(
+      {
+        "Sum of Total Converted Monthly Premiums": "$200.00",
+        "Sum of Converted": "",
+      },
+      200,
+      { allowPremiumRowInference: false }
+    ),
+    0
+  );
+});
+
 test("zero mailed rows return zero rates without dividing by zero", () => {
   const rates = calculateAnalysisCountRates({
     mailed: 0,

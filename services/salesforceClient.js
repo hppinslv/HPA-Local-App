@@ -153,11 +153,12 @@ function resolveAnalysisSoldOpportunityCount(row = {}) {
   return explicitSold > 0 ? explicitSold : 0;
 }
 
-function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = null) {
+function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = null, options = {}) {
   applyAnalysisMetricAliases(row);
+  const allowPremiumRowInference = options?.allowPremiumRowInference !== false;
   const explicitConvertedCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ?? 0);
   const convertedPremium = resolveAnalysisConvertedPremiumValue(row, precomputedConvertedPremium);
-  if (convertedPremium > 0) {
+  if (allowPremiumRowInference && convertedPremium > 0) {
     return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
   }
   if (explicitConvertedCount > 0) {
@@ -1984,7 +1985,9 @@ function fillAnalysisRateFallbacks(row = {}) {
   const soldCount = resolveAnalysisSoldOpportunityCount(row);
   const totalMonthlyPremium = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
   const totalConvertedMonthlyPremiums = resolveAnalysisConvertedPremiumValue(row);
-  const convertedCount = resolveAnalysisConvertedCount(row, totalConvertedMonthlyPremiums);
+  const convertedCount = resolveAnalysisConvertedCount(row, totalConvertedMonthlyPremiums, {
+    allowPremiumRowInference: false,
+  });
   const explicitSoldRate = resolveAnalysisExplicitRate(row, ["Sold Rate"]);
   const explicitInForceRate = resolveAnalysisExplicitRate(row, ["In Force Rate"]);
   const explicitConvertedRate = resolveAnalysisExplicitRate(row, ["Converted Rate"]);
@@ -2512,7 +2515,9 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       ]) ?? 0
     );
     const rowSoldCount = rowOppCount > 0 ? rowOppCount : resolveAnalysisSoldOpportunityCount(row);
-    const rowConvertedCount = resolveAnalysisConvertedCount(row, rowConvertedPremium);
+    const rowConvertedCount = resolveAnalysisConvertedCount(row, rowConvertedPremium, {
+      allowPremiumRowInference: true,
+    });
     const rowSalesforceSoldRate = resolveAnalysisExplicitRate(row, ["Sold Rate"]);
     const rowSalesforceInForceRate = resolveAnalysisExplicitRate(row, ["In Force Rate"]);
     const rowSalesforceConvertedRate = resolveAnalysisExplicitRate(row, ["Converted Rate"]);
