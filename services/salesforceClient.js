@@ -2901,6 +2901,7 @@ function backfillMissingAnalysisMetrics(primaryRows = [], ...candidateRowsCollec
     ANALYSIS_METRIC_LABELS.mailed,
     ANALYSIS_METRIC_LABELS.oppCount,
     ANALYSIS_METRIC_LABELS.inForce,
+    ANALYSIS_METRIC_LABELS.convertedCount,
     ANALYSIS_METRIC_LABELS.sold,
     ANALYSIS_METRIC_LABELS.totalMonthlyPremium,
     ANALYSIS_METRIC_LABELS.inForceMonthlyPremium,
@@ -4262,6 +4263,7 @@ async function fetchMonthlySalesforceReportData(
 }
 
 module.exports = {
+  backfillMissingAnalysisMetrics,
   buildFlatRowsFromDetailExport,
   summarizeAnalysisExportRows,
   buildFlatReportRows,

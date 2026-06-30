@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  backfillMissingAnalysisMetrics,
   buildFlatRowsFromDetailExport,
   calculateAnalysisCountRates,
   calculateAnalysisConvertedRate,
@@ -363,6 +364,35 @@ test("summary-shaped export rows keep Salesforce sold and in-force rates and res
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
   assert.equal(row["Converted Rate"], "3.0829914540");
+});
+
+test("detail-derived sum of converted backfills grouped rows that still show zero", () => {
+  const [row] = backfillMissingAnalysisMetrics(
+    [
+      {
+        "SCF Grouping": "362",
+        Key: "N",
+        "Sum of Mailed": "130",
+        "Sum of Opp Count": "1",
+        "Sum of In Force": "1",
+        "Sum of Converted": "0",
+        "Sum of Total Converted Monthly Premiums": "$61.97",
+        "Sold Rate": "3.2078890154",
+        "In Force Rate": "3.2078890154",
+        "Converted Rate": "3.2078890154",
+      },
+    ],
+    [
+      {
+        "SCF Grouping": "362",
+        Key: "N",
+        "Sum of Converted": "1",
+        "Sum of Total Converted Monthly Premiums": "$61.97",
+      },
+    ]
+  );
+
+  assert.equal(row["Sum of Converted"], "1");
 });
 
 test("calculateAnalysisConvertedRate falls back safely when Salesforce rate fields are missing", () => {
