@@ -6454,6 +6454,14 @@ async function completeComparisonReview() {
     setStatus("analysis-comparison-selection-status", "This completed analysis is read-only. Undo the completion to make changes.");
     return;
   }
+  clearComparisonSetupAutosave();
+  if (comparisonSetupAutosaveInFlight) {
+    try {
+      await comparisonSetupAutosaveInFlight;
+    } catch {
+      // Ignore any prior draft autosave failure and continue with completion.
+    }
+  }
   ensureReviewCompletionFields();
   syncComparisonRequestsFromLinks();
   const completeButton = el("complete-comparison-review-button");

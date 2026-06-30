@@ -3243,6 +3243,13 @@ function saveAnalysisSetup(body = {}) {
   const setupId = String(body.id || "").trim();
   const existingSetup = setupId ? setups.find((entry) => entry.id === setupId) : null;
   const timestamp = new Date().toISOString();
+  const existingStatusNormalized = String(existingSetup?.status || "").trim().toLowerCase();
+  const requestedStatusNormalized = String(request.status || "").trim().toLowerCase();
+  const shouldPreserveCompletedState =
+    !!existingSetup
+    && existingStatusNormalized === "complete"
+    && requestedStatusNormalized !== "complete"
+    && requestedStatusNormalized !== "reverted";
   const savedReportBackfill = backfillSavedReportIds(request.reportPulls);
   request.reportPulls = savedReportBackfill.reportPulls;
   const existingComparisonRequests = ensureArray(existingSetup?.comparisonRequests);
@@ -3282,10 +3289,14 @@ function saveAnalysisSetup(body = {}) {
   const setup = {
     id: nextSetupId,
     runName: request.runName,
-    status: request.status || existingSetup?.status || "idle",
+    status: shouldPreserveCompletedState
+      ? (existingSetup?.status || "complete")
+      : request.status || existingSetup?.status || "idle",
     createdAt: request.createdAt || existingSetup?.createdAt || timestamp,
     updatedAt: request.updatedAt || timestamp,
-    completedAt: request.completedAt || existingSetup?.completedAt || null,
+    completedAt: shouldPreserveCompletedState
+      ? existingSetup?.completedAt || request.completedAt || timestamp
+      : request.completedAt || existingSetup?.completedAt || null,
     archived: request.archived !== undefined ? request.archived : existingSetup?.archived || false,
     reportPulls: request.reportPulls,
     comparisonRequests: recoveredComparisonRequests,
