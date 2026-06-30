@@ -12810,7 +12810,7 @@ async function loadAnalysisSetups() {
 
   rows.forEach((entry) => {
     const showUndo = entry.sourceType === "setup" && entry.isTopRow && (entry.canUndoLatestCompletion || entry.isCompleted);
-    const showDelete = entry.sourceType === "setup" && entry.isTopRow;
+    const showDelete = entry.sourceType === "setup";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${esc(entry.name)}</td>
@@ -13026,7 +13026,8 @@ function bindAnalysisButtons() {
   const startNew = el("start-new-analysis-button");
   const openPrevious = el("open-previous-analysis-button");
   const viewReports = el("view-analysis-history-button");
-  const backButtons = all("#analysis-previous-back-button, #back-to-analysis-home-button");
+  const startNewFromListButton = el("analysis-previous-back-button");
+  const backToAnalysisHomeButton = el("back-to-analysis-home-button");
   const addPullButton = el("add-analysis-pull-button");
   const saveSetupButton = el("save-analysis-setup-button");
   const runAnalysisButton = el("run-analysis-button");
@@ -13065,12 +13066,16 @@ function bindAnalysisButtons() {
     showAnalysisPanel("workspace");
     loadAnalysisReports();
   });
-  backButtons.forEach((button) =>
-    button.addEventListener("click", () => {
-      resetAnalysisWorkspace();
-      openAnalysisList();
-    })
-  );
+  startNewFromListButton?.addEventListener("click", () => {
+    state.analysis.subtab = "runs";
+    resetAnalysisWorkspace();
+    showAnalysisPanel("workspace");
+    setStatus("analysis-setup-status", "Started a new analysis draft.");
+  });
+  backToAnalysisHomeButton?.addEventListener("click", () => {
+    resetAnalysisWorkspace();
+    openAnalysisList();
+  });
 
   addPullButton?.addEventListener("click", () => {
     const nextPull = createEmptyPull(state.analysis.reportPulls.length);

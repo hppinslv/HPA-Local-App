@@ -482,6 +482,97 @@ test("manual DNM SCF add preserves the typed state/scope", (t) => {
   assert.equal(entry.stateKey, "louisiana-add");
 });
 
+test("DNM state catalog keeps audited Maryland and West Virginia SCFs", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  service.addDnmStateGroup({ stateKey: "maryland", actor: "Local User" });
+  service.addDnmStateGroup({ stateKey: "west-virginia", actor: "Local User" });
+
+  const dnmList = service.getReferenceListByType("dnm");
+  const scfs = new Set(dnmList.items.map((entry) => entry.scf).filter(Boolean));
+
+  assert.ok(scfs.has("206"));
+  assert.ok(scfs.has("217"));
+  assert.ok(scfs.has("254"));
+  assert.ok(scfs.has("267"));
+  assert.ok(scfs.has("268"));
+  assert.ok(!scfs.has("213"));
+});
+
+test("DNM state selector exposes corrected Maryland and West Virginia catalog entries", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const dnmList = service.getReferenceListByType("dnm");
+  const marylandGroup = dnmList.availableStateGroups.find((group) => group.key === "maryland");
+  const westVirginiaGroup = dnmList.availableStateGroups.find((group) => group.key === "west-virginia");
+
+  assert.deepEqual(marylandGroup.scfs.slice(0, 3), ["206", "207", "208"]);
+  assert.ok(marylandGroup.scfs.includes("217"));
+  assert.ok(!marylandGroup.scfs.includes("267"));
+  assert.ok(westVirginiaGroup.scfs.includes("254"));
+  assert.ok(westVirginiaGroup.scfs.includes("267"));
+  assert.ok(westVirginiaGroup.scfs.includes("268"));
+});
+
+test("existing Maryland DNM state groups are auto-repaired to include missing SCFs like 206", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir, {
+    lists: [
+      {
+        type: "dnm",
+        name: "Do Not Mail",
+        sourceName: "Test",
+        items: [
+          { scf: "207", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "208", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "209", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "210", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "211", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "212", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "214", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "215", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "216", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "218", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "219", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+          { scf: "267", scope: "Maryland", addedAt: "2026-06-12T00:00:00.000Z", addedBy: "System Seed" },
+        ],
+      },
+      { type: "nhcl", name: "NHCL Mailing SCFs", sourceName: "Test", items: [] },
+      { type: "rfc", name: "RFC Mailing SCFs", sourceName: "Test", items: [] },
+      { type: "candidate", name: "Candidate SCFs", sourceName: "Test", items: [] },
+    ],
+  });
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const dnmList = service.getReferenceListByType("dnm");
+  const marylandItems = dnmList.items.filter((entry) => String(entry.scope || entry.state || "").includes("Maryland"));
+  const marylandScfs = new Set(marylandItems.map((entry) => entry.scf));
+
+  assert.ok(marylandScfs.has("206"));
+  assert.ok(marylandScfs.has("217"));
+  assert.ok(marylandScfs.has("267"));
+
+  const marylandGroup = dnmList.stateGroups.find((group) => group.key === "maryland");
+  assert.ok(marylandGroup.matchesCatalog);
+  assert.deepEqual(marylandGroup.missingScfs, []);
+});
+
 test("review working-list changes persist before completion and reload with the setup", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);
@@ -934,7 +1025,7 @@ test("only the most recent completed analysis can be undone", (t) => {
         { type: "rfc", items: [] },
       ],
       referenceListChanges: [
-        { type: "nhcl", added: [{ scf: "010", state: "" }], removed: [] },
+        { type: "nhcl", added: [{ scf: "143", state: "" }], removed: [] },
       ],
     }),
   });
@@ -944,11 +1035,11 @@ test("only the most recent completed analysis can be undone", (t) => {
       status: "complete",
       completedAt: "2026-06-26T15:30:00.000Z",
       referenceListsSnapshot: [
-        { type: "nhcl", items: [{ scf: "010", state: "" }] },
+        { type: "nhcl", items: [{ scf: "143", state: "" }] },
         { type: "rfc", items: [] },
       ],
       referenceListChanges: [
-        { type: "nhcl", added: [{ scf: "011", state: "" }], removed: [] },
+        { type: "nhcl", added: [{ scf: "144", state: "" }], removed: [] },
       ],
     }),
   });
