@@ -9347,7 +9347,7 @@ function legacyCreateComparisonLink(index = 0) {
     matchField: "SCF Grouping",
     metricColumns: [
       "Sum of Mailed",
-      "Sum of Sold",
+      "Sum of Converted",
       "Sold Rate",
       "In Force Rate",
       "Converted Rate",
@@ -9361,7 +9361,7 @@ function readComparisonMetricColumns(link) {
   if (Array.isArray(link?.metricColumns) && link.metricColumns.length) {
     return link.metricColumns;
   }
-  return ["Sum of Mailed", "Sum of Sold", "Sold Rate", "In Force Rate", "Converted Rate"];
+  return ["Sum of Mailed", "Sum of Converted", "Sold Rate", "In Force Rate", "Converted Rate"];
 }
 
 function legacyRenderComparisonResultCards() {
@@ -9499,7 +9499,7 @@ function legacyRenderAnalysisComparePanel() {
             </div>
             <div class="field-stack analysis-pull-wide">
               <label class="field-label">Metrics to Compare</label>
-              <input class="field-input" data-comparison-field="metricColumns" data-comparison-id="${esc(link.id)}" type="text" value="${esc(metricText)}" placeholder="Sum of Mailed, Sum of Sold, Sold Rate, In Force Rate, Converted Rate" />
+              <input class="field-input" data-comparison-field="metricColumns" data-comparison-id="${esc(link.id)}" type="text" value="${esc(metricText)}" placeholder="Sum of Mailed, Sum of Converted, Sold Rate, In Force Rate, Converted Rate" />
             </div>
           </div>
         </article>

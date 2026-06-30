@@ -187,7 +187,7 @@ function buildAnalysisOverwriteProtection(baseRow = {}, candidateRow = {}) {
     "Sum of Mailed",
     "Sum of Opp Count",
     "Sum of In Force",
-    "Sum of Sold",
+    "Sum of Converted",
     "Sold Rate",
     "In Force Rate",
     "Converted Rate",
@@ -247,7 +247,7 @@ function mergeAnalysisMetricRowsPreferNonZero(baseRow = {}, candidateRow = {}) {
     "Sum of Mailed",
     "Sum of Opp Count",
     "Sum of In Force",
-    "Sum of Sold",
+    "Sum of Converted",
     "Sum of Total Monthly Premium",
     "Sum of In Force Monthly Premium",
     "Sum of Total Converted Monthly Premiums",
@@ -586,7 +586,7 @@ function normalizeReferenceListsPayload(payload = null) {
   };
 }
 
-function repairActiveDnmStateGroups(payload = null) {
+function rebuildActiveDnmStateGroups(payload = null) {
   if (!payload || !Array.isArray(payload.lists)) {
     return { payload, changed: false };
   }
@@ -596,17 +596,12 @@ function repairActiveDnmStateGroups(payload = null) {
     return { payload, changed: false };
   }
 
-  const items = ensureArray(dnmList.items);
-  const scfSet = new Set(
-    items
-      .map((entry) => normalizeScf(entry?.scf))
-      .filter(Boolean)
-  );
+  let items = ensureArray(dnmList.items);
   const now = new Date().toISOString();
   let changed = false;
 
   DNM_SEED_GROUPS.forEach((group) => {
-    const activeItems = items.filter((entry) => {
+    const isEntryInGroup = (entry) => {
       const stateKey = String(entry?.stateKey || "").trim();
       if (stateKey && stateKey === group.key) {
         return true;
@@ -617,7 +612,9 @@ function repairActiveDnmStateGroups(payload = null) {
       }
       const normalizedScf = normalizeScf(entry?.scf);
       return normalizedScf ? group.scfs.includes(normalizedScf) : false;
-    });
+    };
+
+    const activeItems = items.filter(isEntryInGroup);
 
     if (!activeItems.length) {
       return;
@@ -626,25 +623,43 @@ function repairActiveDnmStateGroups(payload = null) {
     const groupSource = activeItems[0]?.sourceAnalysis || activeItems[0]?.source || DNM_CATALOG_HEADER;
     const groupReason = activeItems[0]?.reason || "Auto-repaired to current DNM state catalog.";
     const groupActor = activeItems[0]?.addedBy || DEFAULT_ACTOR;
+    const rebuiltItems = group.scfs.map((scf) => ({
+      scf: normalizeScf(scf),
+      state: group.scope,
+      scope: group.scope,
+      stateKey: group.key,
+      addedAt: now,
+      addedBy: groupActor,
+      reason: groupReason,
+      sourceAnalysis: groupSource,
+    }));
+    const retainedItems = items.filter((entry) => !isEntryInGroup(entry));
+    const nextItems = [...retainedItems, ...rebuiltItems];
 
-    group.scfs.forEach((scf) => {
-      const normalizedScf = normalizeScf(scf);
-      if (!normalizedScf || scfSet.has(normalizedScf)) {
-        return;
-      }
-      items.push({
-        scf: normalizedScf,
-        state: group.scope,
-        scope: group.scope,
-        stateKey: group.key,
-        addedAt: now,
-        addedBy: groupActor,
-        reason: groupReason,
-        sourceAnalysis: groupSource,
-      });
-      scfSet.add(normalizedScf);
+    const beforeSerialized = JSON.stringify(
+      activeItems
+        .map((entry) => ({
+          scf: normalizeScf(entry?.scf),
+          stateKey: String(entry?.stateKey || "").trim(),
+          scope: String(entry?.scope || entry?.state || "").trim(),
+        }))
+        .sort((left, right) => String(left.scf || "").localeCompare(String(right.scf || "")))
+    );
+    const afterSerialized = JSON.stringify(
+      rebuiltItems
+        .map((entry) => ({
+          scf: normalizeScf(entry?.scf),
+          stateKey: String(entry?.stateKey || "").trim(),
+          scope: String(entry?.scope || entry?.state || "").trim(),
+        }))
+        .sort((left, right) => String(left.scf || "").localeCompare(String(right.scf || "")))
+    );
+
+    if (beforeSerialized !== afterSerialized) {
       changed = true;
-    });
+    }
+
+    items = nextItems;
   });
 
   if (changed) {
@@ -865,6 +880,7 @@ function buildAnalysisReportSummary({ inputRowCount, exportRowCount, zeroReason,
 
 const ANALYSIS_REPORT_LABEL_MAP = {
   "Sum of Total Monthly Premium": "Sum of Total Sold",
+  "Sum of Sold": "Sum of Converted",
   "Average Monthly Premium": "Average Monthly Premium",
   "Sold Rate": "Sold Rate",
   "Converted Rate": "Converted Rate",
@@ -1276,7 +1292,7 @@ function readReferenceLists() {
       referenceListsCache = normalizeReferenceListsPayload(createDefaultReferenceLists());
     }
 
-    const repaired = repairActiveDnmStateGroups(referenceListsCache);
+    const repaired = rebuildActiveDnmStateGroups(referenceListsCache);
     referenceListsCache = normalizeReferenceListsPayload(repaired.payload);
     if (repaired.changed) {
       const savedPrimary = persistJsonFile(SCF_REFERENCE_LISTS_PATH, referenceListsCache);

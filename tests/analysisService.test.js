@@ -94,7 +94,7 @@ test("detail-derived nonzero metrics are not overwritten by zero live fallback d
       "Sum of Mailed": "166",
       "Sum of Opp Count": "1",
       "Sum of In Force": "1",
-      "Sum of Sold": "1",
+      "Sum of Converted": "1",
       "Sold Rate": "0.6024096386",
       "In Force Rate": "0.6024096386",
       "Converted Rate": "0.6024096386",
@@ -103,7 +103,7 @@ test("detail-derived nonzero metrics are not overwritten by zero live fallback d
       "Sum of Mailed": "166",
       "Sum of Opp Count": "0",
       "Sum of In Force": "0",
-      "Sum of Sold": "0",
+      "Sum of Converted": "0",
       "Sold Rate": "0.0000000000",
       "In Force Rate": "0.0000000000",
       "Converted Rate": "0.0000000000",
@@ -112,7 +112,7 @@ test("detail-derived nonzero metrics are not overwritten by zero live fallback d
 
   assert.ok(warnings.includes("Sum of Opp Count: protected saved nonzero value against live zero"));
   assert.ok(warnings.includes("Sum of In Force: protected saved nonzero value against live zero"));
-  assert.ok(warnings.includes("Sum of Sold: protected saved nonzero value against live zero"));
+  assert.ok(warnings.includes("Sum of Converted: protected saved nonzero value against live zero"));
   assert.ok(warnings.includes("Sold Rate: protected saved nonzero value against live zero"));
   assert.ok(warnings.includes("Converted Rate: protected saved nonzero value against live zero"));
 });
@@ -157,7 +157,7 @@ test("live fallback can supplement zero saved summary values without clobbering 
       "Sum of Mailed": "748",
       "Sum of Opp Count": "0",
       "Sum of In Force": "0",
-      "Sum of Sold": "0",
+      "Sum of Converted": "0",
       "Sold Rate": "0.0000000000",
     },
     {
@@ -165,7 +165,7 @@ test("live fallback can supplement zero saved summary values without clobbering 
       "Sum of Mailed": "748",
       "Sum of Opp Count": "1",
       "Sum of In Force": "0",
-      "Sum of Sold": "0",
+      "Sum of Converted": "0",
       "Sold Rate": "0.1336898396",
     }
   );
@@ -175,7 +175,7 @@ test("live fallback can supplement zero saved summary values without clobbering 
   assert.equal(merged["Sold Rate"], "0.1336898396");
 });
 
-test("saved analysis reports keep sum of sold in view and export columns", () => {
+test("saved analysis reports relabel legacy sum of sold as sum of converted in view and export columns", () => {
   const tempDir = createTempAnalysisDir();
   fs.writeFileSync(
     path.join(tempDir, "analysis-reports.json"),
@@ -207,11 +207,11 @@ test("saved analysis reports keep sum of sold in view and export columns", () =>
   const service = loadAnalysisServiceWithTempDir(tempDir);
   const [report] = service.listAnalysisReports();
 
-  assert.equal(report.columns[0].label, "Sum of Sold");
-  assert.equal(report.summaryValues[0].label, "Sum of Sold");
-  assert.equal(report.rows[0]["Sum of Sold"], "1");
-  assert.equal(report.exportColumns[0].label, "Sum of Sold");
-  assert.equal(report.exportRows[0]["Sum of Sold"], "1");
+  assert.equal(report.columns[0].label, "Sum of Converted");
+  assert.equal(report.summaryValues[0].label, "Sum of Converted");
+  assert.equal(report.rows[0]["Sum of Converted"], "1");
+  assert.equal(report.exportColumns[0].label, "Sum of Converted");
+  assert.equal(report.exportRows[0]["Sum of Converted"], "1");
 });
 
 test("analysis report names use Refinance title format with run date", () => {
@@ -566,11 +566,12 @@ test("existing Maryland DNM state groups are auto-repaired to include missing SC
 
   assert.ok(marylandScfs.has("206"));
   assert.ok(marylandScfs.has("217"));
-  assert.ok(marylandScfs.has("267"));
+  assert.ok(!marylandScfs.has("267"));
 
   const marylandGroup = dnmList.stateGroups.find((group) => group.key === "maryland");
   assert.ok(marylandGroup.matchesCatalog);
   assert.deepEqual(marylandGroup.missingScfs, []);
+  assert.deepEqual(marylandGroup.extraScfs, []);
 });
 
 test("review working-list changes persist before completion and reload with the setup", (t) => {

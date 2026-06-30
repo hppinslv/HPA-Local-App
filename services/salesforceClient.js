@@ -157,7 +157,7 @@ function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = n
   const allowPremiumRowInference = options?.allowPremiumRowInference !== false;
   const explicitConvertedCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ?? 0);
   const convertedPremium = resolveAnalysisConvertedPremiumValue(row, precomputedConvertedPremium);
-  if (allowPremiumRowInference && convertedPremium > 0) {
+  if (allowPremiumRowInference && convertedPremium > 1) {
     return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
   }
   if (explicitConvertedCount > 0) {
@@ -1984,7 +1984,7 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
 
   return [
     { key: "Sum of Mailed", label: "Sum of Mailed", value: Math.round(totals.mailed).toLocaleString("en-US") },
-    { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(totals.sold).toLocaleString("en-US") },
+    { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(totals.sold).toLocaleString("en-US") },
     { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: totals.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: totals.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: totals.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
@@ -2659,6 +2659,10 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "key": entry.keyCode,
         "Sum of Mailed": Math.round(entry.mailed).toLocaleString("en-US"),
         "sum of mailed": Math.round(entry.mailed).toLocaleString("en-US"),
+        "Sum of Converted": Math.round(entry.sold).toLocaleString("en-US"),
+        "sum of converted": Math.round(entry.sold).toLocaleString("en-US"),
+        "Converted": Math.round(entry.sold).toLocaleString("en-US"),
+        "converted": Math.round(entry.sold).toLocaleString("en-US"),
         "Sum of Sold": Math.round(entry.sold).toLocaleString("en-US"),
         "sum of sold": Math.round(entry.sold).toLocaleString("en-US"),
         "Sum of Total Monthly Premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
@@ -2688,7 +2692,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
       { key: "Key", label: "Key", normalized: "key", dataType: "string" },
       { key: "Sum of Mailed", label: "Sum of Mailed", normalized: "sum of mailed", dataType: "double" },
-      { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
+      { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", normalized: "sum of total monthly premium", dataType: "currency" },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", normalized: "sum of in force monthly premium", dataType: "currency" },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
@@ -2699,7 +2703,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     rows,
     summaryValues: [
       { key: "Sum of Mailed", label: "Sum of Mailed", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.mailed, 0)).toLocaleString("en-US") },
-      { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
+      { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForceMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalConvertedMonthlyPremiums, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },

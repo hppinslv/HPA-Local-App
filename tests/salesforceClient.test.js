@@ -60,8 +60,7 @@ test("SCF 893 keeps the Salesforce sold and in-force rates instead of recalculat
   ]);
 
   const row = getAggregateRow(dataset, "893");
-  assert.equal(row["Sum of Opp Count"], "1");
-  assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Sum of Converted"], "1");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
   assert.equal(row["Converted Rate"], "3.0829914540");
@@ -83,8 +82,7 @@ test("SCF 903 keeps the Salesforce sold rate instead of recalculating from maile
   ]);
 
   const row = getAggregateRow(dataset, "903");
-  assert.equal(row["Sum of Opp Count"], "1");
-  assert.equal(row["Sum of Sold"], "0");
+  assert.equal(row["Sum of Converted"], "0");
   assert.equal(row["Sold Rate"], "2.9477689200");
   assert.equal(row["In Force Rate"], "0.0000000000");
   assert.equal(row["Converted Rate"], "0.0000000000");
@@ -161,7 +159,7 @@ test("converted rate uses the restored Salesforce rate basis when detail rows ex
   ]);
 
   const row = getAggregateRow(dataset, "999");
-  assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Sum of Converted"], "1");
   assert.equal(row["Converted Rate"], "3.0829914540");
 });
 
@@ -178,7 +176,7 @@ test("converted count uses one certificate per positive converted premium row in
   assert.equal(convertedCount, 1);
 });
 
-test("payments minus credits greater than zero counts the certificate as converted", () => {
+test("payments minus credits greater than one dollar counts the certificate as converted", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
       "SCF Grouping": "812",
@@ -195,10 +193,10 @@ test("payments minus credits greater than zero counts the certificate as convert
   ]);
 
   const row = getAggregateRow(dataset, "812");
-  assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Sum of Converted"], "1");
 });
 
-test("sum of sold counts every converted certificate row in the SCF, not just one", () => {
+test("sum of converted counts every converted certificate row in the SCF, not just one", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
       "SCF Grouping": "812",
@@ -236,8 +234,7 @@ test("sum of sold counts every converted certificate row in the SCF, not just on
   ]);
 
   const row = getAggregateRow(dataset, "812");
-  assert.equal(row["Sum of Opp Count"], "3");
-  assert.equal(row["Sum of Sold"], "2");
+  assert.equal(row["Sum of Converted"], "2");
 });
 
 test("summary rows do not collapse converted count to one from aggregate premium dollars alone", () => {
@@ -251,6 +248,24 @@ test("summary rows do not collapse converted count to one from aggregate premium
       { allowPremiumRowInference: false }
     ),
     0
+  );
+});
+
+test("converted count requires the Salesforce converted field to be greater than one dollar", () => {
+  assert.equal(
+    resolveAnalysisConvertedCount({
+      "Payments Minus Credits": "$1.00",
+      "Sum of Converted": "",
+    }),
+    0
+  );
+
+  assert.equal(
+    resolveAnalysisConvertedCount({
+      "Payments Minus Credits": "$1.01",
+      "Sum of Converted": "",
+    }),
+    1
   );
 });
 
@@ -286,9 +301,7 @@ test("rows with SCF 10, 010, and numeric 10 aggregate together under 010", () =>
 
   const row = getAggregateRow(dataset, "010");
   assert.equal(row["Sum of Mailed"], "166");
-  assert.equal(row["Sum of Opp Count"], "1");
-  assert.equal(row["Sum of In Force"], "1");
-  assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Sum of Converted"], "1");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
   assert.equal(row["Converted Rate"], "3.0829914540");
@@ -330,7 +343,7 @@ test("summary-shaped export rows keep Salesforce sold and in-force rates and res
         "Sum of Mailed": "166",
         "Sum of Opp Count": "1",
         "Sum of In Force": "1",
-        "Sum of Sold": "1",
+        "Sum of Converted": "1",
         "Sum of Total Converted Monthly Premiums": "$76.05",
         "Sold Rate": "3.0829914540",
         "In Force Rate": "3.0829914540",
