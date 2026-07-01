@@ -521,8 +521,14 @@ function buildFinalReport(reportMonth, sourceData) {
   const grandTotals = finalizeMetrics(
     sections.reduce((accumulator, section) => addMetrics(accumulator, section.totals), createEmptyMetrics())
   );
+  const reconciledAmalgamatedPremium = roundCurrency(
+    grandTotals.grossPremium * FIXED_RULES.amalgamatedPremiumRate
+  );
+  const reconciledHpaCommission = roundCurrency(
+    grandTotals.grossPremium - reconciledAmalgamatedPremium
+  );
   const feeAdjustedHpaCommission = roundCurrency(
-    grandTotals.hpaCommission - FIXED_RULES.ftjFee
+    reconciledHpaCommission - FIXED_RULES.ftjFee
   );
 
   return {
@@ -535,6 +541,8 @@ function buildFinalReport(reportMonth, sourceData) {
     sections,
     totals: {
       ...grandTotals,
+      amalgamatedPremium: reconciledAmalgamatedPremium,
+      hpaCommission: reconciledHpaCommission,
       ftjFee: FIXED_RULES.ftjFee,
       estimatedBankFee: FIXED_RULES.estimatedBankFee,
       netHpaCommission: feeAdjustedHpaCommission,
@@ -1304,9 +1312,27 @@ function buildBlankCell(reference, styleId) {
   return `<c r="${reference}" s="${styleId}"/>`;
 }
 
+function buildFinalReportColumnsXml() {
+  return (
+    "<cols>" +
+      '<col min="1" max="1" width="40" customWidth="1"/>' +
+      '<col min="2" max="2" width="13.5" customWidth="1"/>' +
+      '<col min="3" max="3" width="16" customWidth="1"/>' +
+      '<col min="4" max="4" width="17" style="4" customWidth="1"/>' +
+      '<col min="5" max="5" width="16" style="4" customWidth="1"/>' +
+      '<col min="6" max="6" width="15" style="4" customWidth="1"/>' +
+      '<col min="7" max="7" width="16" style="4" customWidth="1"/>' +
+      '<col min="8" max="8" width="14" style="35" customWidth="1"/>' +
+      '<col min="9" max="9" width="15" style="35" customWidth="1"/>' +
+      '<col min="10" max="10" width="12" customWidth="1"/>' +
+    "</cols>"
+  );
+}
+
 function buildFinalReportWorksheetXml(templateXml, report) {
   const rows = [];
   let currentRow = 1;
+  const lastColumn = "J";
 
   const pushRow = (markup) => {
     rows.push(markup);
@@ -1314,151 +1340,115 @@ function buildFinalReportWorksheetXml(templateXml, report) {
   };
 
   pushRow(
-    `<row r="${currentRow}" spans="1:20" s="4" customFormat="1" ht="30" x14ac:dyDescent="0.25">` +
+    `<row r="${currentRow}" spans="1:10" s="4" customFormat="1" ht="30" x14ac:dyDescent="0.25">` +
       buildInlineStringCell("A1", 7, "Transaction Type") +
       buildInlineStringCell("B1", 8, "Date") +
       buildInlineStringCell("C1", 3, "Gross Premium") +
-      buildBlankCell("D1", 9) +
-      buildInlineStringCell("E1", 3, "Amalgamated Premium") +
-      buildBlankCell("F1", 9) +
-      buildInlineStringCell("G1", 3, "HPA Commision") +
-      buildBlankCell("H1", 9) +
-      buildInlineStringCell("I1", 3, "AHA Dues") +
-      buildBlankCell("J1", 9) +
-      buildInlineStringCell("K1", 3, "Total Submitted") +
-      buildBlankCell("L1", 9) +
-      buildInlineStringCell("M1", 30, "Number of Months") +
-      buildInlineStringCell("N1", 30, "Number of Certificates") +
-      buildInlineStringCell("O1", 9, "BatchID") +
-      buildBlankCell("P1", 9) +
-      buildBlankCell("Q1", 9) +
-      buildBlankCell("R1", 9) +
-      buildBlankCell("S1", 9) +
-      buildBlankCell("T1", 9) +
+      buildInlineStringCell("D1", 3, "Amalgamated Premium") +
+      buildInlineStringCell("E1", 3, "HPA Commission") +
+      buildInlineStringCell("F1", 3, "AHA Dues") +
+      buildInlineStringCell("G1", 3, "Total Submitted") +
+      buildInlineStringCell("H1", 30, "Number of Months") +
+      buildInlineStringCell("I1", 30, "Number of Certificates") +
+      buildInlineStringCell("J1", 9, "BatchID") +
     `</row>`
   );
 
   pushRow(
-    `<row r="${currentRow}" spans="1:20" s="10" customFormat="1" x14ac:dyDescent="0.25">` +
+    `<row r="${currentRow}" spans="1:10" s="10" customFormat="1" x14ac:dyDescent="0.25">` +
       buildInlineStringCell(`A${currentRow}`, 14, "Grand Totals") +
       buildBlankCell(`B${currentRow}`, 15) +
       buildNumberCell(`C${currentRow}`, 38, report.totals.grossPremium) +
-      buildBlankCell(`D${currentRow}`, 15) +
-      buildNumberCell(`E${currentRow}`, 38, report.totals.amalgamatedPremium) +
-      buildBlankCell(`F${currentRow}`, 15) +
-      buildNumberCell(`G${currentRow}`, 38, report.totals.hpaCommission) +
-      buildBlankCell(`H${currentRow}`, 15) +
-      buildNumberCell(`I${currentRow}`, 38, report.totals.ahaDues) +
-      buildBlankCell(`J${currentRow}`, 15) +
-      buildNumberCell(`K${currentRow}`, 38, report.totals.totalSubmitted) +
-      buildBlankCell(`L${currentRow}`, 15) +
-      buildNumberCell(`M${currentRow}`, 40, report.totals.numberOfMonths) +
-      buildNumberCell(`N${currentRow}`, 41, report.totals.numberOfCertificates) +
-      buildNumberCell(`O${currentRow}`, 41, report.totals.numberOfCertificates) +
-      buildBlankCell(`P${currentRow}`, 15) +
+      buildNumberCell(`D${currentRow}`, 38, report.totals.amalgamatedPremium) +
+      buildNumberCell(`E${currentRow}`, 38, report.totals.hpaCommission) +
+      buildNumberCell(`F${currentRow}`, 38, report.totals.ahaDues) +
+      buildNumberCell(`G${currentRow}`, 38, report.totals.totalSubmitted) +
+      buildNumberCell(`H${currentRow}`, 40, report.totals.numberOfMonths) +
+      buildNumberCell(`I${currentRow}`, 41, report.totals.numberOfCertificates) +
+      buildNumberCell(`J${currentRow}`, 41, report.totals.numberOfCertificates) +
     `</row>`
   );
 
   pushRow(
-    `<row r="${currentRow}" spans="1:20" s="4" customFormat="1" x14ac:dyDescent="0.25">` +
+    `<row r="${currentRow}" spans="1:10" s="4" customFormat="1" x14ac:dyDescent="0.25">` +
       buildInlineStringCell(`A${currentRow}`, 19, "FTJ Fee") +
       buildBlankCell(`B${currentRow}`, 21) +
       buildBlankCell(`C${currentRow}`, 10) +
-      buildBlankCell(`D${currentRow}`, 22) +
-      buildBlankCell(`E${currentRow}`, 10) +
-      buildBlankCell(`F${currentRow}`, 22) +
-      buildNumberCell(`G${currentRow}`, 10, -report.totals.ftjFee) +
-      buildBlankCell(`H${currentRow}`, 22) +
-      buildBlankCell(`I${currentRow}`, 10) +
-      buildBlankCell(`J${currentRow}`, 22) +
-      buildBlankCell(`K${currentRow}`, 10) +
-      buildBlankCell(`L${currentRow}`, 22) +
-      buildBlankCell(`M${currentRow}`, 31) +
-      buildBlankCell(`N${currentRow}`, 31) +
+      buildBlankCell(`D${currentRow}`, 10) +
+      buildNumberCell(`E${currentRow}`, 10, -report.totals.ftjFee) +
+      buildBlankCell(`F${currentRow}`, 10) +
+      buildBlankCell(`G${currentRow}`, 10) +
+      buildBlankCell(`H${currentRow}`, 31) +
+      buildBlankCell(`I${currentRow}`, 31) +
+      buildBlankCell(`J${currentRow}`, 31) +
     `</row>`
   );
 
   pushRow(
-    `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
+    `<row r="${currentRow}" spans="1:10" x14ac:dyDescent="0.25">` +
       buildBlankCell(`A${currentRow}`, 19) +
       buildBlankCell(`B${currentRow}`, 23) +
       buildBlankCell(`C${currentRow}`, 39) +
-      buildBlankCell(`D${currentRow}`, 24) +
-      buildBlankCell(`E${currentRow}`, 39) +
-      buildBlankCell(`F${currentRow}`, 24) +
-      buildNumberCell(`G${currentRow}`, 39, report.totals.netHpaCommission) +
-      buildBlankCell(`H${currentRow}`, 24) +
-      buildBlankCell(`I${currentRow}`, 39) +
-      buildBlankCell(`J${currentRow}`, 24) +
-      buildBlankCell(`K${currentRow}`, 39) +
-      buildBlankCell(`L${currentRow}`, 24) +
-      buildBlankCell(`M${currentRow}`, 32) +
-      buildBlankCell(`N${currentRow}`, 32) +
+      buildBlankCell(`D${currentRow}`, 39) +
+      buildNumberCell(`E${currentRow}`, 39, report.totals.netHpaCommission) +
+      buildBlankCell(`F${currentRow}`, 39) +
+      buildBlankCell(`G${currentRow}`, 39) +
+      buildBlankCell(`H${currentRow}`, 32) +
+      buildBlankCell(`I${currentRow}`, 32) +
+      buildBlankCell(`J${currentRow}`, 32) +
     `</row>`
   );
 
   pushRow(
-    `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
+    `<row r="${currentRow}" spans="1:10" x14ac:dyDescent="0.25">` +
       buildBlankCell(`A${currentRow}`, 12) +
       buildBlankCell(`B${currentRow}`, 23) +
       buildBlankCell(`C${currentRow}`, 39) +
-      buildBlankCell(`D${currentRow}`, 24) +
+      buildBlankCell(`D${currentRow}`, 39) +
       buildBlankCell(`E${currentRow}`, 39) +
-      buildBlankCell(`F${currentRow}`, 24) +
+      buildBlankCell(`F${currentRow}`, 39) +
       buildBlankCell(`G${currentRow}`, 39) +
-      buildBlankCell(`H${currentRow}`, 24) +
-      buildBlankCell(`I${currentRow}`, 39) +
-      buildBlankCell(`J${currentRow}`, 24) +
-      buildBlankCell(`K${currentRow}`, 39) +
-      buildBlankCell(`L${currentRow}`, 24) +
-      buildBlankCell(`M${currentRow}`, 32) +
-      buildBlankCell(`N${currentRow}`, 32) +
+      buildBlankCell(`H${currentRow}`, 32) +
+      buildBlankCell(`I${currentRow}`, 32) +
+      buildBlankCell(`J${currentRow}`, 32) +
     `</row>`
   );
 
   report.sections.forEach((section) => {
     pushRow(
-      `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
+      `<row r="${currentRow}" spans="1:10" x14ac:dyDescent="0.25">` +
         buildInlineStringCell(`A${currentRow}`, 5, section.finalLabel) +
         buildBlankCell(`B${currentRow}`, 28) +
         buildNumberCell(`C${currentRow}`, 25, section.totals.grossPremium) +
-        buildBlankCell(`D${currentRow}`, 28) +
-        buildNumberCell(`E${currentRow}`, 25, section.totals.amalgamatedPremium) +
-        buildBlankCell(`F${currentRow}`, 28) +
-        buildNumberCell(`G${currentRow}`, 25, section.totals.hpaCommission) +
-        buildBlankCell(`H${currentRow}`, 28) +
-        buildNumberCell(`I${currentRow}`, 25, section.totals.ahaDues) +
+        buildNumberCell(`D${currentRow}`, 25, section.totals.amalgamatedPremium) +
+        buildNumberCell(`E${currentRow}`, 25, section.totals.hpaCommission) +
+        buildNumberCell(`F${currentRow}`, 25, section.totals.ahaDues) +
+        buildNumberCell(`G${currentRow}`, 25, section.totals.totalSubmitted) +
+        buildNumberCell(`H${currentRow}`, 42, section.totals.numberOfMonths) +
+        buildNumberCell(`I${currentRow}`, 42, section.totals.numberOfCertificates) +
         buildBlankCell(`J${currentRow}`, 28) +
-        buildNumberCell(`K${currentRow}`, 25, section.totals.totalSubmitted) +
-        buildBlankCell(`L${currentRow}`, 28) +
-        buildNumberCell(`M${currentRow}`, 42, section.totals.numberOfMonths) +
-        buildNumberCell(`N${currentRow}`, 42, section.totals.numberOfCertificates) +
       `</row>`
     );
 
     section.rows.forEach((entry) => {
       pushRow(
-        `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
+        `<row r="${currentRow}" spans="1:10" x14ac:dyDescent="0.25">` +
           buildInlineStringCell(`A${currentRow}`, 6, section.detailLabel) +
           buildNumberCell(`B${currentRow}`, 2, toExcelDateNumber(entry.date)) +
           buildNumberCell(`C${currentRow}`, 26, entry.grossPremium) +
-          buildBlankCell(`D${currentRow}`, 6) +
-          buildNumberCell(`E${currentRow}`, 4, entry.amalgamatedPremium) +
-          buildBlankCell(`F${currentRow}`, 6) +
-          buildNumberCell(`G${currentRow}`, 4, entry.hpaCommission) +
-          buildBlankCell(`H${currentRow}`, 6) +
-          buildNumberCell(`I${currentRow}`, 4, entry.ahaDues) +
+          buildNumberCell(`D${currentRow}`, 4, entry.amalgamatedPremium) +
+          buildNumberCell(`E${currentRow}`, 4, entry.hpaCommission) +
+          buildNumberCell(`F${currentRow}`, 4, entry.ahaDues) +
+          buildNumberCell(`G${currentRow}`, 4, entry.totalSubmitted) +
+          buildNumberCell(`H${currentRow}`, 34, entry.numberOfMonths) +
+          buildNumberCell(`I${currentRow}`, 34, entry.numberOfCertificates) +
           buildBlankCell(`J${currentRow}`, 6) +
-          buildNumberCell(`K${currentRow}`, 4, entry.totalSubmitted) +
-          buildBlankCell(`L${currentRow}`, 6) +
-          buildNumberCell(`M${currentRow}`, 34, entry.numberOfMonths) +
-          buildNumberCell(`N${currentRow}`, 34, entry.numberOfCertificates) +
         `</row>`
       );
     });
 
     pushRow(
-      `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
+      `<row r="${currentRow}" spans="1:10" x14ac:dyDescent="0.25">` +
         buildBlankCell(`A${currentRow}`, 6) +
         buildBlankCell(`B${currentRow}`, 2) +
         buildBlankCell(`C${currentRow}`, 4) +
@@ -1466,25 +1456,16 @@ function buildFinalReportWorksheetXml(templateXml, report) {
         buildBlankCell(`E${currentRow}`, 4) +
         buildBlankCell(`F${currentRow}`, 4) +
         buildBlankCell(`G${currentRow}`, 4) +
-        buildBlankCell(`H${currentRow}`, 4) +
-        buildBlankCell(`I${currentRow}`, 4) +
+        buildBlankCell(`H${currentRow}`, 34) +
+        buildBlankCell(`I${currentRow}`, 34) +
         buildBlankCell(`J${currentRow}`, 4) +
-        buildBlankCell(`K${currentRow}`, 4) +
-        buildBlankCell(`L${currentRow}`, 4) +
-        buildBlankCell(`M${currentRow}`, 34) +
-        buildBlankCell(`N${currentRow}`, 34) +
-        buildBlankCell(`O${currentRow}`, 4) +
-        buildBlankCell(`P${currentRow}`, 4) +
-        buildBlankCell(`Q${currentRow}`, 4) +
-        buildBlankCell(`R${currentRow}`, 4) +
-        buildBlankCell(`S${currentRow}`, 4) +
-        buildBlankCell(`T${currentRow}`, 4) +
       `</row>`
     );
   });
 
   return templateXml
-    .replace(/<dimension ref="[^"]*"\/>/, `<dimension ref="A1:T${Math.max(currentRow - 1, 1)}"/>`)
+    .replace(/<dimension ref="[^"]*"\/>/, `<dimension ref="A1:${lastColumn}${Math.max(currentRow - 1, 1)}"/>`)
+    .replace(/<cols>[\s\S]*?<\/cols>/, buildFinalReportColumnsXml())
     .replace(/<sheetData>[\s\S]*?<\/sheetData>/, `<sheetData>${rows.join("")}</sheetData>`);
 }
 
