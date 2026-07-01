@@ -34,6 +34,7 @@ const {
   writeReferenceListExport,
   getAnalysisArtifactPath,
   getAnalysisReport,
+  getAnalysisReportConvertedDebug,
   getAnalysisReportRateDebug,
   getAnalysisReportScfMetrics,
   getAnalysisReportExportPath,
@@ -1004,6 +1005,17 @@ const server = http.createServer((request, response) => {
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to load SCF rate debug." });
       });
+    return;
+  }
+
+  const analysisReportConvertedDebugMatch = requestUrl.pathname.match(/^\/api\/debug\/converted\/([^/]+)$/);
+  if (analysisReportConvertedDebugMatch && request.method === "GET") {
+    try {
+      const debug = getAnalysisReportConvertedDebug(analysisReportConvertedDebugMatch[1]);
+      sendJson(response, 200, { debug });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to load converted debug." });
+    }
     return;
   }
 

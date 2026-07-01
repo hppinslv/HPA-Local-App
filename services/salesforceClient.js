@@ -97,6 +97,25 @@ const ANALYSIS_METRIC_LABELS = {
   totalConvertedMonthlyPremiums: ["Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium"],
 };
 
+const CONVERTED_DIRECT_CANDIDATE_KEYS = [
+  "Sum of Converted",
+  "Converted",
+  "Converted Count",
+  "converted",
+  "converted_count",
+  "sum_converted",
+  "sumOfConverted",
+  "HPATotal_Converted__c",
+  "HPATotal_Converted_Count__c",
+];
+
+const CONVERTED_PAYMENT_FALLBACK_KEYS = [
+  "Payment Received",
+  "Payment Received Count",
+  "Payment_Received__c",
+  "payment_received",
+];
+
 function getAnalysisMetricValue(row = {}, labels = []) {
   for (const label of labels) {
     const normalized = normalizeLabel(label);
@@ -155,13 +174,19 @@ function resolveAnalysisSoldOpportunityCount(row = {}) {
 function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = null, options = {}) {
   applyAnalysisMetricAliases(row);
   const allowPremiumRowInference = options?.allowPremiumRowInference !== false;
-  const explicitConvertedCount = parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ?? 0);
+  const resolvedConverted = resolveConvertedValue(row);
+  const explicitConvertedCount = Number.isFinite(resolvedConverted.numericValue)
+    ? Number(resolvedConverted.numericValue)
+    : null;
   const convertedPremium = resolveAnalysisConvertedPremiumValue(row, precomputedConvertedPremium);
-  if (allowPremiumRowInference && convertedPremium > 1) {
-    return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
-  }
-  if (explicitConvertedCount > 0) {
+  if (explicitConvertedCount !== null && explicitConvertedCount > 0) {
     return explicitConvertedCount;
+  }
+  if (allowPremiumRowInference && convertedPremium > 1) {
+    return 1;
+  }
+  if (explicitConvertedCount !== null) {
+    return 0;
   }
   return 0;
 }
@@ -343,6 +368,159 @@ function parseNumber(value) {
   }
 
   return isNegativeByParens ? -parsed : parsed;
+}
+
+function parseConvertedNumber(value, options = {}) {
+  const allowPaymentReceivedFallback = options?.allowPaymentReceivedFallback !== false;
+
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (value && typeof value === "object") {
+    if (typeof value.amount === "number" && Number.isFinite(value.amount)) {
+      return value.amount;
+    }
+    if (typeof value.value === "number" && Number.isFinite(value.value)) {
+      return value.value;
+    }
+  }
+
+  const stringValue = String(value).trim();
+  if (!stringValue) {
+    return null;
+  }
+
+  const lowered = stringValue.toLowerCase();
+  if (allowPaymentReceivedFallback) {
+    if (["received", "paid", "payment received", "yes", "true", "y"].includes(lowered)) {
+      return 1;
+    }
+    if (["not received", "no", "false", "n"].includes(lowered)) {
+      return 0;
+    }
+  }
+
+  const isNegativeByParens = stringValue.startsWith("(") && stringValue.endsWith(")");
+  const cleaned = stringValue.replace(/[$,%()\s,]/g, "");
+  if (!cleaned) {
+    return null;
+  }
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return isNegativeByParens ? -parsed : parsed;
+}
+
+function findConvertedRowKey(row = {}, candidateKeys = []) {
+  const normalizedTargets = candidateKeys.map((key) => normalizeLabel(key)).filter(Boolean);
+  return Object.keys(row || {}).find((key) => normalizedTargets.includes(normalizeLabel(key))) || null;
+}
+
+function isConvertedAmountFieldKey(key = "") {
+  const normalized = normalizeLabel(key);
+  return (
+    normalized.includes("premium") ||
+    normalized.includes("payment minus credits") ||
+    normalized.includes("payments minus credits") ||
+    normalized.includes("monthly premium")
+  );
+}
+
+function resolveConvertedValue(row = {}) {
+  const directKey = findConvertedRowKey(row, CONVERTED_DIRECT_CANDIDATE_KEYS);
+  if (directKey) {
+    return {
+      key: directKey,
+      rawValue: row[directKey],
+      numericValue: parseConvertedNumber(row[directKey], { allowPaymentReceivedFallback: false }),
+      sourceType: "direct",
+      usedPaymentReceivedFallback: false,
+    };
+  }
+
+  const paymentKey = findConvertedRowKey(row, CONVERTED_PAYMENT_FALLBACK_KEYS);
+  if (paymentKey) {
+    return {
+      key: paymentKey,
+      rawValue: row[paymentKey],
+      numericValue: parseConvertedNumber(row[paymentKey], { allowPaymentReceivedFallback: true }),
+      sourceType: "payment-received-fallback",
+      usedPaymentReceivedFallback: true,
+    };
+  }
+
+  const fuzzyKey = Object.keys(row || {}).find((key) => {
+    const keyText = String(key || "");
+    if (!/converted|payment.*received/i.test(keyText)) {
+      return false;
+    }
+    return !isConvertedAmountFieldKey(keyText);
+  }) || null;
+  if (fuzzyKey) {
+    const isPaymentFallback = /payment.*received/i.test(String(fuzzyKey || ""));
+    return {
+      key: fuzzyKey,
+      rawValue: row[fuzzyKey],
+      numericValue: parseConvertedNumber(row[fuzzyKey], { allowPaymentReceivedFallback: isPaymentFallback }),
+      sourceType: isPaymentFallback ? "payment-received-fallback" : "fuzzy-direct",
+      usedPaymentReceivedFallback: isPaymentFallback,
+    };
+  }
+
+  return {
+    key: null,
+    rawValue: null,
+    numericValue: null,
+    sourceType: "missing",
+    usedPaymentReceivedFallback: false,
+  };
+}
+
+function buildConvertedResolutionRecord(row = {}, index = null) {
+  const resolution = resolveConvertedValue(row);
+  return {
+    index,
+    scf: row?.["SCF Grouping"] ?? row?.["scf grouping"] ?? row?.SCF ?? row?.scf ?? "",
+    key: row?.["Key"] ?? row?.key ?? "",
+    convertedKey: resolution.key,
+    convertedRawValue: resolution.rawValue,
+    convertedNumericValue: resolution.numericValue,
+    sourceType: resolution.sourceType,
+    usedPaymentReceivedFallback: resolution.usedPaymentReceivedFallback,
+    availableKeys: Object.keys(row || {}),
+  };
+}
+
+function buildConvertedDebugSummary(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const resolutionRecords = list.map((row, index) => buildConvertedResolutionRecord(row, index));
+  const warnings = resolutionRecords
+    .filter((entry) => !entry.convertedKey)
+    .slice(0, 10)
+    .map((entry) => `[Converted Debug] No converted source field found for row ${entry.index}; keys=${entry.availableKeys.join(", ")}`);
+
+  return {
+    totalRowsChecked: resolutionRecords.length,
+    rowsWithConvertedSource: resolutionRecords.filter((entry) => Boolean(entry.convertedKey)).length,
+    rowsWithConvertedNumericValue: resolutionRecords.filter((entry) => Number.isFinite(entry.convertedNumericValue)).length,
+    convertedTotalFromSource: resolutionRecords.reduce(
+      (sum, entry) => sum + (Number.isFinite(entry.convertedNumericValue) ? Number(entry.convertedNumericValue) : 0),
+      0
+    ),
+    convertedResolutionSamples: resolutionRecords.slice(0, 5),
+    warnings,
+  };
 }
 
 function parseDateValue(rawValue, fallbackLabel) {
@@ -2335,6 +2513,54 @@ function buildAnalysisReportPayloadDebugSnapshot(reportId, filters, describePayl
   };
 }
 
+function buildConvertedDiagnosticsPayload({
+  reportId,
+  reportName = "",
+  describePayload = null,
+  reportPayload = null,
+  rawDetailRows = [],
+  normalizedRows = [],
+} = {}) {
+  const columnMap = reportPayload ? mapColumnLabels(reportPayload) : [];
+  const availableColumns = columnMap.map((column) => ({
+    apiName: column.key,
+    label: column.label,
+    normalized: column.normalized,
+  }));
+  const allColumnApiNames = availableColumns.map((column) => column.apiName);
+  const allColumnLabels = availableColumns.map((column) => column.label);
+  const convertedCandidateColumns = availableColumns.filter((column) =>
+    /converted|payment.*received/i.test(`${column.apiName} ${column.label}`)
+  );
+  const convertedSummary = buildConvertedDebugSummary(normalizedRows);
+
+  return {
+    reportId,
+    reportName: reportName || describePayload?.reportMetadata?.name || reportPayload?.reportMetadata?.name || "",
+    allColumnApiNames,
+    allColumnLabels,
+    availableColumns,
+    convertedCandidateColumns,
+    sampleRawRows: rawDetailRows.slice(0, 3).map((row, index) => ({
+      index,
+      dataCells: Array.isArray(row?.dataCells)
+        ? row.dataCells.map((cell, cellIndex) => ({
+            index: cellIndex,
+            label: cell?.label ?? null,
+            value: cell?.value ?? null,
+          }))
+        : [],
+    })),
+    sampleNormalizedRows: normalizedRows.slice(0, 3),
+    convertedResolutionSamples: convertedSummary.convertedResolutionSamples,
+    totalRowsChecked: convertedSummary.totalRowsChecked,
+    rowsWithConvertedSource: convertedSummary.rowsWithConvertedSource,
+    rowsWithConvertedNumericValue: convertedSummary.rowsWithConvertedNumericValue,
+    convertedTotalFromSource: convertedSummary.convertedTotalFromSource,
+    warnings: convertedSummary.warnings,
+  };
+}
+
 function findAnalysisRowByScf(rows = [], targetScf = "") {
   const normalizedTargetScf = normalizeScf(targetScf);
   if (normalizedTargetScf) {
@@ -3462,6 +3688,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   let preferredExportSummary = { columns: [], rows: [], summaryValues: [] };
   let payloadDetailSummary = { columns: [], rows: [], summaryValues: [] };
   let opportunityAggregateSummary = { columns: [], rows: [], summaryValues: [] };
+  let convertedDiagnostics = null;
 
   try {
     const reportMetadata = buildAnalysisMetricReportMetadata(describePayload, {
@@ -3497,6 +3724,14 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
         rows: await enrichAnalysisDetailRowsWithMailerGrouping(tokenRecord, reportPayloadDetailExport.rows),
       };
     }
+    convertedDiagnostics = buildConvertedDiagnosticsPayload({
+      reportId,
+      reportName: describePayload?.reportMetadata?.name || reportId,
+      describePayload,
+      reportPayload,
+      rawDetailRows: getDetailRows(reportPayload),
+      normalizedRows: reportPayloadDetailExport.rows,
+    });
     payloadDetailSummary = reportPayloadDetailExport.rows.length
       ? summarizeAnalysisExportRows(reportPayloadDetailExport.rows, reportPayloadDetailExport.columns)
       : { columns: [], rows: [], summaryValues: [] };
@@ -3526,6 +3761,14 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
       : { columns: [], rows: [], summaryValues: [] };
     preferredExport = { columns: [], rows: [] };
     preferredExportSummary = normalizedDetailSummary;
+    convertedDiagnostics = buildConvertedDiagnosticsPayload({
+      reportId,
+      reportName: describePayload?.reportMetadata?.name || reportId,
+      describePayload,
+      reportPayload: null,
+      rawDetailRows: [],
+      normalizedRows: normalizedDetailSummary.rows,
+    });
   }
 
   const mergedFlattened = mergeAnalysisSummaryDatasets(
@@ -3572,8 +3815,30 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   diagnostics.groupedReportUnavailableReason = groupedReportUnavailableReason;
   diagnostics.debugPayloadPath = flattened.debugPayloadPath || null;
   diagnostics.rowDebugTrace = rowDebugTrace;
+  diagnostics.convertedDebug = {
+    ...(convertedDiagnostics || buildConvertedDebugSummary([])),
+    finalizedSummaryRowsChecked: finalizedFlattened.rows.length,
+    finalizedSummaryConvertedTotal: buildConvertedDebugSummary(finalizedFlattened.rows).convertedTotalFromSource,
+    finalizedSummaryResolutionSamples: buildConvertedDebugSummary(finalizedFlattened.rows).convertedResolutionSamples,
+  };
   if (reportPayload) {
     console.log("Analysis row debug:", JSON.stringify(rowDebugTrace, null, 2));
+  }
+  if (diagnostics.convertedDebug) {
+    console.log("[Converted Debug] Analysis report pull", JSON.stringify({
+      reportId,
+      reportName: diagnostics.convertedDebug.reportName || describePayload?.reportMetadata?.name || reportId,
+      allColumnApiNames: diagnostics.convertedDebug.allColumnApiNames || [],
+      allColumnLabels: diagnostics.convertedDebug.allColumnLabels || [],
+      convertedCandidateColumns: diagnostics.convertedDebug.convertedCandidateColumns || [],
+      sampleNormalizedRows: diagnostics.convertedDebug.sampleNormalizedRows || [],
+      convertedResolutionSamples: diagnostics.convertedDebug.convertedResolutionSamples || [],
+      totalRowsChecked: diagnostics.convertedDebug.totalRowsChecked || 0,
+      rowsWithConvertedSource: diagnostics.convertedDebug.rowsWithConvertedSource || 0,
+      rowsWithConvertedNumericValue: diagnostics.convertedDebug.rowsWithConvertedNumericValue || 0,
+      convertedTotalFromSource: diagnostics.convertedDebug.convertedTotalFromSource || 0,
+      warnings: diagnostics.convertedDebug.warnings || [],
+    }, null, 2));
   }
   const availableKeyValues = Array.from(
     new Set(
@@ -4264,6 +4529,7 @@ async function fetchMonthlySalesforceReportData(
 
 module.exports = {
   backfillMissingAnalysisMetrics,
+  buildConvertedDebugSummary,
   buildFlatRowsFromDetailExport,
   summarizeAnalysisExportRows,
   buildFlatReportRows,
@@ -4292,8 +4558,10 @@ module.exports = {
   mapColumnLabels,
   normalizeLabel,
   normalizeScf,
+  parseConvertedNumber,
   parseDateValue,
   parseNumber,
+  resolveConvertedValue,
   resolveAnalysisConvertedCount,
   resolveAnalysisDateRange,
   resolveAnalysisSoldOpportunityCount,

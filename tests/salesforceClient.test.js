@@ -3,11 +3,14 @@ const assert = require("node:assert/strict");
 
 const {
   backfillMissingAnalysisMetrics,
+  buildConvertedDebugSummary,
   buildFlatRowsFromDetailExport,
   calculateAnalysisCountRates,
   calculateAnalysisConvertedRate,
   hasAnalysisDetailExportRows,
   normalizeScf,
+  parseConvertedNumber,
+  resolveConvertedValue,
   resolveAnalysisConvertedCount,
   summarizeAnalysisExportRows,
   shouldFallbackToSoqlForReportPayload,
@@ -39,6 +42,55 @@ test("shouldFallbackToSoqlForReportPayload ignores complete Salesforce payloads"
     }),
     false
   );
+});
+
+test("resolveConvertedValue prefers direct Sum of Converted fields", () => {
+  const resolved = resolveConvertedValue({ "Sum of Converted": 5 });
+  assert.equal(resolved.key, "Sum of Converted");
+  assert.equal(resolved.numericValue, 5);
+  assert.equal(resolved.usedPaymentReceivedFallback, false);
+});
+
+test("resolveConvertedValue parses alternate converted count field names", () => {
+  assert.equal(resolveConvertedValue({ Converted: "7" }).numericValue, 7);
+  assert.equal(resolveConvertedValue({ converted_count: "3" }).numericValue, 3);
+});
+
+test("resolveConvertedValue falls back to payment received only when needed", () => {
+  const truthy = resolveConvertedValue({ "Payment Received": true });
+  const received = resolveConvertedValue({ "Payment Received": "Received" });
+  const blank = resolveConvertedValue({ "Payment Received": "" });
+
+  assert.equal(truthy.key, "Payment Received");
+  assert.equal(truthy.numericValue, 1);
+  assert.equal(truthy.usedPaymentReceivedFallback, true);
+  assert.equal(received.numericValue, 1);
+  assert.equal(blank.numericValue, null);
+});
+
+test("resolveConvertedValue returns null values when no converted field exists", () => {
+  const resolved = resolveConvertedValue({ "Sum of Mailed": 10 });
+  assert.equal(resolved.key, null);
+  assert.equal(resolved.numericValue, null);
+});
+
+test("parseConvertedNumber preserves missing values instead of forcing zero", () => {
+  assert.equal(parseConvertedNumber(""), null);
+  assert.equal(parseConvertedNumber(null), null);
+  assert.equal(parseConvertedNumber("$12.00"), 12);
+});
+
+test("buildConvertedDebugSummary reports missing converted sources as warnings", () => {
+  const summary = buildConvertedDebugSummary([
+    { "Sum of Converted": 5 },
+    { "Payment Received": "Received" },
+    { "Sum of Mailed": 10 },
+  ]);
+
+  assert.equal(summary.rowsWithConvertedSource, 2);
+  assert.equal(summary.rowsWithConvertedNumericValue, 2);
+  assert.equal(summary.convertedTotalFromSource, 6);
+  assert.match(summary.warnings[0], /No converted source field found/);
 });
 
 function getAggregateRow(dataset, scf) {

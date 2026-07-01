@@ -3,6 +3,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const {
+  buildConvertedDebugSummary,
   buildFlatRowsFromDetailExport,
   fetchAnalysisReportScfMetrics,
   fetchFlexibleSalesforceReportData,
@@ -4208,6 +4209,48 @@ async function getAnalysisReportRateDebug(reportId, scf) {
   return debugPayload;
 }
 
+function getAnalysisReportConvertedDebug(reportId) {
+  const normalizedId = String(reportId || "").trim();
+  if (!normalizedId) {
+    throw new Error("Analysis report not found.");
+  }
+
+  const report = readAnalysisReports().find((entry) => String(entry.id || "").trim() === normalizedId);
+  if (!report) {
+    throw new Error("Analysis report not found.");
+  }
+
+  const storedExportRows = ensureArray(report.exportRows);
+  const storedSummaryRows = ensureArray(report.rows);
+  const storedExportDebug = buildConvertedDebugSummary(storedExportRows);
+  const storedSummaryDebug = buildConvertedDebugSummary(storedSummaryRows);
+  const diagnostics = report.diagnostics?.convertedDebug || null;
+  const columnLabels = ensureArray(report.columns).map((column) => column?.label || column?.key || "").filter(Boolean);
+  const exportColumnLabels = ensureArray(report.exportColumns).map((column) => column?.label || column?.key || "").filter(Boolean);
+  const availableColumns = Array.from(new Set([
+    ...columnLabels,
+    ...exportColumnLabels,
+    ...Object.keys(storedExportRows[0] || {}),
+    ...Object.keys(storedSummaryRows[0] || {}),
+  ]));
+
+  return {
+    reportId: normalizedId,
+    salesforceReportId: report.parameters?.report_id || "",
+    reportName: report.report_name || "",
+    availableColumns,
+    convertedCandidateColumns: availableColumns.filter((column) => /converted|payment.*received/i.test(String(column || ""))),
+    sampleStoredExportRows: storedExportRows.slice(0, 5),
+    sampleStoredSummaryRows: storedSummaryRows.slice(0, 5),
+    storedExportRowCount: storedExportRows.length,
+    storedSummaryRowCount: storedSummaryRows.length,
+    storedExportConvertedDebug: storedExportDebug,
+    storedSummaryConvertedDebug: storedSummaryDebug,
+    savedSummaryValues: ensureArray(report.summaryValues),
+    persistedConvertedDebug: diagnostics,
+  };
+}
+
 function compareAnalysisReports(reportAId, reportBId, comparisonRequest = {}) {
   const reports = readAnalysisReports();
   const reportA = reports.find((entry) => entry.id === reportAId);
@@ -4294,6 +4337,17 @@ async function executeAnalysisRun(runId) {
           console.log("Field names:", diagnostics.availableFieldNames);
           console.log("Premium samples:", diagnostics.samplePremiumValues);
           console.log("Key distribution:", diagnostics.keyDistribution);
+          if (diagnostics.convertedDebug) {
+            console.log("[Converted Debug] Stored analysis diagnostics:", {
+              reportId: pull.reportId,
+              reportName: pull.analysisLabel || pull.reportId || pull.id,
+              convertedCandidateColumns: diagnostics.convertedDebug.convertedCandidateColumns || [],
+              rowsWithConvertedSource: diagnostics.convertedDebug.rowsWithConvertedSource || 0,
+              rowsWithConvertedNumericValue: diagnostics.convertedDebug.rowsWithConvertedNumericValue || 0,
+              convertedTotalFromSource: diagnostics.convertedDebug.convertedTotalFromSource || 0,
+              warnings: diagnostics.convertedDebug.warnings || [],
+            });
+          }
           if (diagnostics.suspicious) {
             console.warn("Dollar warning:", diagnostics.warningMessage);
           }
@@ -4337,6 +4391,15 @@ async function executeAnalysisRun(runId) {
         });
         savedReports.push(savedReport);
         console.log("Saved report id:", savedReport.id);
+        if (savedReport.diagnostics?.convertedDebug) {
+          console.log("[Converted Debug] Saved report snapshot:", {
+            savedReportId: savedReport.id,
+            reportRowCount: ensureArray(savedReport.rows).length,
+            exportRowCount: ensureArray(savedReport.exportRows).length,
+            convertedCandidateColumns: savedReport.diagnostics.convertedDebug.convertedCandidateColumns || [],
+            convertedTotalFromSource: savedReport.diagnostics.convertedDebug.convertedTotalFromSource || 0,
+          });
+        }
         console.log(
           "Export file:",
           savedReport.export_file_name
@@ -5519,6 +5582,7 @@ module.exports = {
   compareAnalysisReports,
   getAnalysisArtifactPath,
   getAnalysisReport,
+  getAnalysisReportConvertedDebug,
   getAnalysisReportRateDebug,
   getAnalysisReportScfMetrics,
   getAnalysisReportExportPath,
