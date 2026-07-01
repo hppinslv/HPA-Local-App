@@ -13785,7 +13785,7 @@ function bindMonthlyActions() {
   const getArtifactDisplayLabel = (artifact) => {
     const kind = String(artifact?.kind || "").trim().toLowerCase();
     if (kind === "spreadsheet") return "Download Excel";
-    if (kind === "print") return "Download PDF";
+    if (kind === "print") return String(artifact?.label || "").trim() || "Download PDF";
     return artifact?.label || "Download File";
   };
 
