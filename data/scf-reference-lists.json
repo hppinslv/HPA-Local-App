@@ -1,5 +1,6 @@
 {
-  "updatedAt": "2026-06-15T20:11:51.943Z",
+  "updatedAt": "2026-07-01T16:01:35.592Z",
+  "history": [],
   "lists": [
     {
       "type": "dnm",
@@ -8,816 +9,1220 @@
       "items": [
         {
           "scf": "700",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "701",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "703",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "704",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "705",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "706",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "707",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "708",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "710",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "711",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "712",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "713",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "714",
-          "scope": "Louisiana AD&D only",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "state": "Louisiana - just the AD&D",
+          "scope": "Louisiana - just the AD&D",
+          "stateKey": "louisiana-add",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "206",
+          "state": "Maryland",
+          "scope": "Maryland",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "207",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "208",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "209",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "210",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "211",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "212",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "214",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "215",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "216",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "217",
+          "state": "Maryland",
+          "scope": "Maryland",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "218",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "219",
+          "state": "Maryland",
           "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "maryland",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "267",
-          "scope": "Maryland",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "010",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "590",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "011",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "591",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "012",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "592",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "013",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "593",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "014",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "594",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "015",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "595",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "016",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "596",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "017",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "597",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "018",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "598",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "019",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "599",
-          "scope": "Montana",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "020",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "030",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "021",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "031",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "022",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "032",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "023",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "033",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "024",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "034",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "025",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "035",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "026",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
-          "scf": "036",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "037",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "038",
-          "scope": "New Hampshire",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "870",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "871",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "873",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "874",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "875",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "877",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "878",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "879",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "880",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "881",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "882",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "883",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "884",
-          "scope": "New Mexico",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "270",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "271",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "272",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "273",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "274",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "275",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "276",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "277",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "278",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "279",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "280",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "281",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "282",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "283",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "284",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "285",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "286",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "287",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "288",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "289",
-          "scope": "North Carolina",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "570",
-          "scope": "South Dakota",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "571",
-          "scope": "South Dakota",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "572",
-          "scope": "South Dakota",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "573",
-          "scope": "South Dakota",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "574",
-          "scope": "South Dakota",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "575",
-          "scope": "South Dakota",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "576",
-          "scope": "South Dakota",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "577",
-          "scope": "South Dakota",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "840",
-          "scope": "Utah",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "841",
-          "scope": "Utah",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "843",
-          "scope": "Utah",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "844",
-          "scope": "Utah",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "845",
-          "scope": "Utah",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "846",
-          "scope": "Utah",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "847",
-          "scope": "Utah",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "050",
-          "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "051",
-          "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "052",
-          "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "053",
-          "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
-          "addedBy": "System Seed",
-          "reason": "Imported from the initial analysis requirements.",
-          "sourceAnalysis": "initial-seed"
-        },
-        {
-          "scf": "054",
-          "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "scf": "027",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "055",
+          "state": "Massachusetts",
+          "scope": "Massachusetts",
+          "stateKey": "massachusetts",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "590",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "591",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "592",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "593",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "594",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "595",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "596",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "597",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "598",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "599",
+          "state": "Montana",
+          "scope": "Montana",
+          "stateKey": "montana",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "030",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "031",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "032",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "033",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "034",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "035",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "036",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "037",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "038",
+          "state": "New Hampshire",
+          "scope": "New Hampshire",
+          "stateKey": "new-hampshire",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "870",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "871",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "873",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "874",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "875",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "877",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "878",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "879",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "880",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "881",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "882",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "883",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "884",
+          "state": "New Mexico",
+          "scope": "New Mexico",
+          "stateKey": "new-mexico",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "270",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "271",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "272",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "273",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "274",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "275",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "276",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "277",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "278",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "279",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "280",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "281",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "282",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "283",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "284",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "285",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "286",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "287",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "288",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "289",
+          "state": "North Carolina",
+          "scope": "North Carolina",
+          "stateKey": "north-carolina",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "570",
+          "state": "South Dakota",
+          "scope": "South Dakota",
+          "stateKey": "south-dakota",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "571",
+          "state": "South Dakota",
+          "scope": "South Dakota",
+          "stateKey": "south-dakota",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "572",
+          "state": "South Dakota",
+          "scope": "South Dakota",
+          "stateKey": "south-dakota",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "573",
+          "state": "South Dakota",
+          "scope": "South Dakota",
+          "stateKey": "south-dakota",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "574",
+          "state": "South Dakota",
+          "scope": "South Dakota",
+          "stateKey": "south-dakota",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "575",
+          "state": "South Dakota",
+          "scope": "South Dakota",
+          "stateKey": "south-dakota",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "576",
+          "state": "South Dakota",
+          "scope": "South Dakota",
+          "stateKey": "south-dakota",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "577",
+          "state": "South Dakota",
+          "scope": "South Dakota",
+          "stateKey": "south-dakota",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "840",
+          "state": "Utah",
+          "scope": "Utah",
+          "stateKey": "utah",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "841",
+          "state": "Utah",
+          "scope": "Utah",
+          "stateKey": "utah",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "842",
+          "state": "Utah",
+          "scope": "Utah",
+          "stateKey": "utah",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "843",
+          "state": "Utah",
+          "scope": "Utah",
+          "stateKey": "utah",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "844",
+          "state": "Utah",
+          "scope": "Utah",
+          "stateKey": "utah",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "845",
+          "state": "Utah",
+          "scope": "Utah",
+          "stateKey": "utah",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "846",
+          "state": "Utah",
+          "scope": "Utah",
+          "stateKey": "utah",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "847",
+          "state": "Utah",
+          "scope": "Utah",
+          "stateKey": "utah",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "050",
+          "state": "Vermont",
           "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "051",
+          "state": "Vermont",
+          "scope": "Vermont",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "052",
+          "state": "Vermont",
+          "scope": "Vermont",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "053",
+          "state": "Vermont",
+          "scope": "Vermont",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
+          "addedBy": "System Seed",
+          "reason": "Imported from the initial analysis requirements.",
+          "sourceAnalysis": "initial-seed"
+        },
+        {
+          "scf": "054",
+          "state": "Vermont",
+          "scope": "Vermont",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "056",
+          "state": "Vermont",
           "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "057",
+          "state": "Vermont",
           "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "058",
+          "state": "Vermont",
           "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"
         },
         {
           "scf": "059",
+          "state": "Vermont",
           "scope": "Vermont",
-          "addedAt": "2026-06-12T00:00:00.000Z",
+          "stateKey": "vermont",
+          "addedAt": "2026-07-01T16:01:35.592Z",
           "addedBy": "System Seed",
           "reason": "Imported from the initial analysis requirements.",
           "sourceAnalysis": "initial-seed"

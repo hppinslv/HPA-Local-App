@@ -54,33 +54,6 @@ function isLoopbackHost(host) {
   );
 }
 
-function resolveBrowserFacingOrigin(headers = {}) {
-  const candidates = [
-    firstHeaderValue(headers.origin),
-    firstHeaderValue(headers.referer),
-  ];
-
-  for (const candidate of candidates) {
-    if (!candidate) {
-      continue;
-    }
-
-    try {
-      const parsed = new URL(candidate);
-      if (parsed.host && !isLoopbackHost(parsed.host)) {
-        return {
-          host: parsed.host,
-          proto: normalizeProto(parsed.protocol.replace(":", "")),
-        };
-      }
-    } catch {
-      // Ignore malformed browser-facing URLs and continue falling back.
-    }
-  }
-
-  return null;
-}
-
 function resolveRedirectUri(requestContext = null) {
   const config = getSalesforceConfig();
   const configuredRedirect = String(config.redirectUri || "").trim();
@@ -94,12 +67,6 @@ function resolveRedirectUri(requestContext = null) {
   const forwardedProto = firstHeaderValue(headers["x-forwarded-proto"]);
   let host = forwardedHost || firstHeaderValue(headers.host);
   let proto = normalizeProto(forwardedProto || requestContext.protocol || "http");
-  const browserFacingOrigin = resolveBrowserFacingOrigin(headers);
-
-  if ((!forwardedHost || isLoopbackHost(host)) && browserFacingOrigin) {
-    host = browserFacingOrigin.host;
-    proto = browserFacingOrigin.proto;
-  }
 
   if (!host) {
     return configuredRedirect;

@@ -40,7 +40,7 @@ test("resolveRedirectUri keeps explicit non-localhost redirect uri", () => {
   }
 });
 
-test("resolveRedirectUri prefers browser-facing referer when host is localhost", () => {
+test("resolveRedirectUri keeps localhost host instead of switching to browser-facing referer", () => {
   const redirectUri = resolveRedirectUri({
     headers: {
       host: "localhost:4173",
@@ -49,5 +49,5 @@ test("resolveRedirectUri prefers browser-facing referer when host is localhost",
     protocol: "http",
   });
 
-  assert.equal(redirectUri, "https://hpa.example.com/oauth/salesforce/callback");
+  assert.equal(redirectUri, "http://localhost:4173/oauth/salesforce/callback");
 });
