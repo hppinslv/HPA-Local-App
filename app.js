@@ -13880,6 +13880,15 @@ function bindMonthlyActions() {
         }
       });
 
+    const summaryRun = latestByType.get("transaction-summary");
+    if (summaryRun) {
+      const summaryWithLetter = attachFinalSummaryLetterArtifacts(summaryRun, runs);
+      latestByType.set("transaction-summary", summaryWithLetter);
+      if (hasFinalSummaryLetterArtifacts(summaryWithLetter)) {
+        latestByType.delete("final-summary-letter");
+      }
+    }
+
     return [...latestByType.values()].sort((left, right) => {
       const leftIndex = MONTHLY_ALL_REPORT_TYPES.indexOf(String(left?.reportType || "").trim());
       const rightIndex = MONTHLY_ALL_REPORT_TYPES.indexOf(String(right?.reportType || "").trim());
@@ -13948,33 +13957,43 @@ function bindMonthlyActions() {
     }
   };
 
-  const attachBatchLetterArtifacts = (run, allRuns, runIds) => {
-    if (!run || !Array.isArray(allRuns) || !Array.isArray(runIds) || !runIds.length) {
+  const hasFinalSummaryLetterArtifacts = (run) =>
+    ensureArray(run?.artifacts).some((artifact) =>
+      ["summary-letter", "summary-letter-preview", "summary-letter-json", "print"].includes(
+        String(artifact?.kind || "").trim()
+      )
+    );
+
+  const attachFinalSummaryLetterArtifacts = (run, allRuns, options = {}) => {
+    if (!run || !Array.isArray(allRuns)) {
       return run;
     }
 
     const runClone = cloneData(run);
-    const currentArtifacts = Array.isArray(runClone.artifacts) ? runClone.artifacts : [];
-    const hasLetterArtifact = currentArtifacts.some((artifact) =>
-      ["summary-letter", "summary-letter-preview", "print"].includes(String(artifact?.kind || "").trim())
-    );
-    if (hasLetterArtifact) {
+    if (hasFinalSummaryLetterArtifacts(runClone)) {
       return runClone;
     }
 
+    const runIds = Array.isArray(options.runIds)
+      ? options.runIds.map((entry) => String(entry || "").trim()).filter(Boolean)
+      : [];
     const matchingLetterRun = allRuns.find((entry) => {
       const runId = String(entry?.id || "").trim();
+      if (runIds.length && !runIds.includes(runId)) {
+        return false;
+      }
       return (
-        runIds.includes(runId) &&
         String(entry?.reportType || "").trim() === "final-summary-letter" &&
         String(entry?.reportMonth || "").trim() === String(runClone.reportMonth || "").trim()
       );
     });
-    if (!matchingLetterRun || !Array.isArray(matchingLetterRun.artifacts) || !matchingLetterRun.artifacts.length) {
+
+    if (!matchingLetterRun || !hasFinalSummaryLetterArtifacts(matchingLetterRun)) {
       return runClone;
     }
 
-    const letterArtifacts = matchingLetterRun.artifacts.filter((artifact) =>
+    const currentArtifacts = Array.isArray(runClone.artifacts) ? runClone.artifacts : [];
+    const letterArtifacts = ensureArray(matchingLetterRun.artifacts).filter((artifact) =>
       ["summary-letter", "summary-letter-preview", "summary-letter-json", "print"].includes(
         String(artifact?.kind || "").trim()
       )
@@ -13989,6 +14008,13 @@ function bindMonthlyActions() {
       runClone.report.finalSummaryLetter = matchingLetterRun.report.finalSummaryLetter;
     }
     return runClone;
+  };
+
+  const attachBatchLetterArtifacts = (run, allRuns, runIds) => {
+    if (!run || !Array.isArray(allRuns) || !Array.isArray(runIds) || !runIds.length) {
+      return run;
+    }
+    return attachFinalSummaryLetterArtifacts(run, allRuns, { runIds });
   };
 
   const pickRunForOutput = (runs, preferredId = "") => {

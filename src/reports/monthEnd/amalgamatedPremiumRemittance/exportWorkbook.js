@@ -23,7 +23,19 @@ function runPowerShell(command) {
 }
 
 function escapeXml(value) {
-  return String(value ?? "")
+  return Array.from(String(value ?? ""))
+    .filter((character) => {
+      const codePoint = character.codePointAt(0);
+      return (
+        codePoint === 0x9 ||
+        codePoint === 0xa ||
+        codePoint === 0xd ||
+        (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
+        (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
+        (codePoint >= 0x10000 && codePoint <= 0x10ffff)
+      );
+    })
+    .join("")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")

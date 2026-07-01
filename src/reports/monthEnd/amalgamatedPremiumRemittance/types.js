@@ -104,7 +104,7 @@ const FINAL_COLUMN_DEFS = [
   { key: "rate", label: "Rate" },
   { key: "premiumCollectedLabelValue", label: "__PREMIUM_COLLECTED_LABEL__" },
   { key: "amalPrem", label: "Amal Prem" },
-  { key: "ahaPrem", label: "AHA Prem" },
+  { key: "ahaPrem", label: "HPA Premium" },
   { key: "addBenefit", label: "ADD Benefit" },
   { key: "lifeBenefit", label: "Life Benefit" },
   { key: "member1", label: "Member 1" },
