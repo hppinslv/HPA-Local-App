@@ -3149,6 +3149,13 @@ function serializeAnalysisReport(report) {
   const rows = relabelAnalysisRows(ensureArray(report.rows), ensureArray(report.columns));
   const exportColumns = relabelAnalysisColumns(ensureArray(report.exportColumns));
   const exportRows = relabelAnalysisRows(ensureArray(report.exportRows), ensureArray(report.exportColumns));
+  const linkedRun = report.runId
+    ? readAnalysisRuns().find((entry) => String(entry.id || "").trim() === String(report.runId || "").trim()) || null
+    : null;
+  const linkedSetup = linkedRun?.setupId
+    ? readAnalysisSetups().find((entry) => String(entry.id || "").trim() === String(linkedRun.setupId || "").trim()) || null
+    : null;
+  const canDelete = isOpenAnalysisStatus(linkedSetup?.status || "");
 
   return {
     id: report.id,
@@ -3200,6 +3207,12 @@ function serializeAnalysisReport(report) {
     diagnostics: report.diagnostics || null,
     errorMessage: report.error_message || "",
     error_message: report.error_message || "",
+    setupId: linkedRun?.setupId || null,
+    setup_id: linkedRun?.setupId || null,
+    setupStatus: linkedSetup?.status || null,
+    setup_status: linkedSetup?.status || null,
+    canDelete,
+    can_delete: canDelete,
   };
 }
 
@@ -3789,11 +3802,79 @@ function deleteAnalysisRun(runId) {
 }
 
 function deleteAnalysisReport(reportId) {
-  throw new Error("Saved analysis reports are historical records and cannot be deleted.");
+  const normalizedReportId = String(reportId || "").trim();
+  if (!normalizedReportId) {
+    throw new Error("Analysis report not found.");
+  }
+  const reports = readAnalysisReports();
+  const report = reports.find((entry) => String(entry.id || "").trim() === normalizedReportId);
+  if (!report) {
+    throw new Error("Analysis report not found.");
+  }
+  const linkedRun = readAnalysisRuns().find((entry) => String(entry.id || "").trim() === String(report.runId || "").trim()) || null;
+  const linkedSetup = linkedRun?.setupId
+    ? readAnalysisSetups().find((entry) => String(entry.id || "").trim() === String(linkedRun.setupId || "").trim()) || null
+    : null;
+  if (isCompletedAnalysisStatus(linkedSetup?.status || "") || !isOpenAnalysisStatus(linkedSetup?.status || "")) {
+    throw new Error("Saved reports can only be deleted while the analysis is still open. Reopen or undo completed analyses first.");
+  }
+
+  if (report?.export_file_path) {
+    try {
+      fs.unlinkSync(report.export_file_path);
+    } catch (error) {
+      // Ignore cleanup failures for already-removed exports.
+    }
+  }
+
+  writeAnalysisReports(reports.filter((entry) => String(entry.id || "").trim() !== normalizedReportId));
+  removeDeletedReportsFromRuns([report]);
+  return normalizedReportId;
 }
 
 function deleteAnalysisReports(reportIds = []) {
-  throw new Error("Saved analysis reports are historical records and cannot be deleted.");
+  const normalizedIds = Array.from(
+    new Set(
+      ensureArray(reportIds)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+    )
+  );
+  if (!normalizedIds.length) {
+    return [];
+  }
+
+  const reports = readAnalysisReports();
+  const reportsById = new Map(reports.map((entry) => [String(entry.id || "").trim(), entry]));
+  const reportsToDelete = normalizedIds.map((id) => reportsById.get(id)).filter(Boolean);
+  if (!reportsToDelete.length) {
+    return [];
+  }
+
+  reportsToDelete.forEach((report) => {
+    const linkedRun = readAnalysisRuns().find((entry) => String(entry.id || "").trim() === String(report.runId || "").trim()) || null;
+    const linkedSetup = linkedRun?.setupId
+      ? readAnalysisSetups().find((entry) => String(entry.id || "").trim() === String(linkedRun.setupId || "").trim()) || null
+      : null;
+    if (isCompletedAnalysisStatus(linkedSetup?.status || "") || !isOpenAnalysisStatus(linkedSetup?.status || "")) {
+      throw new Error("Saved reports can only be deleted while the analysis is still open. Reopen or undo completed analyses first.");
+    }
+  });
+
+  reportsToDelete.forEach((report) => {
+    if (report?.export_file_path) {
+      try {
+        fs.unlinkSync(report.export_file_path);
+      } catch (error) {
+        // Ignore cleanup failures for already-removed exports.
+      }
+    }
+  });
+
+  const deleteIdSet = new Set(reportsToDelete.map((entry) => String(entry.id || "").trim()));
+  writeAnalysisReports(reports.filter((entry) => !deleteIdSet.has(String(entry.id || "").trim())));
+  removeDeletedReportsFromRuns(reportsToDelete);
+  return reportsToDelete.map((entry) => String(entry.id || "").trim());
 }
 
 function removeDeletedReportsFromRuns(reportsToDelete = []) {

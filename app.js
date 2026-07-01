@@ -12550,11 +12550,11 @@ function bindAnalysisSubtabs() {
   });
 }
 
-async function loadAnalysisReports() {
+async function loadAnalysisReports(providedRows = null) {
   const tbody = el("analysis-history-body");
-  const payload = await apiRequest("/api/analysis/reports");
-  const rows = payload.reports || [];
-  const readOnly = isCurrentAnalysisReadOnly();
+  const rows = Array.isArray(providedRows)
+    ? providedRows
+    : (await apiRequest("/api/analysis/reports")).reports || [];
   state.analysis.reportScfMetricCache = {};
   state.analysis.savedReports = rows;
   hydrateAnalysisWorkspaceFromSavedReports();
@@ -12575,6 +12575,8 @@ async function loadAnalysisReports() {
     return rows;
   }
   rows.forEach((report) => {
+    const canDelete = report.canDelete === true || report.can_delete === true;
+    const selected = getSelectedAnalysisReportIds().includes(String(report.id || "").trim());
     const titleCell = `<div class="analysis-report-row-title">
          <strong>${esc(getAnalysisReportDisplayName(report))}</strong>
          <span>${esc(report.report_id || report.reportId || report.id || "")}</span>
@@ -12584,7 +12586,7 @@ async function loadAnalysisReports() {
       : '<span class="analysis-report-download-empty">No file</span>';
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><span class="analysis-report-download-empty">Locked</span></td>
+      <td>${canDelete ? `<input type="checkbox" data-select-report="${esc(report.id)}" aria-label="Select report ${esc(getAnalysisReportDisplayName(report))}" ${selected ? "checked" : ""} />` : '<span class="analysis-report-download-empty">Locked</span>'}</td>
       <td>${titleCell}</td>
       <td>${formatDate(report.created_at || report.createdAt)}</td>
       <td>${esc(report.status || "idle")}</td>
@@ -12592,7 +12594,9 @@ async function loadAnalysisReports() {
       <td>${downloadMarkup}</td>
       <td class="action-row">
         <button class="secondary-button table-action-button" data-view-report="${esc(report.id)}">View</button>
-        <span class="analysis-report-download-empty">History Locked</span>
+        ${canDelete
+          ? `<button class="secondary-button table-action-button" data-delete-report="${esc(report.id)}">Delete</button>`
+          : '<span class="analysis-report-download-empty">History Locked</span>'}
       </td>
     `;
     tbody.appendChild(tr);
@@ -12623,6 +12627,54 @@ async function loadAnalysisReports() {
     });
   });
 
+  all("[data-delete-report]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-delete-report");
+      if (!id) return;
+      const report = ensureArray(state.analysis.savedReports).find((entry) => String(entry.id || "").trim() === id);
+      const reportName = getAnalysisReportDisplayName(report) || id;
+      if (!confirm(`Delete this report?\n\n${reportName}`)) {
+        return;
+      }
+      button.disabled = true;
+      setStatus("analysis-status-detail", `Deleting analysis report ${reportName}...`);
+      try {
+        const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        state.analysis.savedReports = ensureArray(response.reports);
+        setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((entry) => entry !== id));
+        if (state.analysis.currentReportId === id) {
+          state.analysis.currentReportId = "";
+          renderAnalysisResults(null);
+        }
+        await loadAnalysisReports(state.analysis.savedReports);
+        renderAnalysisComparePanel();
+        setStatus("analysis-status-detail", `Deleted analysis report ${reportName}.`);
+      } catch (error) {
+        button.disabled = false;
+        setStatus("analysis-status-detail", `Delete failed: ${error.message}`);
+      }
+    });
+  });
+
+  all("[data-select-report]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const id = input.getAttribute("data-select-report");
+      if (!id) {
+        return;
+      }
+      const nextIds = new Set(getSelectedAnalysisReportIds());
+      if (input.checked) {
+        nextIds.add(id);
+      } else {
+        nextIds.delete(id);
+      }
+      setSelectedAnalysisReportIds(Array.from(nextIds));
+      updateAnalysisReportSelectionUi();
+    });
+  });
+
   updateAnalysisReportSelectionUi();
   return rows;
 }
@@ -12635,17 +12687,19 @@ async function fetchAnalysisSetupsPayload() {
 function updateAnalysisReportSelectionUi() {
   const selectedIds = getSelectedAnalysisReportIds();
   const rows = ensureArray(state.analysis.savedReports);
-  const rowIds = rows.map((report) => String(report.id || "").trim()).filter(Boolean);
+  const deletableRows = rows.filter((report) => report.canDelete === true || report.can_delete === true);
+  const rowIds = deletableRows.map((report) => String(report.id || "").trim()).filter(Boolean);
   const selectedCount = selectedIds.filter((id) => rowIds.includes(id)).length;
   const selectAll = el("analysis-select-all-reports");
   if (selectAll instanceof HTMLInputElement) {
+    selectAll.disabled = rowIds.length === 0;
     selectAll.checked = rowIds.length > 0 && selectedCount === rowIds.length;
     selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
   }
   const deleteButton = el("analysis-delete-selected-button");
   if (deleteButton) {
-    deleteButton.disabled = true;
-    deleteButton.hidden = true;
+    deleteButton.disabled = selectedCount === 0;
+    deleteButton.hidden = rowIds.length === 0;
   }
 }
 
@@ -12685,7 +12739,7 @@ async function deleteSelectedAnalysisReports() {
       state.analysis.currentReportId = "";
       renderAnalysisResults(null);
     }
-    await loadAnalysisReports();
+    await loadAnalysisReports(ensureArray(response.reports));
     renderAnalysisComparePanel();
     setStatus("analysis-status-detail", `Deleted ${deletedIds.length} analysis report${deletedIds.length === 1 ? "" : "s"}.`);
   } catch (error) {
@@ -13402,6 +13456,7 @@ function bindAnalysisButtons() {
 
   selectAllReportsCheckbox?.addEventListener("change", () => {
     const reportIds = ensureArray(state.analysis.savedReports)
+      .filter((report) => report.canDelete === true || report.can_delete === true)
       .map((report) => String(report.id || "").trim())
       .filter(Boolean);
     if (selectAllReportsCheckbox.checked) {

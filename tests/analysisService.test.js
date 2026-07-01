@@ -175,7 +175,7 @@ test("live fallback can supplement zero saved summary values without clobbering 
   assert.equal(merged["Sold Rate"], "0.1336898396");
 });
 
-test("saved analysis reports relabel legacy sum of sold as sum of converted in view and export columns", () => {
+test("saved analysis reports keep sum of sold labels in view and export columns", () => {
   const tempDir = createTempAnalysisDir();
   fs.writeFileSync(
     path.join(tempDir, "analysis-reports.json"),
@@ -207,11 +207,11 @@ test("saved analysis reports relabel legacy sum of sold as sum of converted in v
   const service = loadAnalysisServiceWithTempDir(tempDir);
   const [report] = service.listAnalysisReports();
 
-  assert.equal(report.columns[0].label, "Sum of Converted");
-  assert.equal(report.summaryValues[0].label, "Sum of Converted");
-  assert.equal(report.rows[0]["Sum of Converted"], "1");
-  assert.equal(report.exportColumns[0].label, "Sum of Converted");
-  assert.equal(report.exportRows[0]["Sum of Converted"], "1");
+  assert.equal(report.columns[0].label, "Sum of Sold");
+  assert.equal(report.summaryValues[0].label, "Sum of Sold");
+  assert.equal(report.rows[0]["Sum of Sold"], "1");
+  assert.equal(report.exportColumns[0].label, "Sum of Sold");
+  assert.equal(report.exportRows[0]["Sum of Sold"], "1");
 });
 
 test("analysis report names use Refinance title format with run date", () => {
@@ -1100,7 +1100,7 @@ test("completed analyses cannot be edited or deleted until they are reopened", (
   );
 });
 
-test("saved analysis reports are immutable historical records", (t) => {
+test("completed analysis reports stay locked but open analysis reports can be deleted", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);
   t.after(() => {
@@ -1109,11 +1109,67 @@ test("saved analysis reports are immutable historical records", (t) => {
   });
 
   fs.writeFileSync(
+    path.join(tempDir, "analysis-setups.json"),
+    JSON.stringify([
+      {
+        id: "setup_open",
+        runName: "Open Analysis",
+        status: "draft",
+        createdAt: "2026-06-29T00:00:00.000Z",
+        updatedAt: "2026-06-29T00:00:00.000Z",
+      },
+      {
+        id: "setup_complete",
+        runName: "Completed Analysis",
+        status: "complete",
+        createdAt: "2026-06-29T00:00:00.000Z",
+        updatedAt: "2026-06-29T00:00:00.000Z",
+      },
+    ], null, 2)
+  );
+
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-runs.json"),
+    JSON.stringify([
+      {
+        id: "run_open",
+        setupId: "setup_open",
+        status: "complete",
+        reportPulls: [],
+        comparisonRequests: [],
+      },
+      {
+        id: "run_complete",
+        setupId: "setup_complete",
+        status: "complete",
+        reportPulls: [],
+        comparisonRequests: [],
+      },
+    ], null, 2)
+  );
+
+  fs.writeFileSync(
     path.join(tempDir, "analysis-reports.json"),
     JSON.stringify([
       {
+        id: "report_open",
+        runId: "run_open",
+        pullId: "pull_open",
+        report_name: "Open Report",
+        report_type: "analysis-report",
+        created_at: "2026-06-29T00:00:00.000Z",
+        updated_at: "2026-06-29T00:00:00.000Z",
+        completed_at: "2026-06-29T00:00:00.000Z",
+        status: "complete",
+        rows: [],
+        columns: [],
+        exportRows: [],
+        exportColumns: [],
+        summaryValues: [],
+      },
+      {
         id: "report_immutable",
-        runId: "run_immutable",
+        runId: "run_complete",
         pullId: "pull_immutable",
         report_name: "Immutable Report",
         report_type: "analysis-report",
@@ -1131,7 +1187,9 @@ test("saved analysis reports are immutable historical records", (t) => {
   );
 
   const service = loadAnalysisServiceWithTempDir(tempDir);
-  assert.throws(() => service.deleteAnalysisReport("report_immutable"), /historical records|cannot be deleted/i);
-  assert.throws(() => service.deleteAnalysisReports(["report_immutable"]), /historical records|cannot be deleted/i);
+  assert.equal(service.deleteAnalysisReport("report_open"), "report_open");
+  assert.equal(service.getAnalysisReport("report_open"), null);
+  assert.throws(() => service.deleteAnalysisReport("report_immutable"), /still open|reopen|undo completed/i);
+  assert.throws(() => service.deleteAnalysisReports(["report_immutable"]), /still open|reopen|undo completed/i);
   assert.throws(() => service.renameAnalysisReport("report_immutable", "New Name"), /historical records|cannot be renamed/i);
 });
