@@ -54,7 +54,42 @@ function generatePdfFromHtml(html, pdfPath) {
   }
 }
 
+function createPrintableArtifactFromHtml({
+  html,
+  outputDir,
+  pdfFileName,
+  htmlFileName,
+}) {
+  const pdfPath = path.join(outputDir, pdfFileName);
+
+  try {
+    generatePdfFromHtml(html, pdfPath);
+    return {
+      artifact: {
+        kind: "print",
+        label: "Download PDF",
+        fileName: pdfFileName,
+        contentType: "application/pdf",
+      },
+      warning: "",
+    };
+  } catch (error) {
+    const fallbackFileName = htmlFileName || pdfFileName.replace(/\.pdf$/i, ".html");
+    fs.writeFileSync(path.join(outputDir, fallbackFileName), html, "utf8");
+    return {
+      artifact: {
+        kind: "print",
+        label: "Download Printable HTML",
+        fileName: fallbackFileName,
+        contentType: "text/html; charset=utf-8",
+      },
+      warning: `PDF output was unavailable, so a printable HTML file was generated instead: ${error.message}`,
+    };
+  }
+}
+
 module.exports = {
+  createPrintableArtifactFromHtml,
   generatePdfFromHtml,
   resolvePdfBrowserPath,
 };

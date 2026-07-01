@@ -3,7 +3,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { buildFinalColumns } = require("./config");
-const { generatePdfFromHtml } = require("../../../../services/pdfPrintService");
+const { createPrintableArtifactFromHtml } = require("../../../../services/pdfPrintService");
 const { formatReportMonthFilePrefix } = require("../../../../services/monthlyReportServiceHelpers");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "..", "..", "Amalgamated_Premium_Remittance.xlsx");
@@ -858,10 +858,19 @@ function writeArtifacts(runDir, report) {
   const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
   const workbookFileName = `${filePrefix}_Amalgamated_Premium_Remittance.xlsx`;
   const pdfFileName = `${filePrefix}_Amalgamated_Premium_Remittance.pdf`;
+  const htmlFileName = `${filePrefix}_Amalgamated_Premium_Remittance.html`;
   const jsonFileName = `${filePrefix}_Amalgamated_Premium_Remittance.json`;
   const printableHtml = buildPrintableHtml(report);
 
-  generatePdfFromHtml(printableHtml, path.join(runDir, pdfFileName));
+  const printableArtifact = createPrintableArtifactFromHtml({
+    html: printableHtml,
+    outputDir: runDir,
+    pdfFileName,
+    htmlFileName,
+  });
+  if (printableArtifact.warning) {
+    report.printArtifactWarning = printableArtifact.warning;
+  }
   fs.writeFileSync(path.join(runDir, jsonFileName), `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
   if (!report.blockingErrors.length) {
@@ -875,12 +884,7 @@ function writeArtifacts(runDir, report) {
   }
 
   artifacts.push(
-    {
-      kind: "print",
-      label: "Download PDF",
-      fileName: pdfFileName,
-      contentType: "application/pdf",
-    },
+    printableArtifact.artifact,
     {
       kind: "json",
       label: "Download JSON",

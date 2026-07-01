@@ -19,7 +19,10 @@ const {
   writeArtifacts: writeAmalgamatedArtifacts,
 } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/exportWorkbook");
 const { formatReportMonth, formatReportMonthFilePrefix } = require("./monthlyReportServiceHelpers");
-const { generatePdfFromHtml } = require("./pdfPrintService");
+const {
+  createPrintableArtifactFromHtml,
+  generatePdfFromHtml,
+} = require("./pdfPrintService");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const GENERATED_DIR = path.join(__dirname, "..", "generated-reports");
@@ -1827,11 +1830,20 @@ function writeArtifacts(runId, report) {
   const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
   const workbookFileName = `${filePrefix}_AHA HPA Transaction Summary.xlsm`;
   const pdfFileName = `${filePrefix}_AHA HPA Transaction Summary.pdf`;
+  const htmlFileName = `${filePrefix}_AHA HPA Transaction Summary.html`;
   const jsonFileName = `${filePrefix}_AHA HPA Transaction Summary.json`;
   const printableHtml = buildPrintableHtml(report);
 
   buildTemplateWorkbook(report, path.join(runDir, workbookFileName));
-  generatePdfFromHtml(printableHtml, path.join(runDir, pdfFileName));
+  const printableArtifact = createPrintableArtifactFromHtml({
+    html: printableHtml,
+    outputDir: runDir,
+    pdfFileName,
+    htmlFileName,
+  });
+  if (printableArtifact.warning) {
+    report.printArtifactWarning = printableArtifact.warning;
+  }
   fs.writeFileSync(
     path.join(runDir, jsonFileName),
     `${JSON.stringify(report, null, 2)}\n`,
@@ -1846,12 +1858,7 @@ function writeArtifacts(runId, report) {
       contentType:
         "application/vnd.ms-excel.sheet.macroEnabled.12",
     },
-    {
-      kind: "print",
-      label: "Download PDF",
-      fileName: pdfFileName,
-      contentType: "application/pdf",
-    },
+    printableArtifact.artifact,
     {
       kind: "json",
       label: "Download JSON",
@@ -2249,7 +2256,9 @@ function createRun(
       updateStoredRun(newRun.id, (run) => {
         run.status = "complete";
         run.updatedAt = new Date().toISOString();
-        run.statusDetail = "Salesforce report run completed successfully.";
+        run.statusDetail = report?.printArtifactWarning
+          ? `Salesforce report run completed successfully. ${report.printArtifactWarning}`
+          : "Salesforce report run completed successfully.";
         run.report = compactReportPayload(run.reportType, report);
         run.artifacts = artifacts;
       });

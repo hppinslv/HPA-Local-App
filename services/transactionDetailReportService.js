@@ -2,7 +2,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { generatePdfFromHtml } = require("./pdfPrintService");
+const { createPrintableArtifactFromHtml } = require("./pdfPrintService");
 const { formatReportMonthFilePrefix } = require("./monthlyReportServiceHelpers");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "AHA HPA Transaction Detail.xlsx");
@@ -865,11 +865,20 @@ function writeDetailArtifacts(runDir, report) {
   const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
   const workbookFileName = `${filePrefix}_AHA HPA Transaction Detail.xlsx`;
   const pdfFileName = `${filePrefix}_AHA HPA Transaction Detail.pdf`;
+  const htmlFileName = `${filePrefix}_AHA HPA Transaction Detail.html`;
   const jsonFileName = `${filePrefix}_AHA HPA Transaction Detail.json`;
   const printableHtml = buildPrintableHtml(report);
 
   buildDetailWorkbook(report, path.join(runDir, workbookFileName));
-  generatePdfFromHtml(printableHtml, path.join(runDir, pdfFileName));
+  const printableArtifact = createPrintableArtifactFromHtml({
+    html: printableHtml,
+    outputDir: runDir,
+    pdfFileName,
+    htmlFileName,
+  });
+  if (printableArtifact.warning) {
+    report.printArtifactWarning = printableArtifact.warning;
+  }
   fs.writeFileSync(path.join(runDir, jsonFileName), `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
   return [
@@ -880,12 +889,7 @@ function writeDetailArtifacts(runDir, report) {
       contentType:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     },
-    {
-      kind: "print",
-      label: "Download PDF",
-      fileName: pdfFileName,
-      contentType: "application/pdf",
-    },
+    printableArtifact.artifact,
     {
       kind: "json",
       label: "Download JSON",
