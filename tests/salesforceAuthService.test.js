@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  getAuthStatus,
   resolveRedirectUri,
 } = require("../services/salesforceAuthService");
 
@@ -50,4 +51,15 @@ test("resolveRedirectUri keeps localhost host instead of switching to browser-fa
   });
 
   assert.equal(redirectUri, "http://localhost:4173/oauth/salesforce/callback");
+});
+
+test("getAuthStatus includes the resolved redirect uri for the current host", () => {
+  const auth = getAuthStatus({
+    headers: {
+      host: "192.168.1.8:8000",
+    },
+    protocol: "http",
+  });
+
+  assert.equal(auth.resolvedRedirectUri, "http://192.168.1.8:8000/oauth/salesforce/callback");
 });
