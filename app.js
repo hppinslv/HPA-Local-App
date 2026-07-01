@@ -7327,9 +7327,7 @@ function normalizeAnalysisMetricRow(row = {}) {
   const totalMonthlyPremium = getRowMetricNumber(row, "Total Monthly Premium");
   const inForceMonthlyPremium = getRowMetricNumber(row, "In Force Monthly Premium");
   const totalConvertedMonthlyPremiums = getRowMetricNumber(row, "Total Converted Monthly Premiums");
-  const convertedCount = resolveNavigatorConvertedCount(row, totalConvertedMonthlyPremiums, {
-    allowPremiumRowInference: false,
-  });
+  const convertedCount = totalConvertedMonthlyPremiums > 0 ? 1 : 0;
   const soldCount = resolveNavigatorSoldCount(row, {
     convertedCountFallback: convertedCount,
   });
@@ -12072,9 +12070,8 @@ function renderPullResultCard(pull, options = {}) {
     "Converted Rate": "salesforce converted premium formula",
   };
   const renderAnalysisLabelHtml = (label, suffix = "") => {
-    const displayLabel = String(label || "").trim() === "Sum of Opp Count" ? "Sum of Sold" : (label || "");
-    const safeLabel = esc(displayLabel || "");
-    const hint = analysisLabelHints[String(displayLabel || "").trim()];
+    const safeLabel = esc(label || "");
+    const hint = analysisLabelHints[String(label || "").trim()];
     if (!hint) {
       return `${safeLabel}${suffix}`;
     }

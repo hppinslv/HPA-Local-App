@@ -899,8 +899,6 @@ function buildAnalysisReportSummary({ inputRowCount, exportRowCount, zeroReason,
 const ANALYSIS_REPORT_LABEL_MAP = {
   "Sum of Opp Count": "Sum of Sold",
   "Opp Count": "Sum of Sold",
-  "Sum of Sold": "Sum of Converted",
-  "Sold": "Sum of Converted",
   "Sum of Total Monthly Premium": "Sum of Total Sold",
   "Average Monthly Premium": "Average Monthly Premium",
   "Sold Rate": "Sold Rate",
@@ -933,30 +931,20 @@ function relabelAnalysisColumns(columns = []) {
 }
 
 function relabelAnalysisSummaryValues(summaryValues = []) {
-  const entries = ensureArray(summaryValues);
-  const byLabel = new Map(
-    entries.map((entry) => [String(entry?.label || entry?.key || "").trim(), entry])
-  );
   const relabeled = [];
   const seenLabels = new Set();
 
-  entries.forEach((entry) => {
+  ensureArray(summaryValues).forEach((entry) => {
     const originalLabel = String(entry?.label || entry?.key || "").trim();
     const renamedLabel = renameAnalysisReportLabel(originalLabel);
     if (!renamedLabel || seenLabels.has(renamedLabel)) {
       return;
     }
 
-    let value = entry?.value;
-    if (originalLabel === "Sum of Sold") {
-      value = byLabel.get("Sum of Converted")?.value ?? value;
-    }
-
     seenLabels.add(renamedLabel);
     relabeled.push({
       ...entry,
       label: renamedLabel,
-      value,
     });
   });
 
@@ -983,13 +971,6 @@ function relabelAnalysisRows(rows = [], columns = []) {
         row?.[originalLabel] ??
         row?.[column?.normalized || ""] ??
         row?.[column?.key || ""];
-      if (originalLabel === "Sum of Sold") {
-        value =
-          row?.["Sum of Converted"] ??
-          row?.["sum of converted"] ??
-          row?.appConvertedCount ??
-          value;
-      }
 
       if (value !== undefined) {
         output[renamedLabel] = value;

@@ -596,7 +596,7 @@ test("detail export keeps sold and converted counts as separate saved fields", (
   ]);
 
   assert.equal(dataset.columns.some((column) => column.key === "Sum of Sold"), true);
-  assert.equal(dataset.columns.some((column) => column.key === "Sum of Opp Count"), true);
+  assert.equal(dataset.columns.some((column) => column.key === "Sum of Converted"), true);
   const row = getAggregateRow(dataset, "088");
   assert.equal(row["Sum of Sold"], "3");
   assert.equal(row["Sum of Converted"], "1");
@@ -625,34 +625,36 @@ test("calculateAnalysisConvertedRate falls back safely when Salesforce rate fiel
   );
 });
 
-test("saved summary rows with converted premium but zero converted count fail loudly", () => {
-  assert.throws(
-    () => summarizeAnalysisExportRows(
-      [
-        {
-          "SCF Grouping": "770",
-          Key: "N",
-          "Sum of Mailed": "18,251",
-          "Sum of Opp Count": "4",
-          "Sum of Sold": "0",
-          "Sum of Converted": "0",
-          "Sum of Total Converted Monthly Premiums": "$325.44",
-          "Converted Rate": "99.9999999999",
-        },
-      ],
-      [
-        { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
-        { key: "Key", label: "Key", normalized: "key", dataType: "string" },
-        { key: "Sum of Mailed", label: "Sum of Mailed", normalized: "sum of mailed", dataType: "double" },
-        { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
-        { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
-        { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
-        { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
-        { key: "Converted Rate", label: "Converted Rate", normalized: "converted rate", dataType: "double" },
-      ]
-    ),
-    /Invalid converted count for SCF 770/i
+test("saved summary rows count converted certificates from total converted premium and not Salesforce converted fields", () => {
+  const dataset = summarizeAnalysisExportRows(
+    [
+      {
+        "SCF Grouping": "770",
+        Key: "N",
+        "Sum of Mailed": "18,251",
+        "Sum of Opp Count": "4",
+        "Sum of Sold": "0",
+        "Sum of Converted": "0",
+        "Sum of Total Converted Monthly Premiums": "$325.44",
+        "Converted Rate": "99.9999999999",
+      },
+    ],
+    [
+      { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
+      { key: "Key", label: "Key", normalized: "key", dataType: "string" },
+      { key: "Sum of Mailed", label: "Sum of Mailed", normalized: "sum of mailed", dataType: "double" },
+      { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
+      { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
+      { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
+      { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
+      { key: "Converted Rate", label: "Converted Rate", normalized: "converted rate", dataType: "double" },
+    ]
   );
+
+  const row = getAggregateRow(dataset, "770");
+  assert.equal(row["Sum of Sold"], "4");
+  assert.equal(row["Sum of Converted"], "1");
+  assert.equal(row["Converted Rate"], "0.0000547915");
 });
 
 test("detail summary rows calculate converted count and premium totals for SCF 770 exact scenario", () => {
@@ -673,34 +675,52 @@ test("detail summary rows calculate converted count and premium totals for SCF 7
 
   const dataset = buildFlatRowsFromDetailExport(rows);
   const row = getAggregateRow(dataset, "770");
+  assert.deepEqual(
+    dataset.columns.map((column) => column.label),
+    [
+      "SCF Grouping",
+      "Key",
+      "Sum of Mailed",
+      "Sum of Sold",
+      "Sum of In Force",
+      "Sum of Converted",
+      "Sum of Total Sold",
+      "Sum of In Force Monthly Premium",
+      "Sum of Total Converted Monthly Premiums",
+      "Sold Rate",
+      "In Force Rate",
+      "Converted Rate",
+    ]
+  );
   assert.equal(row.sumConverted, 2);
   assert.equal(row.sumTotalConvertedMonthlyPremiums, 325.44);
   assert.equal(row["Sum of Converted"], "2");
   assert.equal(row["Sum of Total Converted Monthly Premiums"], "$325.44");
 });
 
-test("summary row throws when converted premium is greater than zero and converted count is zero", () => {
-  assert.throws(
-    () => summarizeAnalysisExportRows(
-      [
-        {
-          "SCF Grouping": "770",
-          Key: "N",
-          "Sum of Mailed": "18,251",
-          "Sum of Opp Count": "4",
-          "Sum of Sold": "4",
-          "Sum of Converted": "0",
-          "Sum of Total Converted Monthly Premiums": "$325.44",
-        },
-      ],
-      [
-        { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
-        { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
-        { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
-        { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
-        { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
-      ]
-    ),
-    /Invalid converted count for SCF 770/i
+test("summary rows keep converted column visible and backfill zero converted count from converted premium", () => {
+  const dataset = summarizeAnalysisExportRows(
+    [
+      {
+        "SCF Grouping": "770",
+        Key: "N",
+        "Sum of Mailed": "18,251",
+        "Sum of Opp Count": "4",
+        "Sum of Sold": "4",
+        "Sum of Converted": "0",
+        "Sum of Total Converted Monthly Premiums": "$325.44",
+      },
+    ],
+    [
+      { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
+      { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
+      { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
+      { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
+      { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
+    ]
   );
+
+  const row = getAggregateRow(dataset, "770");
+  assert.equal(dataset.columns.some((column) => column.key === "Sum of Converted"), true);
+  assert.equal(row["Sum of Converted"], "1");
 });
