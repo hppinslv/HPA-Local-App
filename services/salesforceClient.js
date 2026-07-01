@@ -3007,18 +3007,21 @@ function mergeAnalysisPremiumMetrics(baseRow = null, candidateRow = null) {
     return null;
   }
 
-  // Preserve the grouped-summary counts/rates as the source of truth when we
-  // merge in detail-derived rows. The detail export is mainly used to recover
-  // premium fields that the grouped payload sometimes drops.
+  // Detail-derived summary rows are the better source for analysis counts and
+  // rates. Grouped report rows are still useful as a fallback for missing
+  // values, especially premium fields that detail rows may omit.
   const mergedRow = { ...(candidateRow || {}), ...(baseRow || {}) };
   applyAnalysisMetricAliases(mergedRow);
+  const detailMetricFields = [
+    ["Opp Count", "Sum of Opp Count", "Applications Received", "Application Count"],
+    ["In Force", "Sum of In Force"],
+    ["Converted", "Sum of Converted"],
+    ["Sold", "Sum of Sold"],
+    ["Sold Rate"],
+    ["In Force Rate"],
+    ["Converted Rate"],
+  ];
   const premiumFields = [
-    {
-      labels: ["In Force", "Sum of In Force"],
-      canonical: "Sum of In Force",
-      normalized: "sum of in force",
-      kind: "number",
-    },
     {
       labels: ["Total Monthly Premium", "Sum of Total Monthly Premium"],
       canonical: "Sum of Total Monthly Premium",
@@ -3038,6 +3041,19 @@ function mergeAnalysisPremiumMetrics(baseRow = null, candidateRow = null) {
       kind: "currency",
     },
   ];
+
+  detailMetricFields.forEach((labels) => {
+    if (hasAnalysisMetricValue(candidateRow || {}, labels)) {
+      const candidateValue = getAnalysisMetricValue(candidateRow || {}, labels);
+      setAnalysisMetricAliases(mergedRow, labels, candidateValue);
+      return;
+    }
+
+    if (hasAnalysisMetricValue(baseRow || {}, labels)) {
+      const baseValue = getAnalysisMetricValue(baseRow || {}, labels);
+      setAnalysisMetricAliases(mergedRow, labels, baseValue);
+    }
+  });
 
   premiumFields.forEach((field) => {
     const baseValue = field.kind === "currency"
@@ -3799,9 +3815,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     payloadDetailSummary.rows,
     normalizedDetailSummary.rows
   );
-  const preferredSummaryValues = Array.isArray(flattened.summaryValues) && flattened.summaryValues.length
-    ? flattened.summaryValues
-    : buildAnalysisSummaryValuesFromRows(finalizedRows);
+  const preferredSummaryValues = buildAnalysisSummaryValuesFromRows(finalizedRows);
   const finalizedFlattened = {
     ...mergedFlattened,
     rows: finalizedRows,
@@ -4573,6 +4587,7 @@ module.exports = {
   resolveAnalysisConvertedCount,
   resolveAnalysisDateRange,
   resolveAnalysisSoldOpportunityCount,
+  mergeAnalysisSummaryDatasets,
   runSoqlQuery,
   salesforceRequest,
   shouldFallbackToSoqlForReportPayload,

@@ -13,6 +13,7 @@ const {
   resolveConvertedValue,
   resolveAnalysisConvertedCount,
   resolveAnalysisSoldOpportunityCount,
+  mergeAnalysisSummaryDatasets,
   summarizeAnalysisExportRows,
   shouldFallbackToSoqlForReportPayload,
 } = require("../services/salesforceClient");
@@ -501,6 +502,66 @@ test("detail-derived sum of converted backfills grouped rows that still show zer
   );
 
   assert.equal(row["Sum of Converted"], "1");
+});
+
+test("detail summary rows override grouped converted counts and summary totals", () => {
+  const merged = mergeAnalysisSummaryDatasets(
+    {
+      columns: [
+        { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
+        { key: "Key", label: "Key", normalized: "key", dataType: "string" },
+        { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
+        { key: "Sum of In Force", label: "Sum of In Force", normalized: "sum of in force", dataType: "double" },
+        { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
+      ],
+      rows: [
+        {
+          "SCF Grouping": "088",
+          Key: "N",
+          "Sum of Opp Count": "3",
+          "Sum of In Force": "0",
+          "Sum of Converted": "0",
+          "Converted Rate": "0.0000000000",
+        },
+      ],
+      summaryValues: [
+        { key: "Sum of Opp Count", label: "Sum of Opp Count", value: "3" },
+        { key: "Sum of Converted", label: "Sum of Converted", value: "0" },
+      ],
+    },
+    {
+      columns: [
+        { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
+        { key: "Key", label: "Key", normalized: "key", dataType: "string" },
+        { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
+        { key: "Sum of In Force", label: "Sum of In Force", normalized: "sum of in force", dataType: "double" },
+        { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
+      ],
+      rows: [
+        {
+          "SCF Grouping": "088",
+          Key: "N",
+          "Sum of Opp Count": "3",
+          "Sum of In Force": "0",
+          "Sum of Converted": "3",
+          "Converted Rate": "3.0000000000",
+          "Sum of Total Converted Monthly Premiums": "$229.91",
+        },
+      ],
+      summaryValues: [
+        { key: "Sum of Opp Count", label: "Sum of Opp Count", value: "3" },
+        { key: "Sum of Converted", label: "Sum of Converted", value: "3" },
+      ],
+    }
+  );
+
+  const row = getAggregateRow(merged, "088");
+  assert.equal(row["Sum of Opp Count"], "3");
+  assert.equal(row["Sum of Converted"], "3");
+  assert.equal(
+    merged.summaryValues.find((entry) => entry.key === "Sum of Converted")?.value,
+    "3"
+  );
 });
 
 test("calculateAnalysisConvertedRate falls back safely when Salesforce rate fields are missing", () => {
