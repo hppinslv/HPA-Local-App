@@ -1,5 +1,25 @@
 [
   {
+    "id": "ach_return_1782925782477_glrkk5",
+    "uploaded_at": "2026-07-01T17:09:42.477Z",
+    "updated_at": "2026-07-01T17:20:19.195Z",
+    "uploaded_by": "Local User",
+    "status": "draft",
+    "row_count": 8,
+    "ready_count": 8,
+    "error_count": 0,
+    "exported_at": "",
+    "export_filename": "",
+    "imported_row_count": 8,
+    "salesforce_failed_row_count": 0,
+    "attempted_import_count": 8,
+    "successful_import_count": 8,
+    "import_confirmed_at": "2026-07-01T17:20:19.192Z",
+    "import_completed_at": "2026-07-01T17:20:19.192Z",
+    "import_confirmed_by": "Local User",
+    "final_status": "imported"
+  },
+  {
     "id": "ach_return_1782756876820_l5s1of",
     "uploaded_at": "2026-06-29T18:14:36.820Z",
     "updated_at": "2026-06-29T18:59:19.150Z",

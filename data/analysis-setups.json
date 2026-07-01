@@ -1,16 +1,16 @@
 [
   {
-    "id": "setup_1782850119756_xk6zsa",
-    "runName": "June 2026",
+    "id": "setup_1782936612675_l8v9vl",
+    "runName": "July 2026",
     "status": "draft",
-    "createdAt": "2026-06-30T20:08:39.755Z",
-    "updatedAt": "2026-07-01T14:45:27.335Z",
+    "createdAt": "2026-07-01T20:10:12.669Z",
+    "updatedAt": "2026-07-01T20:15:28.557Z",
     "completedAt": null,
     "archived": false,
     "reportPulls": [
       {
-        "id": "pull_1782912404908_5mz8lf",
-        "savedReportId": "analysis_report_1782914192495_hnujn4",
+        "id": "pull_1782936593000_rqc0qc",
+        "savedReportId": "analysis_report_1782936662736_ktl133",
         "reportName": "New Home - Jan 2013 - Dec 2025 (07/01/2026)",
         "status": "complete",
         "resultCount": 796,
@@ -32,7 +32,7 @@
     ],
     "comparisonRequests": [
       {
-        "id": "comparison_1782914193536_iunzkv",
+        "id": "comparison_1782936663847_xusk0i",
         "name": "Comparison 1",
         "comparisonName": "Comparison 1",
         "keyCodeGroup": "NHCL",
@@ -40,8 +40,187 @@
         "selectedReportIds": [],
         "reportAId": "",
         "reportBId": "",
-        "createdAt": "2026-07-01T13:56:33.536Z",
-        "updatedAt": "2026-07-01T14:45:26.426Z",
+        "createdAt": "2026-07-01T20:11:03.847Z",
+        "updatedAt": "2026-07-01T20:15:27.286Z",
+        "matchField": "SCF Grouping",
+        "metricColumns": [
+          "Sum of Mailed",
+          "Sum of Sold",
+          "Sum of In Force",
+          "Sum of Converted",
+          "Sold Rate"
+        ]
+      }
+    ],
+    "comparisonSetups": [
+      {
+        "id": "comparison_1782936663847_xusk0i",
+        "analysisSetupId": "setup_1782936612675_l8v9vl",
+        "comparisonName": "Comparison 1",
+        "selectedReportIds": [],
+        "primaryReportId": "",
+        "keyCodeGroup": "NHCL",
+        "selectedScf": "",
+        "reviewStatus": "",
+        "reviewProgress": null,
+        "createdAt": "2026-07-01T20:11:03.847Z",
+        "updatedAt": "2026-07-01T20:15:27.286Z"
+      }
+    ],
+    "reviewState": {
+      "selectedComparisonId": "",
+      "lastEditedComparisonId": "",
+      "reviewPrimaryReportIds": {},
+      "reviewSelectedScfs": {},
+      "reviewCompletedByName": "",
+      "reviewCompletedOnDate": "2026-07-01",
+      "reviewExcludedScfs": {},
+      "reviewBaselineLists": [],
+      "reviewWorkingLists": [],
+      "reviewZeroRateRemovals": [],
+      "reviewZeroRemovalDiagnostics": null
+    },
+    "notes": "",
+    "results": null,
+    "referenceListsSnapshot": null,
+    "referenceListChanges": [],
+    "referenceListChangesAppliedAt": null,
+    "completionUndoneAt": null,
+    "completionUndoneBy": ""
+  },
+  {
+    "id": "setup_1782935115417_s4wg7v",
+    "runName": "July 2026",
+    "status": "draft",
+    "createdAt": "2026-07-01T19:45:15.416Z",
+    "updatedAt": "2026-07-01T20:10:12.669Z",
+    "completedAt": null,
+    "archived": true,
+    "reportPulls": [
+      {
+        "id": "pull_1782935305192_hdjya6",
+        "savedReportId": "analysis_report_1782935368825_6ch0bt",
+        "reportName": "New Home - Jan 2013 - Dec 2025 (07/01/2026)",
+        "status": "complete",
+        "resultCount": 796,
+        "rawRowCount": 796,
+        "analysisLabel": "New Home - Jan 2013 - Dec 2025 (07/01/2026)",
+        "reportId": "00OQm000003PIxhMAG",
+        "keyCodes": [
+          "N"
+        ],
+        "years": [],
+        "dateRange": {
+          "startDate": "2013-01-01",
+          "endDate": "2025-12-31"
+        },
+        "scf": "",
+        "clientType": "NHCL",
+        "notes": ""
+      }
+    ],
+    "comparisonRequests": [
+      {
+        "id": "comparison_1782935383888_qe14ph",
+        "name": "Comparison 1",
+        "comparisonName": "Comparison 1",
+        "keyCodeGroup": "NHCL",
+        "reportIds": [],
+        "selectedReportIds": [],
+        "reportAId": "",
+        "reportBId": "",
+        "createdAt": "2026-07-01T19:49:43.888Z",
+        "updatedAt": "2026-07-01T20:01:33.155Z",
+        "matchField": "SCF Grouping",
+        "metricColumns": [
+          "Sum of Mailed",
+          "Sum of Sold",
+          "Sum of In Force",
+          "Sum of Converted",
+          "Sold Rate"
+        ]
+      }
+    ],
+    "comparisonSetups": [
+      {
+        "id": "comparison_1782935383888_qe14ph",
+        "analysisSetupId": "setup_1782935115417_s4wg7v",
+        "comparisonName": "Comparison 1",
+        "selectedReportIds": [],
+        "primaryReportId": "",
+        "keyCodeGroup": "NHCL",
+        "selectedScf": "",
+        "reviewStatus": "",
+        "reviewProgress": null,
+        "createdAt": "2026-07-01T19:49:43.888Z",
+        "updatedAt": "2026-07-01T20:01:33.155Z"
+      }
+    ],
+    "reviewState": {
+      "selectedComparisonId": "",
+      "lastEditedComparisonId": "",
+      "reviewPrimaryReportIds": {},
+      "reviewSelectedScfs": {},
+      "reviewCompletedByName": "",
+      "reviewCompletedOnDate": "2026-07-01",
+      "reviewExcludedScfs": {},
+      "reviewBaselineLists": [],
+      "reviewWorkingLists": [],
+      "reviewZeroRateRemovals": [],
+      "reviewZeroRemovalDiagnostics": null
+    },
+    "notes": "",
+    "results": null,
+    "referenceListsSnapshot": null,
+    "referenceListChanges": [],
+    "referenceListChangesAppliedAt": null,
+    "completionUndoneAt": null,
+    "completionUndoneBy": ""
+  },
+  {
+    "id": "setup_1782934172563_5vh3d2",
+    "runName": "July 2026",
+    "status": "draft",
+    "createdAt": "2026-07-01T19:29:32.560Z",
+    "updatedAt": "2026-07-01T19:45:15.416Z",
+    "completedAt": null,
+    "archived": true,
+    "reportPulls": [
+      {
+        "id": "pull_1782934146583_ug9wi4",
+        "savedReportId": "",
+        "reportName": "",
+        "status": "",
+        "resultCount": 0,
+        "rawRowCount": 0,
+        "analysisLabel": "New Home + Refinance - Jan 2025 - Jun 2026 (07/01/2026)",
+        "reportId": "00OQm000003PIxhMAG",
+        "keyCodes": [
+          "N",
+          "RFC"
+        ],
+        "years": [],
+        "dateRange": {
+          "startDate": "2025-01-01",
+          "endDate": "2026-06-30"
+        },
+        "scf": "",
+        "clientType": "",
+        "notes": ""
+      }
+    ],
+    "comparisonRequests": [
+      {
+        "id": "comparison_1782934128198_9au8ab",
+        "name": "Comparison 1",
+        "comparisonName": "Comparison 1",
+        "keyCodeGroup": "NHCL",
+        "reportIds": [],
+        "selectedReportIds": [],
+        "reportAId": "",
+        "reportBId": "",
+        "createdAt": "2026-07-01T19:28:48.198Z",
+        "updatedAt": "2026-07-01T19:29:31.355Z",
         "matchField": "SCF Grouping",
         "metricColumns": [
           "Sum of Mailed",
@@ -54,7 +233,96 @@
     ],
     "comparisonSetups": [
       {
-        "id": "comparison_1782914193536_iunzkv",
+        "id": "comparison_1782934128198_9au8ab",
+        "analysisSetupId": "setup_1782934172563_5vh3d2",
+        "comparisonName": "Comparison 1",
+        "selectedReportIds": [],
+        "primaryReportId": "",
+        "keyCodeGroup": "NHCL",
+        "selectedScf": "",
+        "reviewStatus": "",
+        "reviewProgress": null,
+        "createdAt": "2026-07-01T19:28:48.198Z",
+        "updatedAt": "2026-07-01T19:29:31.355Z"
+      }
+    ],
+    "reviewState": {
+      "selectedComparisonId": "",
+      "lastEditedComparisonId": "",
+      "reviewPrimaryReportIds": {},
+      "reviewSelectedScfs": {},
+      "reviewCompletedByName": "",
+      "reviewCompletedOnDate": "2026-07-01",
+      "reviewExcludedScfs": {},
+      "reviewBaselineLists": [],
+      "reviewWorkingLists": [],
+      "reviewZeroRateRemovals": [],
+      "reviewZeroRemovalDiagnostics": null
+    },
+    "notes": "",
+    "results": null,
+    "referenceListsSnapshot": null,
+    "referenceListChanges": [],
+    "referenceListChangesAppliedAt": null,
+    "completionUndoneAt": null,
+    "completionUndoneBy": ""
+  },
+  {
+    "id": "setup_1782850119756_xk6zsa",
+    "runName": "June 2026",
+    "status": "draft",
+    "createdAt": "2026-06-30T20:08:39.755Z",
+    "updatedAt": "2026-07-01T19:29:32.560Z",
+    "completedAt": null,
+    "archived": true,
+    "reportPulls": [
+      {
+        "id": "pull_1782912404908_5mz8lf",
+        "savedReportId": "analysis_report_1782932856591_50czr3",
+        "reportName": "New Home - Jan 2013 - Dec 2025 (07/01/2026)",
+        "status": "complete",
+        "resultCount": 796,
+        "rawRowCount": 796,
+        "analysisLabel": "New Home - Jan 2013 - Dec 2025 (07/01/2026)",
+        "reportId": "00OQm000003PIxhMAG",
+        "keyCodes": [
+          "N"
+        ],
+        "years": [],
+        "dateRange": {
+          "startDate": "2013-01-01",
+          "endDate": "2025-12-31"
+        },
+        "scf": "",
+        "clientType": "NHCL",
+        "notes": ""
+      }
+    ],
+    "comparisonRequests": [
+      {
+        "id": "comparison_1782932857432_p9wjtp",
+        "name": "Comparison 1",
+        "comparisonName": "Comparison 1",
+        "keyCodeGroup": "NHCL",
+        "reportIds": [],
+        "selectedReportIds": [],
+        "reportAId": "",
+        "reportBId": "",
+        "createdAt": "2026-07-01T19:07:37.432Z",
+        "updatedAt": "2026-07-01T19:17:08.960Z",
+        "matchField": "SCF Grouping",
+        "metricColumns": [
+          "Sum of Mailed",
+          "Sum of Opp Count",
+          "Sum of In Force",
+          "Sum of Converted",
+          "Sold Rate"
+        ]
+      }
+    ],
+    "comparisonSetups": [
+      {
+        "id": "comparison_1782932857432_p9wjtp",
         "analysisSetupId": "setup_1782850119756_xk6zsa",
         "comparisonName": "Comparison 1",
         "selectedReportIds": [],
@@ -63,8 +331,8 @@
         "selectedScf": "",
         "reviewStatus": "",
         "reviewProgress": null,
-        "createdAt": "2026-07-01T13:56:33.536Z",
-        "updatedAt": "2026-07-01T14:45:26.426Z"
+        "createdAt": "2026-07-01T19:07:37.432Z",
+        "updatedAt": "2026-07-01T19:17:08.960Z"
       }
     ],
     "reviewState": {
