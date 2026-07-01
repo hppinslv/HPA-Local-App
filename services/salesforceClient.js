@@ -3003,17 +3003,102 @@ function getAnalysisSummaryRowKey(row = {}) {
   return `${scf}::${keyCode}`;
 }
 
+function getConvertedPremiumForConvertedCount(detailRow = {}) {
+  if (!detailRow || typeof detailRow !== "object") {
+    return 0;
+  }
+
+  const aliasValue =
+    getAnalysisMetricValue(detailRow, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ??
+    getLikelyColumnValue(detailRow, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums);
+
+  const aliasNumber = parseMoneyNumber(aliasValue ?? 0);
+  if (aliasNumber > 0) {
+    return aliasNumber;
+  }
+
+  const exactCandidates = [
+    "Payments Minus Credits",
+    "payments minus credits",
+    "Payments_Minus_Credits__c",
+    "payments_minus_credits__c",
+    "Total Converted Monthly Premiums",
+    "total converted monthly premiums",
+    "Sum of Total Converted Monthly Premiums",
+    "sum of total converted monthly premiums",
+    "Sum of Total Converted Monthly Premium",
+    "sum of total converted monthly premium",
+    "Converted Monthly Premium",
+    "converted monthly premium",
+    "HPATotal_Converted_Monthly_Premiums__c",
+    "hpatotal converted monthly premiums c",
+  ];
+
+  for (const fieldName of exactCandidates) {
+    if (!Object.prototype.hasOwnProperty.call(detailRow, fieldName)) {
+      continue;
+    }
+
+    const value = parseMoneyNumber(detailRow[fieldName]);
+    if (value > 0) {
+      return value;
+    }
+  }
+
+  for (const [key, rawValue] of Object.entries(detailRow)) {
+    if (String(key).endsWith("__label") || String(key).endsWith(" label")) {
+      continue;
+    }
+
+    const normalizedKey = normalizeLabel(key);
+
+    const looksLikeConvertedPremium =
+      normalizedKey === "payments minus credits" ||
+      normalizedKey === "payments minus credits c" ||
+      normalizedKey === "payment minus credits" ||
+      normalizedKey === "total converted monthly premiums" ||
+      normalizedKey === "sum of total converted monthly premiums" ||
+      normalizedKey === "total converted monthly premium" ||
+      normalizedKey === "sum of total converted monthly premium" ||
+      normalizedKey === "converted monthly premium" ||
+      normalizedKey === "hpatotal converted monthly premiums c" ||
+      (
+        normalizedKey.includes("converted") &&
+        normalizedKey.includes("premium")
+      ) ||
+      (
+        normalizedKey.includes("payments") &&
+        normalizedKey.includes("credits")
+      );
+
+    if (!looksLikeConvertedPremium) {
+      continue;
+    }
+
+    const value = parseMoneyNumber(rawValue);
+    if (value > 0) {
+      return value;
+    }
+  }
+
+  return 0;
+}
+
 function buildConvertedCountByScfKey(detailRows = []) {
   const convertedCountByScfKey = new Map();
+  const sourceRows = Array.isArray(detailRows) ? detailRows : [];
+  const debugPositiveRows = [];
 
-  (Array.isArray(detailRows) ? detailRows : []).forEach((detailRow) => {
+  sourceRows.forEach((detailRow, index) => {
     const scf = normalizeScf(
       detailRow["SCF Grouping"] ??
       detailRow["scf grouping"] ??
       detailRow.scfGrouping ??
       detailRow.scf ??
+      detailRow["SCF"] ??
       ""
     );
+
     if (!scf) {
       return;
     }
@@ -3021,22 +3106,52 @@ function buildConvertedCountByScfKey(detailRows = []) {
     const keyCode = String(
       detailRow["Key"] ??
       detailRow.key ??
+      detailRow["Report Key"] ??
+      detailRow["report key"] ??
       ""
     ).trim().toUpperCase();
+
     const mapKey = `${scf}::${keyCode}`;
-    const convertedPremium = parseMoneyNumber(
-      detailRow["Total Converted Monthly Premiums"] ??
-      detailRow["Sum of Total Converted Monthly Premiums"] ??
-      detailRow.totalConvertedMonthlyPremiums ??
-      detailRow.sumTotalConvertedMonthlyPremiums ??
-      0
-    );
+    const convertedPremium = getConvertedPremiumForConvertedCount(detailRow);
     const convertedCount = convertedPremium > 0 ? 1 : 0;
 
     convertedCountByScfKey.set(
       mapKey,
       (convertedCountByScfKey.get(mapKey) || 0) + convertedCount
     );
+
+    if (convertedCount > 0 && debugPositiveRows.length < 20) {
+      debugPositiveRows.push({
+        index,
+        scf,
+        keyCode,
+        convertedPremium,
+        rawPaymentsMinusCredits:
+          detailRow["Payments Minus Credits"] ??
+          detailRow["payments minus credits"] ??
+          detailRow["Payments_Minus_Credits__c"] ??
+          detailRow["payments_minus_credits__c"] ??
+          "",
+        rawTotalConvertedMonthlyPremiums:
+          detailRow["Total Converted Monthly Premiums"] ??
+          detailRow["total converted monthly premiums"] ??
+          detailRow["Sum of Total Converted Monthly Premiums"] ??
+          detailRow["sum of total converted monthly premiums"] ??
+          detailRow["HPATotal_Converted_Monthly_Premiums__c"] ??
+          "",
+        availableKeys: Object.keys(detailRow || {}),
+      });
+    }
+  });
+
+  console.log("[Converted Count Source Check]", {
+    detailRowsChecked: sourceRows.length,
+    positiveConvertedPremiumRowsSampleCount: debugPositiveRows.length,
+    calculatedConvertedTotal: Array.from(convertedCountByScfKey.values()).reduce(
+      (sum, value) => sum + Number(value || 0),
+      0
+    ),
+    samplePositiveRows: debugPositiveRows,
   });
 
   return convertedCountByScfKey;
@@ -3054,13 +3169,14 @@ function overrideSummaryRowsConvertedCount(summaryRows = [], detailRows = []) {
     nextRow["SUM OF CONVERTED"] = calculatedConverted;
     nextRow["sum of converted"] = calculatedConverted;
     nextRow.sumConverted = calculatedConverted;
+
     return nextRow;
   });
 }
 
 function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = []) {
   const convertedTotal = Array.from(buildConvertedCountByScfKey(detailRows).values())
-    .reduce((sum, value) => sum + value, 0);
+    .reduce((sum, value) => sum + Number(value || 0), 0);
 
   return (Array.isArray(summaryValues) ? summaryValues : []).map((entry) => {
     const key = String(entry?.key || "").trim();
