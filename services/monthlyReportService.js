@@ -391,6 +391,9 @@ function toExcelDateNumber(isoDate) {
 function normalizeSourceRow(row, signMultiplier = 1) {
   const grossPremium = roundCurrency((row.grossPremium || 0) * signMultiplier);
   const ahaDues = roundCurrency((row.ahaDues || 0) * signMultiplier);
+  const amalgamatedPremium = roundCurrency(
+    grossPremium * FIXED_RULES.amalgamatedPremiumRate
+  );
   const totalSubmitted = roundCurrency(
     row.totalSubmitted != null
       ? row.totalSubmitted * signMultiplier
@@ -404,10 +407,8 @@ function normalizeSourceRow(row, signMultiplier = 1) {
   return {
     date: row.date,
     grossPremium,
-    amalgamatedPremium: roundCurrency(
-      grossPremium * FIXED_RULES.amalgamatedPremiumRate
-    ),
-    hpaCommission: roundCurrency(grossPremium * FIXED_RULES.hpaCommissionRate),
+    amalgamatedPremium,
+    hpaCommission: roundCurrency(grossPremium - amalgamatedPremium),
     ahaDues,
     totalSubmitted,
     numberOfMonths,
@@ -1161,24 +1162,51 @@ function createFinalSummaryLetterArtifacts(runId, report) {
   const printableHtml = buildFinalSummaryLetterHtml(letterData);
 
   buildFinalSummaryLetterDocx(letterData, path.join(runDir, docxFileName));
-  generatePdfFromHtml(printableHtml, path.join(runDir, pdfFileName));
   fs.writeFileSync(path.join(runDir, htmlFileName), printableHtml, "utf8");
   fs.writeFileSync(
     path.join(runDir, jsonFileName),
     `${JSON.stringify(letterData, null, 2)}\n`,
     "utf8"
   );
+  const printableArtifact = createPrintableArtifactFromHtml({
+    html: printableHtml,
+    outputDir: runDir,
+    pdfFileName,
+    htmlFileName,
+  });
 
   return {
     letterData,
     artifacts: [
       {
-        kind: "print",
-        label: "Download PDF",
-        fileName: pdfFileName,
-        contentType: "application/pdf",
+        kind: "summary-letter",
+        label: "Download Final Summary Letter",
+        fileName: docxFileName,
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      },
+      {
+        kind: "summary-letter-preview",
+        label:
+          printableArtifact.artifact.contentType === "application/pdf"
+            ? "Open Final Summary Letter Preview"
+            : "Open Final Summary Letter HTML Preview",
+        fileName: printableArtifact.artifact.fileName,
+        contentType: printableArtifact.artifact.contentType,
+      },
+      {
+        kind: "summary-letter-json",
+        label: "Download Final Summary Letter JSON",
+        fileName: jsonFileName,
+        contentType: "application/json; charset=utf-8",
+      },
+      {
+        kind: printableArtifact.artifact.kind,
+        label: printableArtifact.artifact.label,
+        fileName: printableArtifact.artifact.fileName,
+        contentType: printableArtifact.artifact.contentType,
       },
     ],
+    printArtifactWarning: printableArtifact.warning,
   };
 }
 
@@ -1289,20 +1317,20 @@ function buildFinalReportWorksheetXml(templateXml, report) {
     `<row r="${currentRow}" spans="1:20" s="4" customFormat="1" ht="30" x14ac:dyDescent="0.25">` +
       buildInlineStringCell("A1", 7, "Transaction Type") +
       buildInlineStringCell("B1", 8, "Date") +
-      buildBlankCell("C1", 9) +
-      buildInlineStringCell("D1", 3, "Gross Premium") +
-      buildBlankCell("E1", 9) +
-      buildInlineStringCell("F1", 3, "Amalgamated Premium") +
-      buildBlankCell("G1", 9) +
-      buildInlineStringCell("H1", 3, "HPA Commision") +
-      buildBlankCell("I1", 9) +
-      buildInlineStringCell("J1", 3, "AHA Dues") +
-      buildBlankCell("K1", 9) +
-      buildInlineStringCell("L1", 3, "Total Submitted") +
+      buildInlineStringCell("C1", 3, "Gross Premium") +
+      buildBlankCell("D1", 9) +
+      buildInlineStringCell("E1", 3, "Amalgamated Premium") +
+      buildBlankCell("F1", 9) +
+      buildInlineStringCell("G1", 3, "HPA Commision") +
+      buildBlankCell("H1", 9) +
+      buildInlineStringCell("I1", 3, "AHA Dues") +
+      buildBlankCell("J1", 9) +
+      buildInlineStringCell("K1", 3, "Total Submitted") +
+      buildBlankCell("L1", 9) +
       buildInlineStringCell("M1", 30, "Number of Months") +
       buildInlineStringCell("N1", 30, "Number of Certificates") +
-      buildBlankCell("O1", 9) +
-      buildInlineStringCell("P1", 9, "BatchID") +
+      buildInlineStringCell("O1", 9, "BatchID") +
+      buildBlankCell("P1", 9) +
       buildBlankCell("Q1", 9) +
       buildBlankCell("R1", 9) +
       buildBlankCell("S1", 9) +
@@ -1314,20 +1342,20 @@ function buildFinalReportWorksheetXml(templateXml, report) {
     `<row r="${currentRow}" spans="1:20" s="10" customFormat="1" x14ac:dyDescent="0.25">` +
       buildInlineStringCell(`A${currentRow}`, 14, "Grand Totals") +
       buildBlankCell(`B${currentRow}`, 15) +
-      buildBlankCell(`C${currentRow}`, 15) +
-      buildNumberCell(`D${currentRow}`, 38, report.totals.grossPremium) +
-      buildBlankCell(`E${currentRow}`, 15) +
-      buildNumberCell(`F${currentRow}`, 38, report.totals.amalgamatedPremium) +
-      buildBlankCell(`G${currentRow}`, 15) +
-      buildNumberCell(`H${currentRow}`, 38, report.totals.hpaCommission) +
-      buildBlankCell(`I${currentRow}`, 15) +
-      buildNumberCell(`J${currentRow}`, 38, report.totals.ahaDues) +
-      buildBlankCell(`K${currentRow}`, 15) +
-      buildNumberCell(`L${currentRow}`, 38, report.totals.totalSubmitted) +
+      buildNumberCell(`C${currentRow}`, 38, report.totals.grossPremium) +
+      buildBlankCell(`D${currentRow}`, 15) +
+      buildNumberCell(`E${currentRow}`, 38, report.totals.amalgamatedPremium) +
+      buildBlankCell(`F${currentRow}`, 15) +
+      buildNumberCell(`G${currentRow}`, 38, report.totals.hpaCommission) +
+      buildBlankCell(`H${currentRow}`, 15) +
+      buildNumberCell(`I${currentRow}`, 38, report.totals.ahaDues) +
+      buildBlankCell(`J${currentRow}`, 15) +
+      buildNumberCell(`K${currentRow}`, 38, report.totals.totalSubmitted) +
+      buildBlankCell(`L${currentRow}`, 15) +
       buildNumberCell(`M${currentRow}`, 40, report.totals.numberOfMonths) +
       buildNumberCell(`N${currentRow}`, 41, report.totals.numberOfCertificates) +
-      buildBlankCell(`O${currentRow}`, 15) +
-      buildNumberCell(`P${currentRow}`, 41, report.totals.numberOfCertificates) +
+      buildNumberCell(`O${currentRow}`, 41, report.totals.numberOfCertificates) +
+      buildBlankCell(`P${currentRow}`, 15) +
     `</row>`
   );
 
@@ -1335,16 +1363,16 @@ function buildFinalReportWorksheetXml(templateXml, report) {
     `<row r="${currentRow}" spans="1:20" s="4" customFormat="1" x14ac:dyDescent="0.25">` +
       buildInlineStringCell(`A${currentRow}`, 19, "FTJ Fee") +
       buildBlankCell(`B${currentRow}`, 21) +
-      buildBlankCell(`C${currentRow}`, 22) +
-      buildBlankCell(`D${currentRow}`, 10) +
-      buildBlankCell(`E${currentRow}`, 22) +
-      buildBlankCell(`F${currentRow}`, 10) +
-      buildBlankCell(`G${currentRow}`, 22) +
-      buildNumberCell(`H${currentRow}`, 10, -report.totals.ftjFee) +
-      buildBlankCell(`I${currentRow}`, 22) +
-      buildBlankCell(`J${currentRow}`, 10) +
-      buildBlankCell(`K${currentRow}`, 22) +
-      buildBlankCell(`L${currentRow}`, 10) +
+      buildBlankCell(`C${currentRow}`, 10) +
+      buildBlankCell(`D${currentRow}`, 22) +
+      buildBlankCell(`E${currentRow}`, 10) +
+      buildBlankCell(`F${currentRow}`, 22) +
+      buildNumberCell(`G${currentRow}`, 10, -report.totals.ftjFee) +
+      buildBlankCell(`H${currentRow}`, 22) +
+      buildBlankCell(`I${currentRow}`, 10) +
+      buildBlankCell(`J${currentRow}`, 22) +
+      buildBlankCell(`K${currentRow}`, 10) +
+      buildBlankCell(`L${currentRow}`, 22) +
       buildBlankCell(`M${currentRow}`, 31) +
       buildBlankCell(`N${currentRow}`, 31) +
     `</row>`
@@ -1354,16 +1382,16 @@ function buildFinalReportWorksheetXml(templateXml, report) {
     `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
       buildBlankCell(`A${currentRow}`, 19) +
       buildBlankCell(`B${currentRow}`, 23) +
-      buildBlankCell(`C${currentRow}`, 24) +
-      buildBlankCell(`D${currentRow}`, 39) +
-      buildBlankCell(`E${currentRow}`, 24) +
-      buildBlankCell(`F${currentRow}`, 39) +
-      buildBlankCell(`G${currentRow}`, 24) +
-      buildNumberCell(`H${currentRow}`, 39, report.totals.netHpaCommission) +
-      buildBlankCell(`I${currentRow}`, 24) +
-      buildBlankCell(`J${currentRow}`, 39) +
-      buildBlankCell(`K${currentRow}`, 24) +
-      buildBlankCell(`L${currentRow}`, 39) +
+      buildBlankCell(`C${currentRow}`, 39) +
+      buildBlankCell(`D${currentRow}`, 24) +
+      buildBlankCell(`E${currentRow}`, 39) +
+      buildBlankCell(`F${currentRow}`, 24) +
+      buildNumberCell(`G${currentRow}`, 39, report.totals.netHpaCommission) +
+      buildBlankCell(`H${currentRow}`, 24) +
+      buildBlankCell(`I${currentRow}`, 39) +
+      buildBlankCell(`J${currentRow}`, 24) +
+      buildBlankCell(`K${currentRow}`, 39) +
+      buildBlankCell(`L${currentRow}`, 24) +
       buildBlankCell(`M${currentRow}`, 32) +
       buildBlankCell(`N${currentRow}`, 32) +
     `</row>`
@@ -1373,13 +1401,18 @@ function buildFinalReportWorksheetXml(templateXml, report) {
     `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
       buildBlankCell(`A${currentRow}`, 12) +
       buildBlankCell(`B${currentRow}`, 23) +
-      buildBlankCell(`C${currentRow}`, 24) +
-      buildBlankCell(`D${currentRow}`, 39) +
-      buildBlankCell(`E${currentRow}`, 10) +
-      buildBlankCell(`F${currentRow}`, 39) +
+      buildBlankCell(`C${currentRow}`, 39) +
+      buildBlankCell(`D${currentRow}`, 24) +
+      buildBlankCell(`E${currentRow}`, 39) +
+      buildBlankCell(`F${currentRow}`, 24) +
       buildBlankCell(`G${currentRow}`, 39) +
-      buildBlankCell(`H${currentRow}`, 32) +
-      buildBlankCell(`I${currentRow}`, 32) +
+      buildBlankCell(`H${currentRow}`, 24) +
+      buildBlankCell(`I${currentRow}`, 39) +
+      buildBlankCell(`J${currentRow}`, 24) +
+      buildBlankCell(`K${currentRow}`, 39) +
+      buildBlankCell(`L${currentRow}`, 24) +
+      buildBlankCell(`M${currentRow}`, 32) +
+      buildBlankCell(`N${currentRow}`, 32) +
     `</row>`
   );
 
@@ -1388,16 +1421,16 @@ function buildFinalReportWorksheetXml(templateXml, report) {
       `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
         buildInlineStringCell(`A${currentRow}`, 5, section.finalLabel) +
         buildBlankCell(`B${currentRow}`, 28) +
-        buildBlankCell(`C${currentRow}`, 28) +
-        buildNumberCell(`D${currentRow}`, 25, section.totals.grossPremium) +
-        buildBlankCell(`E${currentRow}`, 28) +
-        buildNumberCell(`F${currentRow}`, 25, section.totals.amalgamatedPremium) +
-        buildBlankCell(`G${currentRow}`, 28) +
-        buildNumberCell(`H${currentRow}`, 25, section.totals.hpaCommission) +
-        buildBlankCell(`I${currentRow}`, 28) +
-        buildNumberCell(`J${currentRow}`, 25, section.totals.ahaDues) +
-        buildBlankCell(`K${currentRow}`, 28) +
-        buildNumberCell(`L${currentRow}`, 25, section.totals.totalSubmitted) +
+        buildNumberCell(`C${currentRow}`, 25, section.totals.grossPremium) +
+        buildBlankCell(`D${currentRow}`, 28) +
+        buildNumberCell(`E${currentRow}`, 25, section.totals.amalgamatedPremium) +
+        buildBlankCell(`F${currentRow}`, 28) +
+        buildNumberCell(`G${currentRow}`, 25, section.totals.hpaCommission) +
+        buildBlankCell(`H${currentRow}`, 28) +
+        buildNumberCell(`I${currentRow}`, 25, section.totals.ahaDues) +
+        buildBlankCell(`J${currentRow}`, 28) +
+        buildNumberCell(`K${currentRow}`, 25, section.totals.totalSubmitted) +
+        buildBlankCell(`L${currentRow}`, 28) +
         buildNumberCell(`M${currentRow}`, 42, section.totals.numberOfMonths) +
         buildNumberCell(`N${currentRow}`, 42, section.totals.numberOfCertificates) +
       `</row>`
@@ -1408,16 +1441,16 @@ function buildFinalReportWorksheetXml(templateXml, report) {
         `<row r="${currentRow}" spans="1:20" x14ac:dyDescent="0.25">` +
           buildInlineStringCell(`A${currentRow}`, 6, section.detailLabel) +
           buildNumberCell(`B${currentRow}`, 2, toExcelDateNumber(entry.date)) +
-          buildBlankCell(`C${currentRow}`, 6) +
-          buildNumberCell(`D${currentRow}`, 26, entry.grossPremium) +
-          buildBlankCell(`E${currentRow}`, 6) +
-          buildNumberCell(`F${currentRow}`, 4, entry.amalgamatedPremium) +
-          buildBlankCell(`G${currentRow}`, 6) +
-          buildNumberCell(`H${currentRow}`, 4, entry.hpaCommission) +
-          buildBlankCell(`I${currentRow}`, 6) +
-          buildNumberCell(`J${currentRow}`, 4, entry.ahaDues) +
-          buildBlankCell(`K${currentRow}`, 6) +
-          buildNumberCell(`L${currentRow}`, 4, entry.totalSubmitted) +
+          buildNumberCell(`C${currentRow}`, 26, entry.grossPremium) +
+          buildBlankCell(`D${currentRow}`, 6) +
+          buildNumberCell(`E${currentRow}`, 4, entry.amalgamatedPremium) +
+          buildBlankCell(`F${currentRow}`, 6) +
+          buildNumberCell(`G${currentRow}`, 4, entry.hpaCommission) +
+          buildBlankCell(`H${currentRow}`, 6) +
+          buildNumberCell(`I${currentRow}`, 4, entry.ahaDues) +
+          buildBlankCell(`J${currentRow}`, 6) +
+          buildNumberCell(`K${currentRow}`, 4, entry.totalSubmitted) +
+          buildBlankCell(`L${currentRow}`, 6) +
           buildNumberCell(`M${currentRow}`, 34, entry.numberOfMonths) +
           buildNumberCell(`N${currentRow}`, 34, entry.numberOfCertificates) +
         `</row>`
@@ -2548,12 +2581,19 @@ function generateFinalSummaryLetter(runId) {
 
   const { letterData, artifacts } = createFinalSummaryLetterArtifacts(run.id, run.report);
   const existingArtifacts = (run.artifacts || []).filter(
-    (artifact) => String(artifact?.kind || "").trim() !== "print"
+    (artifact) => ![
+      "print",
+      "summary-letter",
+      "summary-letter-preview",
+      "summary-letter-json",
+    ].includes(String(artifact?.kind || "").trim())
   );
 
   run.artifacts = [...existingArtifacts, ...artifacts];
   run.updatedAt = new Date().toISOString();
-  run.statusDetail = `Final summary letter generated for ${letterData.reportMonthLabel}.`;
+  run.statusDetail = artifacts.some((artifact) => artifact.kind === "print" && /\.html$/i.test(String(artifact.fileName || "")))
+    ? `Final summary letter generated for ${letterData.reportMonthLabel}. PDF output was unavailable, so a printable HTML preview was generated instead.`
+    : `Final summary letter generated for ${letterData.reportMonthLabel}.`;
   run.report.finalSummaryLetter = letterData;
   writeRuns(runs);
 

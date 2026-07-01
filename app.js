@@ -13791,7 +13791,12 @@ function bindMonthlyActions() {
 
   const isMonthlyOutputDownloadArtifact = (artifact) => {
     const kind = String(artifact?.kind || "").trim().toLowerCase();
-    return kind === "spreadsheet" || kind === "print";
+    return (
+      kind === "spreadsheet" ||
+      kind === "print" ||
+      kind === "summary-letter" ||
+      kind === "summary-letter-preview"
+    );
   };
 
   const buildMonthlyArtifactMarkup = (run, artifact) => {
@@ -13866,10 +13871,6 @@ function bindMonthlyActions() {
     ensureArray(runs)
       .filter((entry) => String(entry?.reportMonth || "").trim() === selectedMonth)
       .sort((left, right) => {
-        const priorityDifference = getMonthlyRunDisplayPriority(right) - getMonthlyRunDisplayPriority(left);
-        if (priorityDifference) {
-          return priorityDifference;
-        }
         return getRunSortTime(right) - getRunSortTime(left);
       })
       .forEach((entry) => {
@@ -14130,7 +14131,13 @@ function bindMonthlyActions() {
     try {
       const payload = await apiRequest("/api/monthly-reports");
       const runs = Array.isArray(payload?.runs) ? payload.runs : [];
-      resumeMonthlyProgressFromRuns(runs);
+      const resumedProgress = resumeMonthlyProgressFromRuns(runs);
+      if (!resumedProgress) {
+        stopAllReportProgress();
+        stopSingleReportProgress();
+        setReportRunningState("", false);
+        setRunningControls(false);
+      }
       const run = pickRunForOutput(runs, state.monthly.singleRunId);
       if (run) {
         setMonthlyOutput(run, runs);
