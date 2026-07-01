@@ -6942,7 +6942,7 @@ function createComparisonLink(index = 0, source = {}) {
     matchField: String(source.matchField || "SCF Grouping").trim() || "SCF Grouping",
     metricColumns: Array.isArray(source.metricColumns) && source.metricColumns.length
       ? source.metricColumns
-      : ["Sum of Mailed", "Sum of Opp Count", "Sum of In Force", "Sum of Converted", "Sold Rate"],
+      : ["Sum of Mailed", "Sum of Sold", "Sum of In Force", "Sum of Converted", "Sold Rate"],
     createdAt: source.createdAt || source.created_at || now,
     updatedAt: source.updatedAt || source.updated_at || now,
   };
@@ -7206,27 +7206,16 @@ function resolveNavigatorSoldCount(row = {}, options = {}) {
   return Math.max(fallbackSold, convertedCountFallback);
 }
 
+function getCalculatedConvertedCountFromPremium(row = {}) {
+  const convertedPremium = getRowMetricNumber(row, "Total Converted Monthly Premiums");
+  return convertedPremium > 0 ? 1 : 0;
+}
+
 function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = null, options = {}) {
-  const allowPremiumRowInference = options?.allowPremiumRowInference !== false;
-  const convertedPremium = precomputedConvertedPremium === null
-    ? Math.max(
-        getRowMetricNumber(row, "Payments Minus Credits"),
-        getRowMetricNumber(row, "Total Converted Monthly Premiums")
-      )
-    : Number(precomputedConvertedPremium || 0);
-  const explicitConvertedCount = Number.isFinite(Number(row?.appConvertedCount))
-    ? Number(row.appConvertedCount)
-    : Math.max(
-        getRowMetricNumber(row, "Sum of Converted"),
-        getRowMetricNumber(row, "Converted")
-      );
-  if (allowPremiumRowInference && convertedPremium > 0) {
-    return explicitConvertedCount > 0 ? explicitConvertedCount : 1;
+  if (precomputedConvertedPremium === null) {
+    return getCalculatedConvertedCountFromPremium(row);
   }
-  if (explicitConvertedCount > 0) {
-    return explicitConvertedCount;
-  }
-  return 0;
+  return Number(precomputedConvertedPremium || 0) > 0 ? 1 : 0;
 }
 
 function resolveNavigatorExplicitRate(row = {}, metricLabel) {
@@ -7376,8 +7365,8 @@ function normalizeAnalysisMetricRow(row = {}) {
   normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
   normalizedRow["Sum of Opp Count"] = formatNavigatorCount(soldCount);
   normalizedRow["sum of opp count"] = formatNavigatorCount(soldCount);
-  normalizedRow["Sum of Sold"] = formatNavigatorCount(convertedCount);
-  normalizedRow["sum of sold"] = formatNavigatorCount(convertedCount);
+  normalizedRow["Sum of Sold"] = formatNavigatorCount(soldCount);
+  normalizedRow["sum of sold"] = formatNavigatorCount(soldCount);
   normalizedRow["Sum of Converted"] = formatNavigatorCount(convertedCount);
   normalizedRow["sum of converted"] = formatNavigatorCount(convertedCount);
   normalizedRow["Converted"] = formatNavigatorCount(convertedCount);
@@ -7454,9 +7443,9 @@ function mergePreferredNavigatorRow(baseRow = {}, candidateRow = {}) {
 function buildSyntheticNavigatorRow({
   scf,
   mailed = 0,
-  oppCount = 0,
+  soldCount = 0,
   inForce = 0,
-  sold = 0,
+  convertedCount = 0,
   salesforceSoldRate = null,
   salesforceInForceRate = null,
   salesforceConvertedRate = null,
@@ -7469,17 +7458,17 @@ function buildSyntheticNavigatorRow({
   convertedRate = null,
 }) {
   const safeMailed = Number(mailed || 0);
-  const safeOppCount = Number(oppCount || 0);
+  const safeSoldCount = Number(soldCount || 0);
   const safeInForce = Number(inForce || 0);
-  const safeSold = Number(sold || 0);
+  const safeConvertedCount = Number(convertedCount || 0);
   const safeTotalMonthlyPremium = Number(totalMonthlyPremium || 0);
   const safeInForceMonthlyPremium = Number(inForceMonthlyPremium || 0);
   const safeTotalConvertedMonthlyPremiums = Number(totalConvertedMonthlyPremiums || 0);
   const rateFallbacks = calculateNavigatorRates({
     mailed: safeMailed,
-    soldCount: safeOppCount,
+    soldCount: safeSoldCount,
     inForceCount: safeInForce,
-    convertedCount: safeSold,
+    convertedCount: safeConvertedCount,
   });
   const resolvedSalesforceSoldRate = Number.isFinite(Number(salesforceSoldRate))
     ? Number(salesforceSoldRate)
@@ -7496,8 +7485,8 @@ function buildSyntheticNavigatorRow({
   const safeConvertedRate = Number.isFinite(Number(appConvertedRate))
     ? Number(appConvertedRate)
     : calculateNavigatorConvertedRate({
-        convertedCount: safeSold,
-        soldCount: safeOppCount,
+        convertedCount: safeConvertedCount,
+        soldCount: safeSoldCount,
         inForceCount: safeInForce,
         soldRate: resolvedSalesforceSoldRate,
         inForceRate: resolvedSalesforceInForceRate,
@@ -7510,16 +7499,16 @@ function buildSyntheticNavigatorRow({
     "scf grouping": scf,
     "Sum of Mailed": formatNavigatorCount(safeMailed),
     "sum of mailed": formatNavigatorCount(safeMailed),
-    "Sum of Opp Count": formatNavigatorCount(safeOppCount),
-    "sum of opp count": formatNavigatorCount(safeOppCount),
+    "Sum of Opp Count": formatNavigatorCount(safeSoldCount),
+    "sum of opp count": formatNavigatorCount(safeSoldCount),
     "Sum of In Force": formatNavigatorCount(safeInForce),
     "sum of in force": formatNavigatorCount(safeInForce),
-    "Sum of Sold": formatNavigatorCount(safeSold),
-    "sum of sold": formatNavigatorCount(safeSold),
-    "Sum of Converted": formatNavigatorCount(safeSold),
-    "sum of converted": formatNavigatorCount(safeSold),
-    Converted: formatNavigatorCount(safeSold),
-    converted: formatNavigatorCount(safeSold),
+    "Sum of Sold": formatNavigatorCount(safeSoldCount),
+    "sum of sold": formatNavigatorCount(safeSoldCount),
+    "Sum of Converted": formatNavigatorCount(safeConvertedCount),
+    "sum of converted": formatNavigatorCount(safeConvertedCount),
+    Converted: formatNavigatorCount(safeConvertedCount),
+    converted: formatNavigatorCount(safeConvertedCount),
     "Sum of Total Monthly Premium": formatAnalysisCurrency(safeTotalMonthlyPremium),
     "sum of total monthly premium": formatAnalysisCurrency(safeTotalMonthlyPremium),
     "Sum of In Force Monthly Premium": formatAnalysisCurrency(safeInForceMonthlyPremium),
@@ -7530,7 +7519,7 @@ function buildSyntheticNavigatorRow({
     salesforceInForceRate: resolvedSalesforceInForceRate,
     salesforceConvertedRate: Number.isFinite(Number(salesforceConvertedRate)) ? Number(salesforceConvertedRate) : null,
     appConvertedRate: safeConvertedRate,
-    appConvertedCount: safeSold,
+    appConvertedCount: safeConvertedCount,
     "Sold Rate": safeSoldRate.toFixed(10),
     "sold rate": safeSoldRate.toFixed(10),
     "In Force Rate": safeInForceRate.toFixed(10),
@@ -7599,9 +7588,9 @@ function buildExportScfAggregateMap(report) {
     const current = aggregateMap.get(scf) || {
       scf,
       mailed: 0,
-      oppCount: 0,
+      soldCount: 0,
       inForce: 0,
-      sold: 0,
+      convertedCount: 0,
       salesforceSoldRate: null,
       salesforceInForceRate: null,
       salesforceConvertedRate: null,
@@ -7612,18 +7601,18 @@ function buildExportScfAggregateMap(report) {
     };
 
     const rowConvertedPremium = getRowMetricNumber(row, "Total Converted Monthly Premiums");
-    const rowConvertedCount = resolveNavigatorConvertedCount(row, rowConvertedPremium, {
-      allowPremiumRowInference: true,
+    const rowConvertedCount = getCalculatedConvertedCountFromPremium({
+      "Total Converted Monthly Premiums": rowConvertedPremium,
     });
     const rowSalesforceSoldRate = resolveNavigatorExplicitRate(row, "Sold Rate");
     const rowSalesforceInForceRate = resolveNavigatorExplicitRate(row, "In Force Rate");
     const rowSalesforceConvertedRate = getRowMetricValue(row, "Converted Rate");
     current.mailed += getRowMetricNumber(row, "Mailed");
-    current.oppCount += resolveNavigatorSoldCount(row, {
+    current.soldCount += resolveNavigatorSoldCount(row, {
       convertedCountFallback: rowConvertedCount,
     });
     current.inForce += getRowMetricNumber(row, "In Force");
-    current.sold += rowConvertedCount;
+    current.convertedCount += rowConvertedCount;
     if ((current.salesforceSoldRate === null || current.salesforceSoldRate === 0) && Number.isFinite(Number(rowSalesforceSoldRate)) && Number(rowSalesforceSoldRate) !== 0) {
       current.salesforceSoldRate = Number(rowSalesforceSoldRate);
     }
@@ -7637,8 +7626,8 @@ function buildExportScfAggregateMap(report) {
     current.inForceMonthlyPremium += getRowMetricNumber(row, "In Force Monthly Premium");
     current.totalConvertedMonthlyPremiums += rowConvertedPremium;
     current.appConvertedRate = calculateNavigatorConvertedRate({
-      convertedCount: current.sold,
-      soldCount: current.oppCount,
+      convertedCount: current.convertedCount,
+      soldCount: current.soldCount,
       inForceCount: current.inForce,
       soldRate: current.salesforceSoldRate,
       inForceRate: current.salesforceInForceRate,
@@ -7647,6 +7636,21 @@ function buildExportScfAggregateMap(report) {
       mailed: current.mailed,
     });
     aggregateMap.set(scf, current);
+  });
+
+  console.log("[Converted Count Check]", {
+    totalDetailRows: exportRows.length,
+    rowsWithConvertedPremium: exportRows.filter((entry) =>
+      getRowMetricNumber(entry?.row || entry, "Total Converted Monthly Premiums") > 0
+    ).length,
+    calculatedConvertedTotal: Array.from(aggregateMap.values()).reduce(
+      (sum, group) => sum + Number(group.convertedCount || group.sold || 0),
+      0
+    ),
+    convertedPremiumTotal: Array.from(aggregateMap.values()).reduce(
+      (sum, group) => sum + Number(group.totalConvertedMonthlyPremiums || 0),
+      0
+    ),
   });
 
   return aggregateMap;
@@ -7673,7 +7677,15 @@ function getUnifiedReportScfEntries(report) {
       return {
         scf,
         row: buildSyntheticNavigatorRow({
-          ...aggregateEntry,
+          scf: aggregateEntry.scf,
+          mailed: aggregateEntry.mailed,
+          soldCount: aggregateEntry.soldCount,
+          inForce: aggregateEntry.inForce,
+          convertedCount: aggregateEntry.convertedCount,
+          totalMonthlyPremium: aggregateEntry.totalMonthlyPremium,
+          inForceMonthlyPremium: aggregateEntry.inForceMonthlyPremium,
+          totalConvertedMonthlyPremiums: aggregateEntry.totalConvertedMonthlyPremiums,
+          appConvertedRate: aggregateEntry.appConvertedRate,
           salesforceSoldRate: Number.isFinite(Number(summarySoldRate)) ? Number(summarySoldRate) : aggregateEntry.salesforceSoldRate,
           salesforceInForceRate: Number.isFinite(Number(summaryInForceRate)) ? Number(summaryInForceRate) : aggregateEntry.salesforceInForceRate,
           salesforceConvertedRate: Number.isFinite(Number(summaryConvertedRate)) ? Number(summaryConvertedRate) : aggregateEntry.salesforceConvertedRate,
@@ -12060,8 +12072,9 @@ function renderPullResultCard(pull, options = {}) {
     "Converted Rate": "salesforce converted premium formula",
   };
   const renderAnalysisLabelHtml = (label, suffix = "") => {
-    const safeLabel = esc(label || "");
-    const hint = analysisLabelHints[String(label || "").trim()];
+    const displayLabel = String(label || "").trim() === "Sum of Opp Count" ? "Sum of Sold" : (label || "");
+    const safeLabel = esc(displayLabel || "");
+    const hint = analysisLabelHints[String(displayLabel || "").trim()];
     if (!hint) {
       return `${safeLabel}${suffix}`;
     }
