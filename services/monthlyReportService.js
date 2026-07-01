@@ -18,7 +18,11 @@ const {
 const {
   writeArtifacts: writeAmalgamatedArtifacts,
 } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/exportWorkbook");
-const { formatReportMonth, formatReportMonthFilePrefix } = require("./monthlyReportServiceHelpers");
+const {
+  formatCompletionMonthFilePrefix,
+  formatReportMonth,
+  formatReportMonthFilePrefix,
+} = require("./monthlyReportServiceHelpers");
 const {
   generatePdfFromDocx,
   generatePdfFromHtml,
@@ -1161,7 +1165,7 @@ function createFinalSummaryLetterArtifacts(runId, report) {
   const letterData = buildFinalSummaryLetterData(report);
   validateFinalSummaryLetterData(letterData);
 
-  const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
+  const filePrefix = formatCompletionMonthFilePrefix(report.generatedAt);
   const safeMonthLabel = letterData.reportMonthLabel.replace(/[^A-Za-z0-9-]/g, "-");
   const docxFileName = `Final_Summary_Letter_${safeMonthLabel}.docx`;
   const pdfFileName = `${filePrefix}_Premier - Letter.pdf`;
@@ -1826,7 +1830,7 @@ function writeArtifacts(runId, report) {
   const runDir = path.join(GENERATED_DIR, runId);
   ensureDir(runDir);
 
-  const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
+  const filePrefix = formatCompletionMonthFilePrefix(report.generatedAt);
   const workbookFileName = `${filePrefix}_AHA HPA Transaction Summary.xlsm`;
   const pdfFileName = `${filePrefix}_AHA HPA Transaction Summary.pdf`;
   const jsonFileName = `${filePrefix}_AHA HPA Transaction Summary.json`;
@@ -1927,7 +1931,10 @@ function buildRecoveredArtifacts(run) {
   }
 
   const reportMonthLabel = formatReportMonth(reportMonth);
-  const filePrefix = formatReportMonthFilePrefix(reportMonth);
+  const reportMonthFilePrefix = formatReportMonthFilePrefix(reportMonth);
+  const completionFilePrefix = formatCompletionMonthFilePrefix(
+    run?.updatedAt || run?.createdAt || run?.report?.generatedAt
+  );
   const artifacts = [];
   const pushArtifact = (kind, label, fileName, contentType) => {
     if (!fileName) {
@@ -1942,6 +1949,7 @@ function buildRecoveredArtifacts(run) {
       "Download Workbook",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_AHA HPA Transaction Detail.xlsx`,
+        `${completionFilePrefix}_AHA HPA Transaction Detail.xlsx`,
         `AHA HPA Transaction Detail - ${reportMonthLabel}.xlsx`,
       ]),
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1951,6 +1959,7 @@ function buildRecoveredArtifacts(run) {
       "Download PDF",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_AHA HPA Transaction Detail.pdf`,
+        `${completionFilePrefix}_AHA HPA Transaction Detail.pdf`,
         `aha-hpa-transaction-detail-${reportMonth}.pdf`,
       ]),
       "application/pdf"
@@ -1960,6 +1969,7 @@ function buildRecoveredArtifacts(run) {
       "Download JSON",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_AHA HPA Transaction Detail.json`,
+        `${completionFilePrefix}_AHA HPA Transaction Detail.json`,
         `aha-hpa-transaction-detail-${reportMonth}.json`,
       ]),
       "application/json; charset=utf-8"
@@ -1973,6 +1983,7 @@ function buildRecoveredArtifacts(run) {
       "Download Workbook",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_Amalgamated_Premium_Remittance.xlsx`,
+        `${completionFilePrefix}_Amalgamated_Premium_Remittance.xlsx`,
         `Amalgamated_Premium_Remittance_${reportMonth.replace("-", "_")}.xlsx`,
       ]),
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1982,6 +1993,7 @@ function buildRecoveredArtifacts(run) {
       "Download PDF",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_Amalgamated_Premium_Remittance.pdf`,
+        `${completionFilePrefix}_Amalgamated_Premium_Remittance.pdf`,
         `amalgamated-premium-remittance-${reportMonth}.pdf`,
       ]),
       "application/pdf"
@@ -1991,6 +2003,7 @@ function buildRecoveredArtifacts(run) {
       "Download JSON",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_Amalgamated_Premium_Remittance.json`,
+        `${completionFilePrefix}_Amalgamated_Premium_Remittance.json`,
         `amalgamated-premium-remittance-${reportMonth}.json`,
       ]),
       "application/json; charset=utf-8"
@@ -2044,27 +2057,30 @@ function buildRecoveredArtifacts(run) {
     "spreadsheet",
     "Download Workbook",
     findFirstExistingArtifactFile(runDir, [
-      `${filePrefix}_AHA HPA Transaction Summary.xlsm`,
-      `AHA HPA Transaction Summary - ${reportMonthLabel}.xlsm`,
-    ]),
+        `${filePrefix}_AHA HPA Transaction Summary.xlsm`,
+        `${completionFilePrefix}_AHA HPA Transaction Summary.xlsm`,
+        `AHA HPA Transaction Summary - ${reportMonthLabel}.xlsm`,
+      ]),
     "application/vnd.ms-excel.sheet.macroEnabled.12"
   );
   pushArtifact(
     "print",
     "Download PDF",
     findFirstExistingArtifactFile(runDir, [
-      `${filePrefix}_AHA HPA Transaction Summary.pdf`,
-      `aha-hpa-transaction-summary-${reportMonth}.pdf`,
-    ]),
+        `${filePrefix}_AHA HPA Transaction Summary.pdf`,
+        `${completionFilePrefix}_AHA HPA Transaction Summary.pdf`,
+        `aha-hpa-transaction-summary-${reportMonth}.pdf`,
+      ]),
     "application/pdf"
   );
   pushArtifact(
     "json",
     "Download JSON",
     findFirstExistingArtifactFile(runDir, [
-      `${filePrefix}_AHA HPA Transaction Summary.json`,
-      `aha-hpa-transaction-summary-${reportMonth}.json`,
-    ]),
+        `${filePrefix}_AHA HPA Transaction Summary.json`,
+        `${completionFilePrefix}_AHA HPA Transaction Summary.json`,
+        `aha-hpa-transaction-summary-${reportMonth}.json`,
+      ]),
     "application/json; charset=utf-8"
   );
   pushArtifact(
@@ -2077,18 +2093,20 @@ function buildRecoveredArtifacts(run) {
     "print",
     "Download PDF",
     findFirstExistingArtifactFile(runDir, [
-      `${filePrefix}_Premier - Letter.pdf`,
-      `final-summary-letter-${reportMonth}.pdf`,
-    ]),
+        `${filePrefix}_Premier - Letter.pdf`,
+        `${completionFilePrefix}_Premier - Letter.pdf`,
+        `final-summary-letter-${reportMonth}.pdf`,
+      ]),
     "application/pdf"
   );
   pushArtifact(
     "summary-letter-json",
     "Download Final Summary Letter JSON",
     findFirstExistingArtifactFile(runDir, [
-      `${filePrefix}_Premier - Letter.json`,
-      `final-summary-letter-${reportMonth}.json`,
-    ]),
+        `${filePrefix}_Premier - Letter.json`,
+        `${completionFilePrefix}_Premier - Letter.json`,
+        `final-summary-letter-${reportMonth}.json`,
+      ]),
     "application/json; charset=utf-8"
   );
   return artifacts;

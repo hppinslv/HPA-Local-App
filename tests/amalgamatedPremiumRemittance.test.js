@@ -5,6 +5,7 @@ const { combineTransactions, summarizeTransactions } = require("../src/reports/m
 const { buildFinalRows, applyAgeReduction } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/buildFinalRows");
 const { normalizeDatasets } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/normalize");
 const { getDynamicColumnLabels } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/config");
+const { __test: exportWorkbookTest } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/exportWorkbook");
 const { validateReport } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/validate");
 const {
   buildFinalSummaryLetterData,
@@ -146,6 +147,14 @@ test("premium split uses 41 percent Amal and 59 percent AHA", () => {
   assert.equal(cert1.premiumCollectedLabelValue, 35);
   assert.equal(cert1.amalPrem, 14.35);
   assert.equal(cert1.ahaPrem, 20.65);
+});
+
+test("workbook numeric coercion blanks invalid text and parses formatted currency", () => {
+  assert.equal(exportWorkbookTest.coerceFiniteNumber("$1,234.56"), 1234.56);
+  assert.equal(exportWorkbookTest.coerceFiniteNumber("(98.32)"), -98.32);
+  assert.equal(exportWorkbookTest.coerceFiniteNumber(""), null);
+  assert.equal(exportWorkbookTest.coerceFiniteNumber("--"), null);
+  assert.equal(exportWorkbookTest.coerceFiniteNumber("CERT-1"), null);
 });
 
 test("age reduction at 70 and 80 works", () => {

@@ -4,7 +4,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const { buildFinalColumns } = require("./config");
 const { generatePdfFromHtml } = require("../../../../services/pdfPrintService");
-const { formatReportMonthFilePrefix } = require("../../../../services/monthlyReportServiceHelpers");
+const { formatCompletionMonthFilePrefix } = require("../../../../services/monthlyReportServiceHelpers");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "..", "..", "Amalgamated_Premium_Remittance.xlsx");
 
@@ -76,7 +76,12 @@ function buildInlineStringCell(reference, styleId, value) {
 }
 
 function buildNumberCell(reference, styleId, value) {
-  return `<c r="${reference}" s="${styleId}"><v>${value}</v></c>`;
+  const numericValue = coerceFiniteNumber(value);
+  if (numericValue === null) {
+    return buildBlankCell(reference, styleId);
+  }
+
+  return `<c r="${reference}" s="${styleId}"><v>${numericValue}</v></c>`;
 }
 
 function buildBooleanCell(reference, styleId, value) {
@@ -85,6 +90,47 @@ function buildBooleanCell(reference, styleId, value) {
 
 function buildBlankCell(reference, styleId) {
   return `<c r="${reference}" s="${styleId}"/>`;
+}
+
+function coerceFiniteNumber(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+
+  let normalized = String(value).trim();
+  if (!normalized || normalized === "-" || normalized === "--") {
+    return null;
+  }
+
+  let isNegative = false;
+  if (normalized.startsWith("(") && normalized.endsWith(")")) {
+    isNegative = true;
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  normalized = normalized
+    .replace(/\$/g, "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, "");
+
+  if (!normalized) {
+    return null;
+  }
+
+  const numericValue = Number(normalized);
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+
+  return isNegative ? numericValue * -1 : numericValue;
 }
 
 function readTemplateCellStyles(templateXml, rowNumber) {
@@ -121,17 +167,11 @@ function removeNode(xml, pattern) {
   return xml.replace(pattern, "");
 }
 
-function updateTableRef(tableXml, ref) {
-  return tableXml
-    .replace(/ref="[^"]*"/, `ref="${ref}"`)
-    .replace(/<autoFilter ref="[^"]*"/, `<autoFilter ref="${ref}"`)
-    .replace(/<sortState ref="[^"]*"/, `<sortState ref="${ref}"`);
-}
-
 function sanitizeWorksheetXml(worksheetXml) {
   return worksheetXml
     .replace(/<pageSetup\b[\s\S]*?\/>/g, "")
     .replace(/<customProperties\b[\s\S]*?<\/customProperties>/g, "")
+    .replace(/<tableParts\b[\s\S]*?<\/tableParts>/g, "")
     .replace(/<extLst\b[\s\S]*?<\/extLst>/g, "");
 }
 
@@ -143,6 +183,10 @@ function sanitizeWorksheetRelationships(relationshipsXml) {
     )
     .replace(
       /<Relationship[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/customProperty"[^>]*\/>/g,
+      ""
+    )
+    .replace(
+      /<Relationship[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/table"[^>]*\/>/g,
       ""
     );
 }
@@ -165,6 +209,63 @@ function sanitizeWorksheetArtifacts(extractDir, sheetFileName) {
       sanitizeWorksheetRelationships(fs.readFileSync(relsPath, "utf8")),
       "utf8"
     );
+  }
+}
+
+function sanitizeWorkbookXml(workbookXml) {
+  return workbookXml
+    .replace(/<mc:AlternateContent\b[\s\S]*?<\/mc:AlternateContent>/g, "")
+    .replace(/<xr:revisionPtr\b[\s\S]*?\/>/g, "")
+    .replace(/<extLst\b[\s\S]*?<\/extLst>/g, "");
+}
+
+function sanitizeContentTypesXml(contentTypesXml) {
+  return contentTypesXml
+    .replace(
+      /<Override PartName="\/xl\/customProperty\d+\.bin" ContentType="application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.customProperty"\/>/g,
+      ""
+    )
+    .replace(
+      /<Override PartName="\/xl\/tables\/table\d+\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.table\+xml"\/>/g,
+      ""
+    )
+    .replace(
+      /<Default Extension="bin" ContentType="application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.printerSettings"\/>/g,
+      ""
+    );
+}
+
+function sanitizePackageArtifacts(extractDir) {
+  const workbookPath = path.join(extractDir, "xl", "workbook.xml");
+  const contentTypesPath = path.join(extractDir, "[Content_Types].xml");
+  const customPropertyFiles = fs.readdirSync(path.join(extractDir, "xl"), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^customProperty\d+\.bin$/i.test(entry.name))
+    .map((entry) => path.join(extractDir, "xl", entry.name));
+  const printerSettingsDir = path.join(extractDir, "xl", "printerSettings");
+  const tablesDir = path.join(extractDir, "xl", "tables");
+
+  if (fs.existsSync(workbookPath)) {
+    fs.writeFileSync(workbookPath, sanitizeWorkbookXml(fs.readFileSync(workbookPath, "utf8")), "utf8");
+  }
+
+  if (fs.existsSync(contentTypesPath)) {
+    fs.writeFileSync(
+      contentTypesPath,
+      sanitizeContentTypesXml(fs.readFileSync(contentTypesPath, "utf8")),
+      "utf8"
+    );
+  }
+
+  customPropertyFiles.forEach((filePath) => {
+    fs.rmSync(filePath, { force: true });
+  });
+
+  if (fs.existsSync(printerSettingsDir)) {
+    fs.rmSync(printerSettingsDir, { recursive: true, force: true });
+  }
+
+  if (fs.existsSync(tablesDir)) {
+    fs.rmSync(tablesDir, { recursive: true, force: true });
   }
 }
 
@@ -627,30 +728,10 @@ function writeWorkbook(report, destinationPath) {
     "utf8"
   );
 
-  const tableUpdates = [
-    { fileName: "table1.xml", ref: `A1:M${Math.max((sourceSheetMap.get("certs")?.rows.length || 0) + 1, 1)}` },
-    { fileName: "table2.xml", ref: `A1:C${Math.max((sourceSheetMap.get("payments")?.rows.length || 0) + 1, 1)}` },
-    { fileName: "table3.xml", ref: `A1:E${Math.max((sourceSheetMap.get("credits")?.rows.length || 0) + 1, 1)}` },
-    { fileName: "table4.xml", ref: `A1:I${Math.max((sourceSheetMap.get("contact2")?.rows.length || 0) + 1, 1)}` },
-    { fileName: "table5.xml", ref: `A1:I${Math.max((sourceSheetMap.get("contact1")?.rows.length || 0) + 1, 1)}` },
-  ];
-
-  tableUpdates.forEach((entry) => {
-    const tablePath = path.join(extractDir, "xl", "tables", entry.fileName);
-    if (!fs.existsSync(tablePath)) {
-      return;
-    }
-
-    fs.writeFileSync(
-      tablePath,
-      updateTableRef(fs.readFileSync(tablePath, "utf8"), entry.ref),
-      "utf8"
-    );
-  });
-
   ["sheet2.xml", "sheet3.xml", "sheet4.xml", "sheet5.xml", "sheet6.xml", "sheet7.xml"].forEach((sheetFileName) => {
     sanitizeWorksheetArtifacts(extractDir, sheetFileName);
   });
+  sanitizePackageArtifacts(extractDir);
 
   stripCalcChain(extractDir);
 
@@ -910,7 +991,7 @@ function buildPrintableHtml(report) {
 }
 
 function writeArtifacts(runDir, report) {
-  const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
+  const filePrefix = formatCompletionMonthFilePrefix(report.generatedAt);
   const workbookFileName = `${filePrefix}_Amalgamated_Premium_Remittance.xlsx`;
   const pdfFileName = `${filePrefix}_Amalgamated_Premium_Remittance.pdf`;
   const jsonFileName = `${filePrefix}_Amalgamated_Premium_Remittance.json`;
@@ -954,5 +1035,8 @@ function writeArtifacts(runDir, report) {
 }
 
 module.exports = {
+  __test: {
+    coerceFiniteNumber,
+  },
   writeArtifacts,
 };

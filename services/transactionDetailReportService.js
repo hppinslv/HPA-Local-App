@@ -3,7 +3,10 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { generatePdfFromHtml } = require("./pdfPrintService");
-const { formatReportMonthFilePrefix } = require("./monthlyReportServiceHelpers");
+const {
+  formatCompletionMonthFilePrefix,
+  formatReportMonthFilePrefix,
+} = require("./monthlyReportServiceHelpers");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "AHA HPA Transaction Detail.xlsx");
 
@@ -862,7 +865,7 @@ function buildPrintableHtml(report) {
 }
 
 function writeDetailArtifacts(runDir, report) {
-  const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
+  const filePrefix = formatCompletionMonthFilePrefix(report.generatedAt);
   const workbookFileName = `${filePrefix}_AHA HPA Transaction Detail.xlsx`;
   const pdfFileName = `${filePrefix}_AHA HPA Transaction Detail.pdf`;
   const jsonFileName = `${filePrefix}_AHA HPA Transaction Detail.json`;
