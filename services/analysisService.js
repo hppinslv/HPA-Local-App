@@ -42,10 +42,10 @@ function parseAnalysisMetricNumber(value) {
 
 function isSparseSavedAnalysisMetricRow(row = {}) {
   const oppCount = parseAnalysisMetricNumber(
-    row["Sum of Sold"]
-      ?? row["sum of sold"]
-      ?? row["Sum of Opp Count"]
+    row["Sum of Opp Count"]
       ?? row["sum of opp count"]
+      ?? row["Sum of Sold"]
+      ?? row["sum of sold"]
       ?? 0
   );
   const totalMonthlyPremium = parseAnalysisMetricNumber(
@@ -147,12 +147,12 @@ function getAnalysisRateFieldCandidates(rows = []) {
 function summarizeAnalysisRateRow(row = {}) {
   const mailed = getAnalysisMetricNumber(row, ["Sum of Mailed", "Mailed"]);
   const soldCount = getAnalysisMetricNumber(row, [
-    "Sum of Sold",
-    "Sold",
     "Sum of Opp Count",
     "Opp Count",
     "Applications Received",
     "Application Count",
+    "Sum of Sold",
+    "Sold",
   ]);
   const inForceCount = getAnalysisMetricNumber(row, ["Sum of In Force", "In Force"]);
   const convertedCount = Number.isFinite(Number(row?.appConvertedCount))
@@ -897,6 +897,10 @@ function buildAnalysisReportSummary({ inputRowCount, exportRowCount, zeroReason,
 }
 
 const ANALYSIS_REPORT_LABEL_MAP = {
+  "Sum of Opp Count": "Sum of Sold",
+  "Opp Count": "Sum of Sold",
+  "Sum of Sold": "Sum of Converted",
+  "Sold": "Sum of Converted",
   "Sum of Total Monthly Premium": "Sum of Total Sold",
   "Average Monthly Premium": "Average Monthly Premium",
   "Sold Rate": "Sold Rate",
@@ -910,17 +914,53 @@ function renameAnalysisReportLabel(label) {
 }
 
 function relabelAnalysisColumns(columns = []) {
-  return ensureArray(columns).map((column) => ({
-    ...column,
-    label: renameAnalysisReportLabel(column?.label || column?.key || column?.normalized || ""),
-  }));
+  const relabeled = [];
+  const seenLabels = new Set();
+
+  ensureArray(columns).forEach((column) => {
+    const label = renameAnalysisReportLabel(column?.label || column?.key || column?.normalized || "");
+    if (!label || seenLabels.has(label)) {
+      return;
+    }
+    seenLabels.add(label);
+    relabeled.push({
+      ...column,
+      label,
+    });
+  });
+
+  return relabeled;
 }
 
 function relabelAnalysisSummaryValues(summaryValues = []) {
-  return ensureArray(summaryValues).map((entry) => ({
-    ...entry,
-    label: renameAnalysisReportLabel(entry?.label || entry?.key || ""),
-  }));
+  const entries = ensureArray(summaryValues);
+  const byLabel = new Map(
+    entries.map((entry) => [String(entry?.label || entry?.key || "").trim(), entry])
+  );
+  const relabeled = [];
+  const seenLabels = new Set();
+
+  entries.forEach((entry) => {
+    const originalLabel = String(entry?.label || entry?.key || "").trim();
+    const renamedLabel = renameAnalysisReportLabel(originalLabel);
+    if (!renamedLabel || seenLabels.has(renamedLabel)) {
+      return;
+    }
+
+    let value = entry?.value;
+    if (originalLabel === "Sum of Sold") {
+      value = byLabel.get("Sum of Converted")?.value ?? value;
+    }
+
+    seenLabels.add(renamedLabel);
+    relabeled.push({
+      ...entry,
+      label: renamedLabel,
+      value,
+    });
+  });
+
+  return relabeled;
 }
 
 function relabelAnalysisRows(rows = [], columns = []) {
@@ -931,20 +971,29 @@ function relabelAnalysisRows(rows = [], columns = []) {
 
   return ensureArray(rows).map((row) => {
     const output = { ...row };
+    const seenLabels = new Set();
     rawColumns.forEach((column) => {
       const originalLabel = String(column?.label || column?.key || "").trim();
       const renamedLabel = renameAnalysisReportLabel(originalLabel);
-      if (!originalLabel || !renamedLabel || originalLabel === renamedLabel) {
+      if (!originalLabel || !renamedLabel || originalLabel === renamedLabel || seenLabels.has(renamedLabel)) {
         return;
       }
 
-      const value =
+      let value =
         row?.[originalLabel] ??
         row?.[column?.normalized || ""] ??
         row?.[column?.key || ""];
+      if (originalLabel === "Sum of Sold") {
+        value =
+          row?.["Sum of Converted"] ??
+          row?.["sum of converted"] ??
+          row?.appConvertedCount ??
+          value;
+      }
 
       if (value !== undefined) {
         output[renamedLabel] = value;
+        seenLabels.add(renamedLabel);
       }
     });
     return output;

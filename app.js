@@ -7376,8 +7376,8 @@ function normalizeAnalysisMetricRow(row = {}) {
   normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
   normalizedRow["Sum of Opp Count"] = formatNavigatorCount(soldCount);
   normalizedRow["sum of opp count"] = formatNavigatorCount(soldCount);
-  normalizedRow["Sum of Sold"] = formatNavigatorCount(soldCount);
-  normalizedRow["sum of sold"] = formatNavigatorCount(soldCount);
+  normalizedRow["Sum of Sold"] = formatNavigatorCount(convertedCount);
+  normalizedRow["sum of sold"] = formatNavigatorCount(convertedCount);
   normalizedRow["Sum of Converted"] = formatNavigatorCount(convertedCount);
   normalizedRow["sum of converted"] = formatNavigatorCount(convertedCount);
   normalizedRow["Converted"] = formatNavigatorCount(convertedCount);
@@ -7514,8 +7514,8 @@ function buildSyntheticNavigatorRow({
     "sum of opp count": formatNavigatorCount(safeOppCount),
     "Sum of In Force": formatNavigatorCount(safeInForce),
     "sum of in force": formatNavigatorCount(safeInForce),
-    "Sum of Sold": formatNavigatorCount(safeOppCount),
-    "sum of sold": formatNavigatorCount(safeOppCount),
+    "Sum of Sold": formatNavigatorCount(safeSold),
+    "sum of sold": formatNavigatorCount(safeSold),
     "Sum of Converted": formatNavigatorCount(safeSold),
     "sum of converted": formatNavigatorCount(safeSold),
     Converted: formatNavigatorCount(safeSold),
