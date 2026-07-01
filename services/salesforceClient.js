@@ -3251,7 +3251,9 @@ function buildAnalysisDollarDiagnostics(reportId, filters, datasets = {}) {
   }));
 
   const summaryValues = Array.isArray(merged.summaryValues) ? merged.summaryValues : [];
-  const soldCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Opp Count");
+  const soldCount =
+    extractAnalysisSummaryMetricValue(summaryValues, "Sum of Sold")
+    || extractAnalysisSummaryMetricValue(summaryValues, "Sum of Opp Count");
   const convertedCount =
     extractAnalysisSummaryMetricValue(summaryValues, "Sum of Converted")
     || extractAnalysisSummaryMetricValue(summaryValues, "Sum of Sold");

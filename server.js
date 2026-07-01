@@ -77,6 +77,7 @@ const {
   refreshCcPaymentImportPolicyLookupFromSalesforce,
   revalidateSession,
   updateCcPaymentImportRow,
+  updateCcPaymentImportRows,
 } = require("./services/ccPaymentImportService");
 const {
   createCheckImportSession,
@@ -1475,6 +1476,25 @@ const server = http.createServer((request, response) => {
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to import credit card payments into Salesforce." });
+      });
+    return;
+  }
+
+  const ccPaymentImportBulkRowMatch = requestUrl.pathname.match(
+    /^\/api\/cc-payment-imports\/([^/]+)\/rows\/bulk$/
+  );
+  if (ccPaymentImportBulkRowMatch && request.method === "PATCH") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = await updateCcPaymentImportRows(
+          ccPaymentImportBulkRowMatch[1],
+          Array.isArray(body?.rows) ? body.rows : [],
+          body?.corrected_by || "Local User"
+        );
+        sendJson(response, 200, { session });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to update credit card payment import rows." });
       });
     return;
   }

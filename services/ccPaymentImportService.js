@@ -1699,13 +1699,7 @@ function createCcPaymentImportSession({ fileName, base64Content, uploadedBy = DE
   return revalidateSession(sessionId);
 }
 
-async function updateCcPaymentImportRow(sessionId, rowId, updates = {}) {
-  const rows = readRows();
-  const row = rows.find((entry) => entry.session_id === sessionId && entry.id === rowId);
-  if (!row) {
-    throw new Error("Credit card payment import row not found.");
-  }
-
+function applyCcPaymentImportRowUpdates(row, updates = {}) {
   if (Object.prototype.hasOwnProperty.call(updates, "certificate_number")) {
     row.certificate_number = normalizeCertificateNumber(updates.certificate_number);
     row.corrected_certificate_number = row.certificate_number;
@@ -1720,17 +1714,46 @@ async function updateCcPaymentImportRow(sessionId, rowId, updates = {}) {
 
   row.corrected_by = normalizeText(updates.corrected_by || DEFAULT_ACTOR);
   row.corrected_at = new Date().toISOString();
+}
+
+async function updateCcPaymentImportRows(sessionId, rowUpdates = [], defaultCorrectedBy = DEFAULT_ACTOR) {
+  const rows = readRows();
+  const changedCertificateNumbers = [];
+
+  rowUpdates.forEach((entry) => {
+    const row = rows.find((candidate) => candidate.session_id === sessionId && candidate.id === entry?.id);
+    if (!row) {
+      throw new Error("Credit card payment import row not found.");
+    }
+    applyCcPaymentImportRowUpdates(row, {
+      ...entry,
+      corrected_by: entry?.corrected_by || defaultCorrectedBy,
+    });
+    const correctedCertificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
+    if (correctedCertificateNumber) {
+      changedCertificateNumbers.push(correctedCertificateNumber);
+    }
+  });
+
   writeRows(rows);
 
-  const correctedCertificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
-  if (correctedCertificateNumber) {
-    const nextCache = await refreshCertificateLookupCacheForCertificates([correctedCertificateNumber]);
-    const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates([correctedCertificateNumber]);
+  const uniqueCertificateNumbers = Array.from(new Set(changedCertificateNumbers.filter(Boolean)));
+  if (uniqueCertificateNumbers.length) {
+    const nextCache = await refreshCertificateLookupCacheForCertificates(uniqueCertificateNumbers);
+    const certificateRecordIdMap = await fetchCertificateRecordIdsForCertificates(uniqueCertificateNumbers);
     writePolicyCache(nextCache);
     await enrichSessionRowsForPremiumReview(sessionId, nextCache, certificateRecordIdMap);
   }
 
   return revalidateSession(sessionId);
+}
+
+async function updateCcPaymentImportRow(sessionId, rowId, updates = {}) {
+  return updateCcPaymentImportRows(
+    sessionId,
+    [{ id: rowId, ...updates }],
+    normalizeText(updates.corrected_by || DEFAULT_ACTOR)
+  );
 }
 
 function refreshCcPaymentImportPolicyLookup(sessionId, body = {}) {
@@ -2055,4 +2078,5 @@ module.exports = {
   refreshCcPaymentImportPolicyLookupFromSalesforce,
   revalidateSession,
   updateCcPaymentImportRow,
+  updateCcPaymentImportRows,
 };

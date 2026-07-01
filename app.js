@@ -3526,7 +3526,7 @@ function renderCcPaymentReviewTable() {
           <td><span class="cc-status-pill is-${esc(row.status || "ready")}">${esc((row.status || "ready").replace("_", " "))}</span></td>
           <td>${issueColumn}</td>
           <td class="table-action-cell">
-            ${isImportedSession ? '<span class="cc-row-note">Read only</span>' : `<button class="secondary-button table-action-button" data-cc-save-row="${esc(row.id)}">Save</button>`}
+            ${isImportedSession ? '<span class="cc-row-note">Read only</span>' : '<span class="cc-row-note">Edit rows, then save all.</span>'}
           </td>
         </tr>
       `;
@@ -3549,10 +3549,18 @@ function updateCcPaymentPolicyStatus() {
 
 function updateCcPaymentExportState() {
   const session = getCurrentCcPaymentSession();
+  const saveAllButton = el("cc-payment-save-all-button");
   const exportButton = el("cc-payment-export-button");
-  if (!exportButton) return;
   const hasBlockingErrors = Number(session?.error_count || 0) > 0;
   const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
+  const pendingEditCount = session && !alreadyImported ? collectCcPaymentRowEdits(session).length : 0;
+  if (saveAllButton) {
+    saveAllButton.disabled = !session || alreadyImported || pendingEditCount <= 0;
+    saveAllButton.textContent = pendingEditCount > 0
+      ? `Save All Corrections (${pendingEditCount})`
+      : "Save All Corrections";
+  }
+  if (!exportButton) return;
   exportButton.disabled = !session || hasBlockingErrors || alreadyImported;
   exportButton.textContent = alreadyImported ? "Import Completed" : "Confirm Import";
 }
@@ -3733,9 +3741,42 @@ function bindCcPaymentImportEvents() {
     }
   });
 
+  el("cc-payment-save-all-button")?.addEventListener("click", async () => {
+    const session = getCurrentCcPaymentSession();
+    if (!session?.id) return;
+    const rowEdits = collectCcPaymentRowEdits(session);
+    if (!rowEdits.length) {
+      setStatus("cc-payment-status", "There are no unsaved certificate or policy changes.");
+      updateCcPaymentExportState();
+      return;
+    }
+    setStatus("cc-payment-status", `Saving ${rowEdits.length} row correction(s)...`);
+    try {
+      const payload = await apiRequest(`/api/cc-payment-imports/${encodeURIComponent(session.id)}/rows/bulk`, {
+        method: "PATCH",
+        body: {
+          rows: rowEdits,
+          corrected_by: "Local User",
+        },
+      });
+      state.ccPayments.currentSession = payload.session || null;
+      state.ccPayments.currentSessionId = payload.session?.id || session.id;
+      renderCcPaymentPage();
+      setStatus("cc-payment-status", `Saved ${rowEdits.length} row correction(s).`);
+    } catch (error) {
+      setStatus("cc-payment-status", `Unable to save corrections: ${error.message}`);
+    }
+  });
+
   el("cc-payment-export-button")?.addEventListener("click", async () => {
     const session = getCurrentCcPaymentSession();
     if (!session?.id) return;
+    const pendingEditCount = collectCcPaymentRowEdits(session).length;
+    if (pendingEditCount > 0) {
+      setStatus("cc-payment-status", `Save ${pendingEditCount} pending row correction(s) before confirming the import.`);
+      updateCcPaymentExportState();
+      return;
+    }
     if (!confirm(`Import ${Number(session.ready_count || 0)} valid row(s) into ${session.salesforce_object_api_name || "Salesforce"}?`)) {
       return;
     }
@@ -3807,37 +3848,40 @@ function bindCcPaymentImportEvents() {
     }
   });
 
-  el("cc-payment-review-body")?.addEventListener("click", async (event) => {
+  el("cc-payment-review-body")?.addEventListener("input", (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const rowId = target.getAttribute("data-cc-save-row");
-    if (!rowId) return;
-    const session = getCurrentCcPaymentSession();
-    if (!session?.id) return;
-
-    const certificateInput = document.querySelector(`[data-cc-row-field="certificate_number"][data-cc-row-id="${rowId}"]`);
-    const policyInput = document.querySelector(`[data-cc-row-field="manual_policy_id"][data-cc-row-id="${rowId}"]`);
-    setStatus("cc-payment-status", "Saving row correction...");
-    try {
-      const payload = await apiRequest(
-        `/api/cc-payment-imports/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`,
-        {
-          method: "PATCH",
-          body: {
-            certificate_number: certificateInput?.value || "",
-            manual_policy_id: policyInput?.value || "",
-            corrected_by: "Local User",
-          },
-        }
-      );
-      state.ccPayments.currentSession = payload.session || null;
-      state.ccPayments.currentSessionId = payload.session?.id || session.id;
-      renderCcPaymentPage();
-      setStatus("cc-payment-status", "Row correction saved.");
-    } catch (error) {
-      setStatus("cc-payment-status", `Unable to save row: ${error.message}`);
-    }
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.hasAttribute("data-cc-row-field")) return;
+    updateCcPaymentExportState();
   });
+}
+
+function collectCcPaymentRowEdits(session) {
+  const rows = Array.isArray(session?.rows) ? session.rows : [];
+  return rows
+    .map((row) => {
+      const certificateInput = document.querySelector(`[data-cc-row-field="certificate_number"][data-cc-row-id="${row.id}"]`);
+      const policyInput = document.querySelector(`[data-cc-row-field="manual_policy_id"][data-cc-row-id="${row.id}"]`);
+      if (!(certificateInput instanceof HTMLInputElement) && !(policyInput instanceof HTMLInputElement)) {
+        return null;
+      }
+      const nextCertificateNumber = certificateInput instanceof HTMLInputElement ? certificateInput.value || "" : "";
+      const nextPolicyId = policyInput instanceof HTMLInputElement ? policyInput.value || "" : "";
+      const currentCertificateNumber = row.corrected_certificate_number || row.certificate_number || "";
+      const currentPolicyId = row.manual_policy_id || row.matched_policy_id || "";
+      if (
+        String(nextCertificateNumber).trim() === String(currentCertificateNumber).trim()
+        && String(nextPolicyId).trim() === String(currentPolicyId).trim()
+      ) {
+        return null;
+      }
+      return {
+        id: row.id,
+        certificate_number: nextCertificateNumber,
+        manual_policy_id: nextPolicyId,
+      };
+    })
+    .filter(Boolean);
 }
 
 function getCurrentCheckImportSession() {
@@ -4092,7 +4136,7 @@ function renderCheckImportReviewTable() {
       <td class="table-action-cell">
         ${isImportedSession
           ? '<span class="cc-row-note">Read only</span>'
-          : `<button class="secondary-button table-action-button" data-check-save-row="${esc(row.id)}">Save</button>
+          : `<span class="cc-row-note">Edit rows, then save all.</span>
         <button class="secondary-button table-action-button" data-check-toggle-exclude="${esc(row.id)}">${row.excluded ? "Include" : "Exclude"}</button>`}
       </td>
     </tr>
@@ -4123,7 +4167,11 @@ function updateCheckImportButtons() {
   const exportButton = el("check-import-export-errors-button");
   if (saveAllButton) {
     const alreadyImported = isCheckImportImportedSession(session);
-    saveAllButton.disabled = !session || alreadyImported;
+    const pendingEditCount = session && !alreadyImported ? collectCheckImportRowEdits(session).length : 0;
+    saveAllButton.disabled = !session || alreadyImported || pendingEditCount <= 0;
+    saveAllButton.textContent = pendingEditCount > 0
+      ? `Save All Corrections (${pendingEditCount})`
+      : "Save All Corrections";
   }
   if (confirmButton) {
     const alreadyImported = isCheckImportImportedSession(session);
@@ -4275,23 +4323,6 @@ function collectCheckImportRowEdits(session) {
     .filter(Boolean);
 }
 
-function buildCheckImportRowEdit(row) {
-  const certificateInput = document.querySelector(`[data-check-row-field="certificate_number"][data-check-row-id="${row.id}"]`);
-  const monthsInput = document.querySelector(`[data-check-row-field="months"][data-check-row-id="${row.id}"]`);
-  const nextCertificateNumber = certificateInput instanceof HTMLInputElement ? certificateInput.value || "" : "";
-  const nextMonths = monthsInput instanceof HTMLInputElement ? monthsInput.value || "" : "";
-  const currentCertificateNumber = row.corrected_certificate_number || row.certificate_number || "";
-  const currentMonths = String(row.corrected_months ?? "").trim() !== "" ? String(row.corrected_months) : String(row.months ?? "");
-  const payload = {
-    id: row.id,
-    certificate_number: nextCertificateNumber,
-  };
-  if (String(nextMonths).trim() !== String(currentMonths).trim()) {
-    payload.months = nextMonths;
-  }
-  return payload;
-}
-
 function bindCheckImportEvents() {
   el("check-import-upload-button")?.addEventListener("click", () => {
     el("check-import-upload-input")?.click();
@@ -4399,6 +4430,12 @@ function bindCheckImportEvents() {
   el("check-import-confirm-button")?.addEventListener("click", async () => {
     const session = getCurrentCheckImportSession();
     if (!session?.id) return;
+    const pendingEditCount = collectCheckImportRowEdits(session).length;
+    if (pendingEditCount > 0) {
+      setStatus("check-import-status", `Save ${pendingEditCount} pending row correction(s) before confirming the import.`);
+      updateCheckImportButtons();
+      return;
+    }
     const readyCount = Number(session.ready_count || 0);
     const errorCount = Number(session.error_count || 0);
     const warningCount = Number(session.warning_count || 0);
@@ -4536,36 +4573,6 @@ function bindCheckImportEvents() {
       return;
     }
 
-    const rowId = target.getAttribute("data-check-save-row");
-    if (rowId) {
-      const row = (session.rows || []).find((entry) => entry.id === rowId);
-      if (!row) {
-        setStatus("check-import-status", "Unable to find that row.");
-        return;
-      }
-      setStatus("check-import-status", "Saving row correction...");
-      try {
-        const rowEdit = buildCheckImportRowEdit(row);
-        const payload = await apiRequest(
-          `/api/check-imports/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`,
-          {
-            method: "PATCH",
-            body: {
-              ...rowEdit,
-              corrected_by: "Local User",
-            },
-          }
-        );
-        state.checkImports.currentSession = payload.session || null;
-        state.checkImports.currentSessionId = payload.session?.id || session.id;
-        renderCheckImportPage();
-        setStatus("check-import-status", "Row correction saved.");
-      } catch (error) {
-        setStatus("check-import-status", `Unable to save row: ${error.message}`);
-      }
-      return;
-    }
-
     const excludeRowId = target.getAttribute("data-check-toggle-exclude");
     if (!excludeRowId) return;
     const row = (session.rows || []).find((entry) => entry.id === excludeRowId);
@@ -4587,6 +4594,13 @@ function bindCheckImportEvents() {
     } catch (error) {
       setStatus("check-import-status", `Unable to update row: ${error.message}`);
     }
+  });
+
+  el("check-import-review-body")?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.hasAttribute("data-check-row-field")) return;
+    updateCheckImportButtons();
   });
 }
 

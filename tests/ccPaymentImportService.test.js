@@ -17,6 +17,7 @@ const {
   deleteCcPaymentImportSession,
   getCcPaymentImportSession,
   revalidateSession,
+  updateCcPaymentImportRows,
 } = require("../services/ccPaymentImportService");
 
 test.after(() => {
@@ -168,6 +169,106 @@ test("deleting a duplicate-only cc payment session revalidates the remaining ses
   assert.equal(afterDelete.ready_count, 1);
   assert.equal(afterDelete.rows[0].status, "ready");
   assert.equal(afterDelete.rows[0].issue_reason, "");
+});
+
+test("cc payment rows can be updated in bulk without saving one line at a time", async () => {
+  __setCcPaymentImportStateForTests({
+    sessions: [
+      {
+        id: "session_bulk",
+        original_filename: "bulk.csv",
+        import_template_key: "credit-card-payments",
+        import_template_name: "Credit Card Payment Import",
+        salesforce_object_api_name: "Payments__c",
+        operation_type: "insert",
+        uploaded_at: "2026-06-19T06:00:00.000Z",
+        updated_at: "2026-06-19T06:00:00.000Z",
+        uploaded_by: "Local User",
+        policy_lookup_refreshed_at: null,
+        status: "pending",
+        row_count: 2,
+        ready_count: 0,
+        error_count: 0,
+        warning_count: 0,
+        missing_policy_count: 0,
+        attempted_import_count: 0,
+        successful_import_count: 0,
+        salesforce_failed_row_count: 0,
+        imported_row_count: 0,
+        failed_validation_row_count: 0,
+        final_status: "pending_review",
+        destination_object: "Payments__c",
+        exported_at: null,
+        export_filename: "",
+      },
+    ],
+    rows: [
+      {
+        id: "bulk_row_1",
+        session_id: "session_bulk",
+        row_number: 1,
+        transaction_id: "txn-bulk-1",
+        certificate_number: "",
+        matched_policy_id: "",
+        matched_certificate_record_id: "",
+        manual_policy_id: "",
+        amount: "75.62",
+        transaction_date: "2026-06-18",
+        payment_account: "5475",
+        months: 1,
+        status: "pending",
+        issue_reason: "",
+        issue_details: [],
+        payment_name: "",
+        name_amount_match_note: "",
+        raw_json: {},
+        date_received: "",
+        type: "2",
+        pay_type: "3",
+        manual_payment: "Yes",
+      },
+      {
+        id: "bulk_row_2",
+        session_id: "session_bulk",
+        row_number: 2,
+        transaction_id: "txn-bulk-2",
+        certificate_number: "",
+        matched_policy_id: "",
+        matched_certificate_record_id: "",
+        manual_policy_id: "",
+        amount: "81.14",
+        transaction_date: "2026-06-18",
+        payment_account: "5475",
+        months: 1,
+        status: "pending",
+        issue_reason: "",
+        issue_details: [],
+        payment_name: "",
+        name_amount_match_note: "",
+        raw_json: {},
+        date_received: "",
+        type: "2",
+        pay_type: "3",
+        manual_payment: "Yes",
+      },
+    ],
+    policyCache: {
+      reportId: "00OQm0000016PuPMAU",
+      refreshedAt: null,
+      source: "test",
+      items: [],
+    },
+  });
+
+  const session = await updateCcPaymentImportRows("session_bulk", [
+    { id: "bulk_row_1", manual_policy_id: "a00f400000QB7x2AAD" },
+    { id: "bulk_row_2", manual_policy_id: "a00f400000QB7x3AAD" },
+  ]);
+
+  assert.equal(session.rows[0].manual_policy_id, "a00f400000QB7x2AAD");
+  assert.equal(session.rows[1].manual_policy_id, "a00f400000QB7x3AAD");
+  assert.equal(session.rows[0].corrected_by, "Local User");
+  assert.equal(session.rows[1].corrected_by, "Local User");
 });
 
 test("imported cc payment sessions cannot be deleted", () => {

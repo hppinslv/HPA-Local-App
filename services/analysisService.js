@@ -41,7 +41,13 @@ function parseAnalysisMetricNumber(value) {
 }
 
 function isSparseSavedAnalysisMetricRow(row = {}) {
-  const oppCount = parseAnalysisMetricNumber(row["Sum of Opp Count"] ?? row["sum of opp count"] ?? 0);
+  const oppCount = parseAnalysisMetricNumber(
+    row["Sum of Sold"]
+      ?? row["sum of sold"]
+      ?? row["Sum of Opp Count"]
+      ?? row["sum of opp count"]
+      ?? 0
+  );
   const totalMonthlyPremium = parseAnalysisMetricNumber(
     row["Sum of Total Monthly Premium"] ?? row["sum of total monthly premium"] ?? 0
   );
@@ -141,6 +147,8 @@ function getAnalysisRateFieldCandidates(rows = []) {
 function summarizeAnalysisRateRow(row = {}) {
   const mailed = getAnalysisMetricNumber(row, ["Sum of Mailed", "Mailed"]);
   const soldCount = getAnalysisMetricNumber(row, [
+    "Sum of Sold",
+    "Sold",
     "Sum of Opp Count",
     "Opp Count",
     "Applications Received",
