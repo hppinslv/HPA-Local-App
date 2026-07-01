@@ -828,7 +828,16 @@ function formatReportRunDateLabel(value) {
 }
 
 function resolveAnalysisReportTitlePrefix(value = "") {
-  const normalized = String(value || "").trim().toUpperCase();
+  const normalizedValues = ensureArray(value)
+    .flatMap((entry) => String(entry || "").split(/[,\n]/))
+    .map((entry) => String(entry || "").trim().toUpperCase())
+    .filter(Boolean)
+    .map((entry) => entry === "NHCL" ? "N" : entry);
+  const uniqueValues = Array.from(new Set(normalizedValues));
+  if (uniqueValues.includes("N") && uniqueValues.includes("RFC")) {
+    return "New Home + Refinance";
+  }
+  const normalized = uniqueValues[0] || "";
   if (normalized === "RFC" || normalized === "REFINANCE") {
     return "Refinance";
   }
@@ -855,7 +864,7 @@ function buildAnalysisTitleLabel(prefixValue, startDate, endDate, runDate) {
 function buildAnalysisReportName(run, pull) {
   const runDate = run.createdAt || run.created_at || new Date().toISOString();
   const titleLabel = buildAnalysisTitleLabel(
-    ensureArray(pull.keyCodes)[0] || pull.clientType || "",
+    ensureArray(pull.keyCodes).length ? pull.keyCodes : [pull.clientType || ""],
     pull.dateRange?.startDate || "",
     pull.dateRange?.endDate || "",
     runDate
@@ -1585,16 +1594,16 @@ function formatAutoAnalysisMonthPart(value) {
 }
 
 function buildAutoAnalysisLabel(rawPull = {}, index = 0) {
-  const keyCode = String(ensureArray(rawPull.keyCodes)[0] || rawPull.clientType || "").trim().toUpperCase();
+  const keyCodeValues = ensureArray(rawPull.keyCodes).length ? rawPull.keyCodes : [rawPull.clientType || ""];
   const startDate = normalizeIsoDateForLabel(rawPull.dateRange?.startDate || "");
   const endDate = normalizeIsoDateForLabel(rawPull.dateRange?.endDate || "");
-  const titleLabel = buildAnalysisTitleLabel(keyCode, startDate, endDate, new Date().toISOString());
+  const titleLabel = buildAnalysisTitleLabel(keyCodeValues, startDate, endDate, new Date().toISOString());
 
   if (titleLabel) {
     return titleLabel;
   }
 
-  const titlePrefix = resolveAnalysisReportTitlePrefix(keyCode);
+  const titlePrefix = resolveAnalysisReportTitlePrefix(keyCodeValues);
   if (titlePrefix) {
     return titlePrefix;
   }
@@ -1637,7 +1646,14 @@ function normalizePullRequest(rawPull = {}, index = 0) {
     keyCodes,
     dateRange: normalizedDateRange,
   }, index);
-  const normalizedClientTypeFromKeyCodes = resolveClientTypeKeyFilter(keyCodes[0] || "");
+  const uniqueNormalizedKeyCodes = Array.from(new Set(
+    keyCodes
+      .map((entry) => String(entry || "").trim().toUpperCase())
+      .filter(Boolean)
+      .map((entry) => entry === "NHCL" ? "N" : entry)
+  ));
+  const normalizedClientTypeFromKeyCodes =
+    uniqueNormalizedKeyCodes.length === 1 ? resolveClientTypeKeyFilter(uniqueNormalizedKeyCodes[0] || "") : "";
   const normalizedClientType = normalizedClientTypeFromKeyCodes
     ? normalizedClientTypeFromKeyCodes.toUpperCase() === "N" ? "NHCL" : "RFC"
     : String(rawPull.clientType || "").trim();

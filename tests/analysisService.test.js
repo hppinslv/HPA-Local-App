@@ -252,6 +252,25 @@ test("analysis report names use New Home title format with run date", () => {
   assert.equal(reportName, "New Home - Jan 2026 - May 2026 (06/26/2026)");
 });
 
+test("analysis report names support combined N and RFC title format", () => {
+  const reportName = buildAnalysisReportName(
+    {
+      createdAt: "2026-06-26T15:30:00.000Z",
+      runName: "June 2026",
+    },
+    {
+      keyCodes: ["N", "RFC"],
+      dateRange: {
+        startDate: "2013-01-01",
+        endDate: "2025-12-31",
+      },
+      analysisLabel: "N + RFC - Jan 2013 - Dec 2025",
+    }
+  );
+
+  assert.equal(reportName, "New Home + Refinance - Jan 2013 - Dec 2025 (06/26/2026)");
+});
+
 test("buildPersistedComparisonSetups stores primary report and selected scf per comparison", () => {
   const entries = buildPersistedComparisonSetups(
     "setup_123",

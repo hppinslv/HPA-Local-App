@@ -38,7 +38,11 @@ const ANALYSIS_CONVERTED_RATE_PREMIUM_BASIS = 14.86;
 const ANALYSIS_SETUP_STORAGE_KEY = "hpa.analysis.currentSetupId";
 const ANALYSIS_SETUP_DRAFT_STORAGE_KEY = "hpa.analysis.currentSetupDraft";
 const ANALYSIS_KEY_CODE_GROUPS = ["NHCL", "RFC"];
-const ANALYSIS_KEY_CODE_OPTIONS = ["N", "RFC"];
+const ANALYSIS_KEY_CODE_OPTIONS = [
+  { value: "N", label: "N" },
+  { value: "RFC", label: "RFC" },
+  { value: "N,RFC", label: "N + RFC" },
+];
 const APPLICATION_DEFAULTS = Object.freeze({
   dues: "19.95",
   freeCoverageAmount: "3000",
@@ -390,7 +394,16 @@ const formatReportRunDateLabel = (value) => {
 };
 
 function resolveAnalysisReportTitlePrefix(value = "") {
-  const normalized = String(value || "").trim().toUpperCase();
+  const normalizedValues = ensureArray(value)
+    .flatMap((entry) => String(entry || "").split(/[,\n]/))
+    .map((entry) => String(entry || "").trim().toUpperCase())
+    .filter(Boolean)
+    .map((entry) => entry === "NHCL" ? "N" : entry);
+  const uniqueValues = Array.from(new Set(normalizedValues));
+  if (uniqueValues.includes("N") && uniqueValues.includes("RFC")) {
+    return "New Home + Refinance";
+  }
+  const normalized = uniqueValues[0] || "";
   if (normalized === "RFC" || normalized === "REFINANCE") {
     return "Refinance";
   }
@@ -510,17 +523,16 @@ function formatAutoAnalysisMonthPart(value) {
 }
 
 function buildAutoAnalysisLabel(pull = {}, index = 0) {
-  const rawKeyCode = String((pull.keyCodes || [])[0] || pull.clientType || "").trim().toUpperCase();
-  const keyCode = rawKeyCode === "N" ? "NHCL" : rawKeyCode;
+  const keyCodeValues = ensureArray(pull.keyCodes).length ? pull.keyCodes : [pull.clientType || ""];
   const startDate = normalizeIsoDateInput(pull.dateRange?.startDate || "");
   const endDate = normalizeIsoDateInput(pull.dateRange?.endDate || "");
-  const titleLabel = buildAnalysisTitleLabel(keyCode, startDate, endDate, new Date().toISOString());
+  const titleLabel = buildAnalysisTitleLabel(keyCodeValues, startDate, endDate, new Date().toISOString());
 
   if (titleLabel) {
     return titleLabel;
   }
 
-  const titlePrefix = resolveAnalysisReportTitlePrefix(keyCode);
+  const titlePrefix = resolveAnalysisReportTitlePrefix(keyCodeValues);
   if (titlePrefix) {
     return titlePrefix;
   }
@@ -5541,13 +5553,25 @@ function normalizeKeyCodeGroup(value) {
 
 function syncAnalysisPullClientTypeWithKeyCodes(pull) {
   if (!pull || !Array.isArray(pull.keyCodes) || !pull.keyCodes.length) {
+    if (pull) {
+      pull.clientType = "";
+    }
     return;
   }
-  const normalizedKeyCode = String(pull.keyCodes[0] || "").trim().toUpperCase();
-  if (normalizedKeyCode === "N" || normalizedKeyCode === "NHCL") {
+  const normalizedKeyCodes = Array.from(new Set(
+    pull.keyCodes
+      .map((entry) => String(entry || "").trim().toUpperCase())
+      .filter(Boolean)
+      .map((entry) => entry === "NHCL" ? "N" : entry)
+  ));
+  if (normalizedKeyCodes.includes("N") && normalizedKeyCodes.includes("RFC")) {
+    pull.clientType = "";
+  } else if (normalizedKeyCodes.includes("N")) {
     pull.clientType = "NHCL";
-  } else if (normalizedKeyCode === "RFC") {
+  } else if (normalizedKeyCodes.includes("RFC")) {
     pull.clientType = "RFC";
+  } else {
+    pull.clientType = "";
   }
 }
 
@@ -7157,13 +7181,15 @@ function parseAnalysisMetricNumber(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function resolveNavigatorSoldCount(row = {}) {
+function resolveNavigatorSoldCount(row = {}, options = {}) {
+  const convertedCountFallback = Number(options?.convertedCountFallback || 0);
   const oppCount = getRowMetricNumber(row, "Opp Count");
   if (oppCount > 0) {
-    return oppCount;
+    return Math.max(oppCount, convertedCountFallback);
   }
   const explicitSold = getRowMetricNumber(row, "Sold");
-  return explicitSold > 0 ? explicitSold : 0;
+  const fallbackSold = explicitSold > 0 ? explicitSold : 0;
+  return Math.max(fallbackSold, convertedCountFallback);
 }
 
 function resolveNavigatorConvertedCount(row = {}, precomputedConvertedPremium = null, options = {}) {
@@ -7294,13 +7320,15 @@ function normalizeAnalysisMetricRow(row = {}) {
   }
 
   const mailed = getRowMetricNumber(row, "Sum of Mailed");
-  const soldCount = resolveNavigatorSoldCount(row);
   const inForceCount = getRowMetricNumber(row, "In Force");
   const totalMonthlyPremium = getRowMetricNumber(row, "Total Monthly Premium");
   const inForceMonthlyPremium = getRowMetricNumber(row, "In Force Monthly Premium");
   const totalConvertedMonthlyPremiums = getRowMetricNumber(row, "Total Converted Monthly Premiums");
   const convertedCount = resolveNavigatorConvertedCount(row, totalConvertedMonthlyPremiums, {
     allowPremiumRowInference: false,
+  });
+  const soldCount = resolveNavigatorSoldCount(row, {
+    convertedCountFallback: convertedCount,
   });
   const fallbackRates = calculateNavigatorRates({
     mailed,
@@ -7570,15 +7598,18 @@ function buildExportScfAggregateMap(report) {
     };
 
     const rowConvertedPremium = getRowMetricNumber(row, "Total Converted Monthly Premiums");
+    const rowConvertedCount = resolveNavigatorConvertedCount(row, rowConvertedPremium, {
+      allowPremiumRowInference: true,
+    });
     const rowSalesforceSoldRate = resolveNavigatorExplicitRate(row, "Sold Rate");
     const rowSalesforceInForceRate = resolveNavigatorExplicitRate(row, "In Force Rate");
     const rowSalesforceConvertedRate = getRowMetricValue(row, "Converted Rate");
     current.mailed += getRowMetricNumber(row, "Mailed");
-    current.oppCount += resolveNavigatorSoldCount(row);
-    current.inForce += getRowMetricNumber(row, "In Force");
-    current.sold += resolveNavigatorConvertedCount(row, rowConvertedPremium, {
-      allowPremiumRowInference: true,
+    current.oppCount += resolveNavigatorSoldCount(row, {
+      convertedCountFallback: rowConvertedCount,
     });
+    current.inForce += getRowMetricNumber(row, "In Force");
+    current.sold += rowConvertedCount;
     if ((current.salesforceSoldRate === null || current.salesforceSoldRate === 0) && Number.isFinite(Number(rowSalesforceSoldRate)) && Number(rowSalesforceSoldRate) !== 0) {
       current.salesforceSoldRate = Number(rowSalesforceSoldRate);
     }
@@ -9192,14 +9223,20 @@ function renderAnalysisPulls() {
   state.analysis.reportPulls.forEach((pull, index) => {
     const autoAnalysisLabel = buildAutoAnalysisLabel(pull, index);
     const isCollapsed = isAnalysisPullCollapsed(pull.id);
-    const normalizedKeyCode = String((pull.keyCodes || [])[0] || "").trim().toUpperCase();
+    const normalizedKeyCode = ensureArray(pull.keyCodes)
+      .map((entry) => String(entry || "").trim().toUpperCase())
+      .filter(Boolean)
+      .map((entry) => entry === "NHCL" ? "N" : entry)
+      .join(",");
     const keyCodeOptions = Array.from(
-      new Set(
+      new Map(
         [
           ...ANALYSIS_KEY_CODE_OPTIONS,
-          ...(normalizedKeyCode ? [normalizedKeyCode] : []),
-        ].filter(Boolean)
-      )
+          ...(normalizedKeyCode ? [{ value: normalizedKeyCode, label: normalizedKeyCode }] : []),
+        ]
+          .filter((option) => option?.value)
+          .map((option) => [option.value, option])
+      ).values()
     );
     const card = document.createElement("article");
     card.className = `analysis-pull-card${isCollapsed ? " is-collapsed" : ""}`;
@@ -9236,7 +9273,7 @@ function renderAnalysisPulls() {
           <select class="field-input" data-pull-field="keyCodes" data-pull-id="${esc(pull.id)}">
             <option value=""${normalizedKeyCode ? "" : " selected"}>Select Key Code</option>
             ${keyCodeOptions.map((option) => `
-              <option value="${esc(option)}"${normalizedKeyCode === option ? " selected" : ""}>${esc(option)}</option>
+              <option value="${esc(option.value)}"${normalizedKeyCode === option.value ? " selected" : ""}>${esc(option.label)}</option>
             `).join("")}
           </select>
         </div>

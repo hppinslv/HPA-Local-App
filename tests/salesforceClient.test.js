@@ -12,6 +12,7 @@ const {
   parseConvertedNumber,
   resolveConvertedValue,
   resolveAnalysisConvertedCount,
+  resolveAnalysisSoldOpportunityCount,
   summarizeAnalysisExportRows,
   shouldFallbackToSoqlForReportPayload,
 } = require("../services/salesforceClient");
@@ -229,6 +230,60 @@ test("converted count uses one certificate per positive converted premium row in
   assert.equal(convertedCount, 1);
 });
 
+test("sold opportunity count falls back to converted certificate count when converted premium is positive", () => {
+  const soldCount = resolveAnalysisSoldOpportunityCount(
+    {
+      "Sum of Opp Count": 0,
+      "Sum of Sold": 0,
+      "Sum of Converted": 3,
+      "Sum of Total Converted Monthly Premiums": 229.91,
+    },
+    {
+      convertedCountFallback: 3,
+    }
+  );
+
+  assert.equal(soldCount, 3);
+});
+
+test("aggregate rows count converted-premium certificates in both sold and opp count columns", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "088",
+      Key: "N",
+      Mailed: 100,
+      "Opp Count": 0,
+      "In Force": 0,
+      "Total Converted Monthly Premiums": 102.01,
+      "In Force Monthly Premium": 0,
+    },
+    {
+      "SCF Grouping": "088",
+      Key: "N",
+      Mailed: 100,
+      "Opp Count": 0,
+      "In Force": 0,
+      "Total Converted Monthly Premiums": 31.17,
+      "In Force Monthly Premium": 0,
+    },
+    {
+      "SCF Grouping": "088",
+      Key: "N",
+      Mailed: 100,
+      "Opp Count": 0,
+      "In Force": 0,
+      "Total Converted Monthly Premiums": 96.73,
+      "In Force Monthly Premium": 0,
+    },
+  ]);
+
+  const summary = summarizeAnalysisExportRows(dataset.rows, dataset.columns);
+  const row = getAggregateRow(summary, "088");
+  assert.equal(row["Sum of Opp Count"], "3");
+  assert.equal(row["Sum of In Force"], "0");
+  assert.equal(row["Sum of Converted"], "3");
+});
+
 test("payments minus credits greater than one dollar counts the certificate as converted", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
@@ -354,10 +409,11 @@ test("rows with SCF 10, 010, and numeric 10 aggregate together under 010", () =>
 
   const row = getAggregateRow(dataset, "010");
   assert.equal(row["Sum of Mailed"], "166");
+  assert.equal(row["Sum of Opp Count"], "2");
   assert.equal(row["Sum of Converted"], "1");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], "1.5414957270");
 });
 
 test("aggregate-shaped saved rows are not mistaken for detail export rows", () => {
