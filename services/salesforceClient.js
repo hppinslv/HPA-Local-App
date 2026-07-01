@@ -3003,6 +3003,94 @@ function getAnalysisSummaryRowKey(row = {}) {
   return `${scf}::${keyCode}`;
 }
 
+function buildConvertedCountByScfKey(detailRows = []) {
+  const convertedCountByScfKey = new Map();
+
+  (Array.isArray(detailRows) ? detailRows : []).forEach((detailRow) => {
+    const scf = normalizeScf(
+      detailRow["SCF Grouping"] ??
+      detailRow["scf grouping"] ??
+      detailRow.scfGrouping ??
+      detailRow.scf ??
+      ""
+    );
+    if (!scf) {
+      return;
+    }
+
+    const keyCode = String(
+      detailRow["Key"] ??
+      detailRow.key ??
+      ""
+    ).trim().toUpperCase();
+    const mapKey = `${scf}::${keyCode}`;
+    const convertedPremium = parseMoneyNumber(
+      detailRow["Total Converted Monthly Premiums"] ??
+      detailRow["Sum of Total Converted Monthly Premiums"] ??
+      detailRow.totalConvertedMonthlyPremiums ??
+      detailRow.sumTotalConvertedMonthlyPremiums ??
+      0
+    );
+    const convertedCount = convertedPremium > 0 ? 1 : 0;
+
+    convertedCountByScfKey.set(
+      mapKey,
+      (convertedCountByScfKey.get(mapKey) || 0) + convertedCount
+    );
+  });
+
+  return convertedCountByScfKey;
+}
+
+function overrideSummaryRowsConvertedCount(summaryRows = [], detailRows = []) {
+  const convertedCountByScfKey = buildConvertedCountByScfKey(detailRows);
+
+  return (Array.isArray(summaryRows) ? summaryRows : []).map((row) => {
+    const nextRow = { ...(row || {}) };
+    const rowKey = getAnalysisSummaryRowKey(nextRow);
+    const calculatedConverted = convertedCountByScfKey.get(rowKey) || 0;
+
+    nextRow["Sum of Converted"] = calculatedConverted;
+    nextRow["SUM OF CONVERTED"] = calculatedConverted;
+    nextRow["sum of converted"] = calculatedConverted;
+    nextRow.sumConverted = calculatedConverted;
+    return nextRow;
+  });
+}
+
+function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = []) {
+  const convertedTotal = Array.from(buildConvertedCountByScfKey(detailRows).values())
+    .reduce((sum, value) => sum + value, 0);
+
+  return (Array.isArray(summaryValues) ? summaryValues : []).map((entry) => {
+    const key = String(entry?.key || "").trim();
+    const label = String(entry?.label || "").trim();
+    const normalizedKey = normalizeLabel(key);
+    const normalizedLabel = normalizeLabel(label);
+
+    if (normalizedKey !== "sum of converted" && normalizedLabel !== "sum of converted") {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      value: Math.round(convertedTotal).toLocaleString("en-US"),
+    };
+  });
+}
+
+function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows = []) {
+  const safeDataset = summaryDataset && typeof summaryDataset === "object"
+    ? summaryDataset
+    : { columns: [], rows: [], summaryValues: [] };
+
+  return {
+    ...safeDataset,
+    rows: overrideSummaryRowsConvertedCount(safeDataset.rows, detailRows),
+    summaryValues: overrideSummaryValuesConvertedCount(safeDataset.summaryValues, detailRows),
+  };
+}
+
 function getAnalysisCurrencyMetricNumber(row = {}, labels = []) {
   return parseNumber(getAnalysisMetricValue(row, labels) ?? getLikelyColumnValue(row, labels) ?? 0);
 }
@@ -3816,25 +3904,16 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     payloadDetailSummary,
     opportunityAggregateSummary
   );
-  const finalizedRows = backfillMissingAnalysisMetrics(
-    flattened.rows.length
-      ? restorePremiumsFromGroupedRows(
-          mergedFlattened.rows,
-          flattened.rows
-        )
-      : mergedFlattened.rows,
-    flattened.rows,
-    opportunityAggregateSummary.rows,
-    preferredExportSummary.rows,
-    payloadDetailSummary.rows,
-    normalizedDetailSummary.rows
+  const baseSummaryDataset = flattened.rows.length || flattened.columns.length
+    ? flattened
+    : normalizedDetailSummary;
+  const convertedOverrideDetailRows = preferredExport.rows.length
+    ? preferredExport.rows
+    : (reportPayloadDetailExport.rows.length ? reportPayloadDetailExport.rows : fullDetailExport.rows);
+  const finalizedFlattened = overrideSummaryDatasetConvertedCount(
+    baseSummaryDataset,
+    convertedOverrideDetailRows
   );
-  const preferredSummaryValues = buildAnalysisSummaryValuesFromRows(finalizedRows);
-  const finalizedFlattened = {
-    ...mergedFlattened,
-    rows: finalizedRows,
-    summaryValues: preferredSummaryValues,
-  };
   const rowDebugTrace = buildAnalysisRowDebugTrace(flattened.rows, finalizedFlattened.rows, "047");
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
     flattened,
@@ -4570,6 +4649,7 @@ async function fetchMonthlySalesforceReportData(
 module.exports = {
   backfillMissingAnalysisMetrics,
   buildConvertedDebugSummary,
+  buildConvertedCountByScfKey,
   buildFlatRowsFromDetailExport,
   summarizeAnalysisExportRows,
   buildFlatReportRows,
@@ -4601,6 +4681,7 @@ module.exports = {
   parseConvertedNumber,
   parseDateValue,
   parseNumber,
+  overrideSummaryDatasetConvertedCount,
   resolveConvertedValue,
   resolveAnalysisConvertedCount,
   resolveAnalysisDateRange,
