@@ -899,7 +899,7 @@ function buildAnalysisReportSummary({ inputRowCount, exportRowCount, zeroReason,
 const ANALYSIS_REPORT_LABEL_MAP = {
   "Sum of Opp Count": "Sum of Sold",
   "Opp Count": "Sum of Sold",
-  "Sum of Total Monthly Premium": "Sum of Total Sold",
+  "Sum of Total Monthly Premium": "Sum of Total Sold Premium",
   "Average Monthly Premium": "Average Monthly Premium",
   "Sold Rate": "Sold Rate",
   "Converted Rate": "Converted Rate",

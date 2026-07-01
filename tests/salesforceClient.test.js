@@ -807,3 +807,69 @@ test("overrideSummaryDatasetConvertedCount changes only sum of converted from de
     "2"
   );
 });
+
+test("overrideSummaryDatasetConvertedCount inserts missing sum of converted column and preserves rates", () => {
+  const summaryDataset = {
+    columns: [
+      { key: "SCF Grouping", label: "SCF Grouping" },
+      { key: "Key", label: "Key" },
+      { key: "Sum of Mailed", label: "Sum of Mailed" },
+      { key: "Sum of Sold", label: "Sum of Sold" },
+      { key: "Sum of In Force", label: "Sum of In Force" },
+      { key: "Sum of Total Sold", label: "Sum of Total Sold" },
+      { key: "Sold Rate", label: "Sold Rate" },
+      { key: "In Force Rate", label: "In Force Rate" },
+      { key: "Converted Rate", label: "Converted Rate" },
+    ],
+    rows: [
+      {
+        "SCF Grouping": "770",
+        Key: "N",
+        "Sum of Mailed": "18,251",
+        "Sum of Sold": "5",
+        "Sum of In Force": "2",
+        "Sum of Total Sold": "$490.72",
+        "Sold Rate": "0.1809373745",
+        "In Force Rate": "0.0842963453",
+        "Converted Rate": "0.1199956373",
+      },
+    ],
+    summaryValues: [],
+  };
+
+  const detailRows = [
+    {
+      "SCF Grouping": "770",
+      Key: "N",
+      "Total Converted Monthly Premiums": "$100.00",
+    },
+    {
+      "SCF Grouping": "770",
+      Key: "N",
+      "Total Converted Monthly Premiums": "$225.44",
+    },
+  ];
+
+  const result = overrideSummaryDatasetConvertedCount(summaryDataset, detailRows);
+
+  assert.equal(result.columns.some((column) => column.label === "Sum of Converted"), true);
+  assert.deepEqual(
+    result.columns.map((column) => column.label),
+    [
+      "SCF Grouping",
+      "Key",
+      "Sum of Mailed",
+      "Sum of Sold",
+      "Sum of In Force",
+      "Sum of Converted",
+      "Sum of Total Sold",
+      "Sold Rate",
+      "In Force Rate",
+      "Converted Rate",
+    ]
+  );
+  assert.equal(result.rows[0]["Sum of Converted"], 2);
+  assert.equal(result.rows[0]["Sold Rate"], "0.1809373745");
+  assert.equal(result.rows[0]["In Force Rate"], "0.0842963453");
+  assert.equal(result.rows[0]["Converted Rate"], "0.1199956373");
+});

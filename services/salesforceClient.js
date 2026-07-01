@@ -2937,7 +2937,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
       { key: "Sum of In Force", label: "Sum of In Force", normalized: "sum of in force", dataType: "double" },
       { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
-      { key: "Sum of Total Sold", label: "Sum of Total Sold", normalized: "sum of total sold", dataType: "currency" },
+      { key: "Sum of Total Sold", label: "Sum of Total Sold Premium", normalized: "sum of total sold", dataType: "currency" },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", normalized: "sum of in force monthly premium", dataType: "currency" },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
       { key: "Sold Rate", label: "Sold Rate", normalized: "sold rate", dataType: "double" },
@@ -2950,7 +2950,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.soldCount, 0)).toLocaleString("en-US") },
       { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForce, 0)).toLocaleString("en-US") },
       { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.convertedCount, 0)).toLocaleString("en-US") },
-      { key: "Sum of Total Sold", label: "Sum of Total Sold", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
+      { key: "Sum of Total Sold", label: "Sum of Total Sold Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForceMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalConvertedMonthlyPremiums, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     ],
@@ -3079,6 +3079,47 @@ function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = []
   });
 }
 
+function ensureSumOfConvertedColumn(columns = []) {
+  const safeColumns = Array.isArray(columns) ? [...columns] : [];
+
+  const hasConvertedColumn = safeColumns.some((column) => {
+    const label = normalizeLabel(column?.label || column?.key || "");
+    return label === "sum of converted";
+  });
+
+  if (hasConvertedColumn) {
+    return safeColumns;
+  }
+
+  const convertedColumn = {
+    key: "Sum of Converted",
+    label: "Sum of Converted",
+    normalized: "sum of converted",
+    dataType: "double",
+  };
+
+  const inForceIndex = safeColumns.findIndex((column) =>
+    normalizeLabel(column?.label || column?.key || "") === "sum of in force"
+  );
+
+  if (inForceIndex >= 0) {
+    safeColumns.splice(inForceIndex + 1, 0, convertedColumn);
+    return safeColumns;
+  }
+
+  const totalSoldIndex = safeColumns.findIndex((column) =>
+    normalizeLabel(column?.label || column?.key || "") === "sum of total sold"
+  );
+
+  if (totalSoldIndex >= 0) {
+    safeColumns.splice(totalSoldIndex, 0, convertedColumn);
+    return safeColumns;
+  }
+
+  safeColumns.push(convertedColumn);
+  return safeColumns;
+}
+
 function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows = []) {
   const safeDataset = summaryDataset && typeof summaryDataset === "object"
     ? summaryDataset
@@ -3086,6 +3127,7 @@ function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows 
 
   return {
     ...safeDataset,
+    columns: ensureSumOfConvertedColumn(safeDataset.columns),
     rows: overrideSummaryRowsConvertedCount(safeDataset.rows, detailRows),
     summaryValues: overrideSummaryValuesConvertedCount(safeDataset.summaryValues, detailRows),
   };
