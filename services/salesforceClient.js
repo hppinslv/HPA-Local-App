@@ -188,21 +188,15 @@ function resolveAnalysisSoldOpportunityCount(row = {}, options = {}) {
 function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = null, options = {}) {
   applyAnalysisMetricAliases(row);
   const allowPremiumRowInference = options?.allowPremiumRowInference !== false;
-  const resolvedConverted = resolveConvertedValue(row);
-  const explicitConvertedCount = Number.isFinite(resolvedConverted.numericValue)
-    ? Number(resolvedConverted.numericValue)
-    : null;
   const convertedPremium = resolveAnalysisConvertedPremiumValue(row, precomputedConvertedPremium);
-  if (explicitConvertedCount !== null && explicitConvertedCount > 0) {
-    return explicitConvertedCount;
-  }
   if (allowPremiumRowInference) {
-    return getConvertedCountForSourceRow(row, convertedPremium);
+    return convertedPremium > 0 ? 1 : 0;
   }
-  if (explicitConvertedCount !== null) {
-    return 0;
-  }
-  return 0;
+
+  const explicitConvertedCount = parseNumber(
+    getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ?? 0
+  );
+  return explicitConvertedCount > 0 ? explicitConvertedCount : 0;
 }
 
 function resolveAnalysisExplicitRate(row = {}, labels = []) {
@@ -246,32 +240,50 @@ function calculateAnalysisConvertedRate({
   totalConvertedMonthlyPremiums = 0,
   mailed = 0,
 } = {}) {
-  const explicitConvertedRate = Number(convertedRate);
-  if (Number.isFinite(explicitConvertedRate) && explicitConvertedRate > 0) {
-    return explicitConvertedRate;
-  }
-
   const safeConvertedCount = parseNumber(convertedCount);
-  if (!(safeConvertedCount > 0)) {
+  const safeMailed = parseNumber(mailed);
+  if (!(safeConvertedCount > 0) || !(safeMailed > 0)) {
     return 0;
   }
 
-  const soldRateNumber = Number(soldRate);
-  const soldCountNumber = parseNumber(soldCount);
-  if (soldCountNumber > 0 && Number.isFinite(soldRateNumber) && soldRateNumber > 0) {
-    return (safeConvertedCount / soldCountNumber) * soldRateNumber;
+  // Do not trust Salesforce converted rate. Converted rate is app-calculated only.
+  return safeConvertedCount / safeMailed;
+}
+
+function validateAnalysisConvertedSummaryRow(row = {}) {
+  const convertedPremium = parseNumber(
+    row["Sum of Total Converted Monthly Premiums"] ??
+    row["sum of total converted monthly premiums"] ??
+    row.sumTotalConvertedMonthlyPremiums ??
+    row.sumtotalconvertedmonthlypremiums ??
+    0
+  );
+  const convertedCount = Number(
+    row["Sum of Converted"] ??
+    row["sum of converted"] ??
+    row.sumConverted ??
+    row.sumconverted ??
+    0
+  );
+
+  if (convertedPremium > 0 && convertedCount === 0) {
+    console.error("[Converted Count Invalid]", {
+      scf: row["SCF Grouping"] ?? row.scfGrouping ?? row["scf grouping"] ?? "",
+      convertedPremium: row["Sum of Total Converted Monthly Premiums"] ?? row.sumTotalConvertedMonthlyPremiums,
+      convertedCount: row["Sum of Converted"] ?? row.sumConverted,
+      row,
+    });
+
+    throw new Error(
+      `Invalid converted count for SCF ${row["SCF Grouping"] ?? row.scfGrouping ?? row["scf grouping"] ?? ""}: converted premium is greater than 0 but converted count is 0`
+    );
   }
 
-  const inForceRateNumber = Number(inForceRate);
-  const inForceCountNumber = parseNumber(inForceCount);
-  if (inForceCountNumber > 0 && Number.isFinite(inForceRateNumber) && inForceRateNumber > 0) {
-    return (safeConvertedCount / inForceCountNumber) * inForceRateNumber;
-  }
+  return row;
+}
 
-  return calculateAnalysisCountRates({
-    mailed,
-    convertedCount: safeConvertedCount,
-  }).convertedRate;
+function validateAnalysisConvertedSummaryRows(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((row) => validateAnalysisConvertedSummaryRow(row));
 }
 
 function shouldPreferCandidateAnalysisMetric(currentValue, candidateValue) {
@@ -2153,11 +2165,11 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
   const safeRows = Array.isArray(rows) ? rows : [];
   const totals = safeRows.reduce((acc, row) => {
     acc.mailed += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.mailed) ?? 0);
-    acc.oppCount += resolveAnalysisSoldOpportunityCount(row, {
+    acc.soldCount += resolveAnalysisSoldOpportunityCount(row, {
       convertedCountFallback: 0,
     });
     acc.inForce += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
-    acc.sold += resolveAnalysisConvertedCount(row, null, {
+    acc.convertedCount += resolveAnalysisConvertedCount(row, null, {
       allowPremiumRowInference: false,
     });
     acc.totalMonthlyPremium += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
@@ -2166,23 +2178,24 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
     return acc;
   }, {
     mailed: 0,
-    oppCount: 0,
+    soldCount: 0,
     inForce: 0,
-    sold: 0,
+    convertedCount: 0,
     totalMonthlyPremium: 0,
     inForceMonthlyPremium: 0,
     totalConvertedMonthlyPremiums: 0,
   });
 
-  const averageMonthlyPremium = totals.oppCount > 0
-    ? totals.totalMonthlyPremium / totals.oppCount
+  const averageMonthlyPremium = totals.soldCount > 0
+    ? totals.totalMonthlyPremium / totals.soldCount
     : 0;
 
   return [
     { key: "Sum of Mailed", label: "Sum of Mailed", value: Math.round(totals.mailed).toLocaleString("en-US") },
-    { key: "Sum of Opp Count", label: "Sum of Opp Count", value: Math.round(totals.oppCount).toLocaleString("en-US") },
+    { key: "Sum of Opp Count", label: "Sum of Opp Count", value: Math.round(totals.soldCount).toLocaleString("en-US") },
+    { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(totals.soldCount).toLocaleString("en-US") },
     { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(totals.inForce).toLocaleString("en-US") },
-    { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(totals.sold).toLocaleString("en-US") },
+    { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(totals.convertedCount).toLocaleString("en-US") },
     { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: totals.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: totals.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: totals.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
@@ -2234,7 +2247,7 @@ function fillAnalysisRateFallbacks(row = {}) {
   setAnalysisMetricAliases(
     row,
     ANALYSIS_METRIC_LABELS.sold,
-    Math.round(convertedCount).toLocaleString("en-US")
+    Math.round(soldCount).toLocaleString("en-US")
   );
   setAnalysisMetricAliases(
     row,
@@ -2260,7 +2273,9 @@ function fillAnalysisRateFallbacks(row = {}) {
   }
   const averageMonthlyPremium = soldCount > 0 ? totalMonthlyPremium / soldCount : 0;
   row.averageMonthlyPremium = averageMonthlyPremium;
-  return row;
+  row.sumConverted = convertedCount;
+  row.sumTotalConvertedMonthlyPremiums = totalConvertedMonthlyPremiums;
+  return validateAnalysisConvertedSummaryRow(row);
 }
 
 function resolveFactMapGroupingKey(path = []) {
@@ -2799,9 +2814,10 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       scf,
       keyCode,
       mailed: 0,
-      oppCount: 0,
+      soldCount: 0,
+      rawOppCount: 0,
       inForce: 0,
-      sold: 0,
+      convertedCount: 0,
       totalMonthlyPremium: 0,
       inForceMonthlyPremium: 0,
       totalConvertedMonthlyPremiums: 0,
@@ -2819,7 +2835,13 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "Sum of Mailed",
       ]) ?? 0
     );
-    current.oppCount += rowSoldCount;
+    current.soldCount += rowSoldCount;
+    current.rawOppCount += parseNumber(getLikelyColumnValue(row, [
+      "Opp Count",
+      "Sum of Opp Count",
+      "Applications Received",
+      "Application Count",
+    ]) ?? 0);
     current.inForce += parseNumber(
       getLikelyColumnValue(row, [
         "In Force",
@@ -2829,7 +2851,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     current.totalMonthlyPremium += rowTotalMonthlyPremium;
     current.inForceMonthlyPremium += rowInForceMonthlyPremium;
     current.totalConvertedMonthlyPremiums += rowConvertedPremium;
-    current.sold += rowConvertedCount;
+    current.convertedCount += rowConvertedCount;
     if ((current.salesforceSoldRate === null || current.salesforceSoldRate === 0) && Number.isFinite(rowSalesforceSoldRate) && rowSalesforceSoldRate !== 0) {
       current.salesforceSoldRate = rowSalesforceSoldRate;
     }
@@ -2857,17 +2879,17 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         ? entryA.salesforceSoldRate
         : calculateAnalysisCountRates({
             mailed: entryA.mailed,
-            soldCount: entryA.oppCount,
+            soldCount: entryA.soldCount,
             inForceCount: entryA.inForce,
-            convertedCount: entryA.sold,
+            convertedCount: entryA.convertedCount,
           }).soldRate;
       const soldRateB = Number.isFinite(entryB.salesforceSoldRate)
         ? entryB.salesforceSoldRate
         : calculateAnalysisCountRates({
             mailed: entryB.mailed,
-            soldCount: entryB.oppCount,
+            soldCount: entryB.soldCount,
             inForceCount: entryB.inForce,
-            convertedCount: entryB.sold,
+            convertedCount: entryB.convertedCount,
           }).soldRate;
       if (soldRateB !== soldRateA) {
         return soldRateB - soldRateA;
@@ -2880,15 +2902,15 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     .map((entry) => {
       const fallbackRates = calculateAnalysisCountRates({
         mailed: entry.mailed,
-        soldCount: entry.oppCount,
+        soldCount: entry.soldCount,
         inForceCount: entry.inForce,
-        convertedCount: entry.sold,
+        convertedCount: entry.convertedCount,
       });
       const soldRate = Number.isFinite(entry.salesforceSoldRate) ? entry.salesforceSoldRate : fallbackRates.soldRate;
       const inForceRate = Number.isFinite(entry.salesforceInForceRate) ? entry.salesforceInForceRate : fallbackRates.inForceRate;
       const convertedRate = calculateAnalysisConvertedRate({
-        convertedCount: entry.sold,
-        soldCount: entry.oppCount,
+        convertedCount: entry.convertedCount,
+        soldCount: entry.soldCount,
         inForceCount: entry.inForce,
         soldRate: entry.salesforceSoldRate,
         inForceRate: entry.salesforceInForceRate,
@@ -2896,31 +2918,35 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         totalConvertedMonthlyPremiums: entry.totalConvertedMonthlyPremiums,
         mailed: entry.mailed,
       });
-      const averageSoldPremium = entry.oppCount > 0 ? entry.applicationPremiumTotal / entry.oppCount : 0;
+      const averageSoldPremium = entry.soldCount > 0 ? entry.applicationPremiumTotal / entry.soldCount : 0;
 
-      return {
+      const summaryRow = {
         "SCF Grouping": entry.scf,
         "scf grouping": entry.scf,
         "Key": entry.keyCode,
         "key": entry.keyCode,
         "Sum of Mailed": Math.round(entry.mailed).toLocaleString("en-US"),
         "sum of mailed": Math.round(entry.mailed).toLocaleString("en-US"),
-        "Sum of Opp Count": Math.round(entry.oppCount).toLocaleString("en-US"),
-        "sum of opp count": Math.round(entry.oppCount).toLocaleString("en-US"),
-        "Sum of Sold": Math.round(entry.sold).toLocaleString("en-US"),
-        "sum of sold": Math.round(entry.sold).toLocaleString("en-US"),
+        "Sum of Opp Count": Math.round(entry.soldCount).toLocaleString("en-US"),
+        "sum of opp count": Math.round(entry.soldCount).toLocaleString("en-US"),
+        "Sum of Sold": Math.round(entry.soldCount).toLocaleString("en-US"),
+        "sum of sold": Math.round(entry.soldCount).toLocaleString("en-US"),
         "Sum of In Force": Math.round(entry.inForce).toLocaleString("en-US"),
         "sum of in force": Math.round(entry.inForce).toLocaleString("en-US"),
-        "Sum of Converted": Math.round(entry.sold).toLocaleString("en-US"),
-        "sum of converted": Math.round(entry.sold).toLocaleString("en-US"),
-        "Converted": Math.round(entry.sold).toLocaleString("en-US"),
-        "converted": Math.round(entry.sold).toLocaleString("en-US"),
+        "Sum of Converted": Math.round(entry.convertedCount).toLocaleString("en-US"),
+        "SUM OF CONVERTED": Math.round(entry.convertedCount).toLocaleString("en-US"),
+        "sum of converted": Math.round(entry.convertedCount).toLocaleString("en-US"),
+        Converted: Math.round(entry.convertedCount).toLocaleString("en-US"),
+        converted: Math.round(entry.convertedCount).toLocaleString("en-US"),
         "Sum of Total Monthly Premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of total monthly premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of In Force Monthly Premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of in force monthly premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of Total Converted Monthly Premiums": entry.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+        "SUM OF TOTAL CONVERTED MONTHLY PREMIUMS": entry.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of total converted monthly premiums": entry.totalConvertedMonthlyPremiums.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+        sumConverted: entry.convertedCount,
+        sumTotalConvertedMonthlyPremiums: entry.totalConvertedMonthlyPremiums,
         averageMonthlyPremium: averageSoldPremium,
         highPremium: entry.highPremium,
         lowPremium: entry.lowPremium,
@@ -2935,6 +2961,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "Converted Rate": convertedRate.toFixed(10),
         "converted rate": convertedRate.toFixed(10),
       };
+      return validateAnalysisConvertedSummaryRow(summaryRow);
     });
 
   return {
@@ -2955,9 +2982,10 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     rows,
     summaryValues: [
       { key: "Sum of Mailed", label: "Sum of Mailed", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.mailed, 0)).toLocaleString("en-US") },
-      { key: "Sum of Opp Count", label: "Sum of Opp Count", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.oppCount, 0)).toLocaleString("en-US") },
+      { key: "Sum of Opp Count", label: "Sum of Opp Count", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.soldCount, 0)).toLocaleString("en-US") },
+      { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.soldCount, 0)).toLocaleString("en-US") },
       { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForce, 0)).toLocaleString("en-US") },
-      { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
+      { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.convertedCount, 0)).toLocaleString("en-US") },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForceMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalConvertedMonthlyPremiums, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
@@ -2984,7 +3012,9 @@ function summarizeAnalysisExportRows(rows = [], columns = []) {
     return buildFlatRowsFromDetailExport(normalizedRows);
   }
 
-  const normalizedSummaryRows = normalizedRows.map((row) => fillAnalysisRateFallbacks({ ...(row || {}) }));
+  const normalizedSummaryRows = validateAnalysisConvertedSummaryRows(
+    normalizedRows.map((row) => fillAnalysisRateFallbacks({ ...(row || {}) }))
+  );
 
   return {
     columns: Array.isArray(columns) ? columns : [],
@@ -3254,9 +3284,7 @@ function buildAnalysisDollarDiagnostics(reportId, filters, datasets = {}) {
   const soldCount =
     extractAnalysisSummaryMetricValue(summaryValues, "Sum of Sold")
     || extractAnalysisSummaryMetricValue(summaryValues, "Sum of Opp Count");
-  const convertedCount =
-    extractAnalysisSummaryMetricValue(summaryValues, "Sum of Converted")
-    || extractAnalysisSummaryMetricValue(summaryValues, "Sum of Sold");
+  const convertedCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Converted");
   const inForceCount = extractAnalysisSummaryMetricValue(summaryValues, "Sum of In Force");
   const totalMonthlyPremium = extractAnalysisSummaryMetricValue(summaryValues, "Sum of Total Monthly Premium");
   const inForceMonthlyPremium = extractAnalysisSummaryMetricValue(summaryValues, "Sum of In Force Monthly Premium");
@@ -3839,6 +3867,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     payloadDetailSummary.rows,
     normalizedDetailSummary.rows
   );
+  validateAnalysisConvertedSummaryRows(finalizedRows);
   const preferredSummaryValues = buildAnalysisSummaryValuesFromRows(finalizedRows);
   const finalizedFlattened = {
     ...mergedFlattened,

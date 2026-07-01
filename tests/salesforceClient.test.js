@@ -118,7 +118,7 @@ test("SCF 893 keeps the Salesforce sold and in-force rates instead of recalculat
   assert.equal(row["Sum of Converted"], "1");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], "0.0060240964");
 });
 
 test("SCF 903 keeps the Salesforce sold rate instead of recalculating from mailed count", () => {
@@ -198,7 +198,7 @@ test("in-force rate displays the Salesforce in-force rate column exactly", () =>
   assert.equal(row["In Force Rate"], "4.1250000000");
 });
 
-test("converted rate uses the restored Salesforce rate basis when detail rows exist", () => {
+test("converted rate is app-calculated from converted count and mailed", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
       "SCF Grouping": "999",
@@ -215,7 +215,7 @@ test("converted rate uses the restored Salesforce rate basis when detail rows ex
 
   const row = getAggregateRow(dataset, "999");
   assert.equal(row["Sum of Converted"], "1");
-  assert.equal(row["Converted Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], "0.0060240964");
 });
 
 test("converted count uses one certificate per positive converted premium row instead of sold count", () => {
@@ -296,6 +296,10 @@ test("aggregate rows count converted-premium certificates in converted and sold 
   assert.equal(row["Sum of Converted"], "3");
   assert.equal(
     summary.summaryValues.find((entry) => entry.key === "Sum of Sold")?.value,
+    "3"
+  );
+  assert.equal(
+    summary.summaryValues.find((entry) => entry.key === "Sum of Converted")?.value,
     "3"
   );
 });
@@ -429,7 +433,7 @@ test("rows with SCF 10, 010, and numeric 10 aggregate together under 010", () =>
   assert.equal(row["Sum of Converted"], "1");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "1.5414957270");
+  assert.equal(row["Converted Rate"], "0.0060240964");
 });
 
 test("aggregate-shaped saved rows are not mistaken for detail export rows", () => {
@@ -459,7 +463,7 @@ test("aggregate-shaped saved rows are not mistaken for detail export rows", () =
   );
 });
 
-test("summary-shaped export rows keep Salesforce sold and in-force rates and restored converted rate", () => {
+test("summary-shaped export rows keep Salesforce sold and in-force rates and preserve explicit converted count", () => {
   const dataset = summarizeAnalysisExportRows(
     [
       {
@@ -487,7 +491,7 @@ test("summary-shaped export rows keep Salesforce sold and in-force rates and res
   const row = getAggregateRow(dataset, "893");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "3.0829914540");
+  assert.equal(row["Converted Rate"], "0.0060240964");
 });
 
 test("detail-derived sum of converted backfills grouped rows that still show zero", () => {
@@ -579,7 +583,7 @@ test("detail summary rows override grouped converted counts and summary totals",
   );
 });
 
-test("detail export labels sold count as sum of sold", () => {
+test("detail export keeps sold and converted counts as separate saved fields", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
       "SCF Grouping": "088",
@@ -592,10 +596,17 @@ test("detail export labels sold count as sum of sold", () => {
   ]);
 
   assert.equal(dataset.columns.some((column) => column.key === "Sum of Sold"), true);
-  assert.equal(dataset.columns.some((column) => column.key === "Sum of Opp Count"), false);
+  assert.equal(dataset.columns.some((column) => column.key === "Sum of Opp Count"), true);
+  const row = getAggregateRow(dataset, "088");
+  assert.equal(row["Sum of Sold"], "3");
+  assert.equal(row["Sum of Converted"], "1");
   assert.equal(
     dataset.summaryValues.find((entry) => entry.key === "Sum of Sold")?.value,
     "3"
+  );
+  assert.equal(
+    dataset.summaryValues.find((entry) => entry.key === "Sum of Converted")?.value,
+    "1"
   );
 });
 
@@ -610,6 +621,86 @@ test("calculateAnalysisConvertedRate falls back safely when Salesforce rate fiel
       convertedRate: null,
       mailed: 166,
     }),
-    0.6024096385542169
+    0.006024096385542169
+  );
+});
+
+test("saved summary rows with converted premium but zero converted count fail loudly", () => {
+  assert.throws(
+    () => summarizeAnalysisExportRows(
+      [
+        {
+          "SCF Grouping": "770",
+          Key: "N",
+          "Sum of Mailed": "18,251",
+          "Sum of Opp Count": "4",
+          "Sum of Sold": "0",
+          "Sum of Converted": "0",
+          "Sum of Total Converted Monthly Premiums": "$325.44",
+          "Converted Rate": "99.9999999999",
+        },
+      ],
+      [
+        { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
+        { key: "Key", label: "Key", normalized: "key", dataType: "string" },
+        { key: "Sum of Mailed", label: "Sum of Mailed", normalized: "sum of mailed", dataType: "double" },
+        { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
+        { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
+        { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
+        { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
+        { key: "Converted Rate", label: "Converted Rate", normalized: "converted rate", dataType: "double" },
+      ]
+    ),
+    /Invalid converted count for SCF 770/i
+  );
+});
+
+test("detail summary rows calculate converted count and premium totals for SCF 770 exact scenario", () => {
+  const rows = [
+    {
+      "SCF Grouping": "770",
+      "Total Converted Monthly Premiums": "$100.00",
+    },
+    {
+      "SCF Grouping": "770",
+      "Total Converted Monthly Premiums": "$0.00",
+    },
+    {
+      "SCF Grouping": "770",
+      "Total Converted Monthly Premiums": "$225.44",
+    },
+  ];
+
+  const dataset = buildFlatRowsFromDetailExport(rows);
+  const row = getAggregateRow(dataset, "770");
+  assert.equal(row.sumConverted, 2);
+  assert.equal(row.sumTotalConvertedMonthlyPremiums, 325.44);
+  assert.equal(row["Sum of Converted"], "2");
+  assert.equal(row["Sum of Total Converted Monthly Premiums"], "$325.44");
+});
+
+test("summary row throws when converted premium is greater than zero and converted count is zero", () => {
+  assert.throws(
+    () => summarizeAnalysisExportRows(
+      [
+        {
+          "SCF Grouping": "770",
+          Key: "N",
+          "Sum of Mailed": "18,251",
+          "Sum of Opp Count": "4",
+          "Sum of Sold": "4",
+          "Sum of Converted": "0",
+          "Sum of Total Converted Monthly Premiums": "$325.44",
+        },
+      ],
+      [
+        { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
+        { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
+        { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
+        { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
+        { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
+      ]
+    ),
+    /Invalid converted count for SCF 770/i
   );
 });
