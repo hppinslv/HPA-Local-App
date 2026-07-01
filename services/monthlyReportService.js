@@ -2348,8 +2348,13 @@ function copySummaryLetterArtifactsToRun(summaryRunId, targetRunId) {
     return [];
   }
 
-  const summaryArtifacts = (summaryRun.artifacts || []).filter(
-    (artifact) => String(artifact?.kind || "").trim() === "print"
+  const summaryArtifacts = (summaryRun.artifacts || []).filter((artifact) =>
+    [
+      "print",
+      "summary-letter",
+      "summary-letter-preview",
+      "summary-letter-json",
+    ].includes(String(artifact?.kind || "").trim())
   );
   const copiedArtifacts = [];
 
@@ -2401,7 +2406,12 @@ function createFinalSummaryLetterRun(summaryRunId, reportMonth, options = {}) {
         try {
           const summaryArtifacts = Array.isArray(summaryRun.artifacts) ? summaryRun.artifacts : [];
           const summaryHasLetterArtifacts = summaryArtifacts.some((artifact) =>
-            String(artifact?.kind || "").trim() === "print"
+            [
+              "print",
+              "summary-letter",
+              "summary-letter-preview",
+              "summary-letter-json",
+            ].includes(String(artifact?.kind || "").trim())
           );
 
           if (
@@ -2422,7 +2432,12 @@ function createFinalSummaryLetterRun(summaryRunId, reportMonth, options = {}) {
           const letterArtifacts = copiedArtifacts.length
             ? copiedArtifacts
             : (freshSummaryRun?.artifacts || []).filter((artifact) =>
-                String(artifact?.kind || "").trim() === "print"
+                [
+                  "print",
+                  "summary-letter",
+                  "summary-letter-preview",
+                  "summary-letter-json",
+                ].includes(String(artifact?.kind || "").trim())
               );
           if (!letterArtifacts.length) {
             throw new Error("Final summary letter finished without any downloadable files.");
