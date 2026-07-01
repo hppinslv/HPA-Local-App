@@ -242,6 +242,16 @@ test("converted count uses any positive converted premium amount", () => {
   );
 });
 
+test("converted count treats total payments as a converted source for certificate reports", () => {
+  assert.equal(
+    resolveAnalysisConvertedCount({
+      "Total Payments": "$0.01",
+      "Sum of Converted": "",
+    }),
+    1
+  );
+});
+
 test("sold opportunity count falls back to converted certificate count when converted premium is positive", () => {
   const soldCount = resolveAnalysisSoldOpportunityCount(
     {
@@ -316,6 +326,24 @@ test("payments minus credits greater than one dollar counts the certificate as c
       "Sum of Sold": 9,
       "Payments Minus Credits": 19038.1,
       "Total Converted Monthly Premiums": 0,
+      "Sold Rate": 3.082991454,
+      "In Force Rate": 3.082991454,
+    },
+  ]);
+
+  const row = getAggregateRow(dataset, "812");
+  assert.equal(row["Sum of Converted"], "1");
+});
+
+test("total payments greater than zero counts the certificate as converted", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "812",
+      Key: "N",
+      Mailed: 166,
+      "Opp Count": 1,
+      "In Force": 1,
+      "Total Payments": "$76.05",
       "Sold Rate": 3.082991454,
       "In Force Rate": 3.082991454,
     },

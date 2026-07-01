@@ -94,7 +94,7 @@ const ANALYSIS_METRIC_LABELS = {
   convertedCount: ["Sum of Converted", "Converted"],
   totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
   inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
-  totalConvertedMonthlyPremiums: ["Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium"],
+  totalConvertedMonthlyPremiums: ["Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium", "Total Payments", "Sum of Total Payments"],
 };
 
 const CONVERTED_DIRECT_CANDIDATE_KEYS = [
@@ -2756,6 +2756,8 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "Total Converted Monthly Premiums",
         "Sum of Total Converted Monthly Premiums",
         "Converted Monthly Premium",
+        "Total Payments",
+        "Sum of Total Payments",
       ]) ?? 0
     ));
     const rowConvertedCount = getConvertedCountForSourceRow(row, rowConvertedPremium);
@@ -3030,6 +3032,10 @@ function getConvertedPremiumForConvertedCount(detailRow = {}) {
     "sum of total converted monthly premium",
     "Converted Monthly Premium",
     "converted monthly premium",
+    "Total Payments",
+    "total payments",
+    "Sum of Total Payments",
+    "sum of total payments",
     "HPATotal_Converted_Monthly_Premiums__c",
     "hpatotal converted monthly premiums c",
   ];
@@ -3061,11 +3067,14 @@ function getConvertedPremiumForConvertedCount(detailRow = {}) {
       normalizedKey === "total converted monthly premium" ||
       normalizedKey === "sum of total converted monthly premium" ||
       normalizedKey === "converted monthly premium" ||
+      normalizedKey === "total payments" ||
+      normalizedKey === "sum of total payments" ||
       normalizedKey === "hpatotal converted monthly premiums c" ||
       (
         normalizedKey.includes("converted") &&
         normalizedKey.includes("premium")
       ) ||
+      normalizedKey.includes("total payments") ||
       (
         normalizedKey.includes("payments") &&
         normalizedKey.includes("credits")
