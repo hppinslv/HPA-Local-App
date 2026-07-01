@@ -715,7 +715,12 @@ const server = http.createServer((request, response) => {
   }
 
   if (requestUrl.pathname === "/api/salesforce/auth-status" && request.method === "GET") {
-    sendJson(response, 200, { auth: getAuthStatus() });
+    sendJson(response, 200, {
+      auth: getAuthStatus({
+        headers: request.headers,
+        protocol: getRequestProtocol(request),
+      }),
+    });
     return;
   }
 

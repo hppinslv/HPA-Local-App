@@ -15361,7 +15361,9 @@ function initSalesforceStatus() {
       if (el("salesforce-auth-copy"))
         el("salesforce-auth-copy").textContent = isConnected
           ? "Salesforce is connected."
-          : "Connect Salesforce so live report pulls are available.";
+          : auth.resolvedRedirectUri
+            ? `Connect Salesforce so live report pulls are available. Callback: ${auth.resolvedRedirectUri}`
+            : "Connect Salesforce so live report pulls are available.";
     })
     .catch(() => {
       if (el("salesforce-auth-heading")) el("salesforce-auth-heading").textContent = "Not Connected";

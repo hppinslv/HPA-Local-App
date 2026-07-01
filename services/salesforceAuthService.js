@@ -96,9 +96,10 @@ function toBase64Url(value) {
     .replace(/=+$/g, "");
 }
 
-function getAuthStatus() {
+function getAuthStatus(requestContext = null) {
   const config = getSalesforceConfig();
   const token = readJson(AUTH_TOKEN_PATH, null);
+  const resolvedRedirectUri = resolveRedirectUri(requestContext);
 
   return {
     isConfigured: Boolean(
@@ -108,6 +109,7 @@ function getAuthStatus() {
     configuredReportCount: getAllConfiguredSalesforceReports().length,
     loginUrl: config.loginUrl,
     redirectUri: config.redirectUri,
+    resolvedRedirectUri,
     instanceUrl: token?.instanceUrl || null,
     issuedAt: token?.issuedAt || null,
   };
