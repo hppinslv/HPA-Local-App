@@ -14,7 +14,7 @@ const {
   resolveAnalysisConvertedCount,
   resolveAnalysisSoldOpportunityCount,
   mergeAnalysisSummaryDatasets,
-  overrideSummaryDatasetConvertedCount,
+  overrideOnlySumOfConverted,
   summarizeAnalysisExportRows,
   shouldFallbackToSoqlForReportPayload,
 } = require("../services/salesforceClient");
@@ -685,7 +685,7 @@ test("detail summary rows calculate converted count and premium totals for SCF 7
       "Sum of Sold",
       "Sum of In Force",
       "Sum of Converted",
-      "Sum of Total Sold",
+      "Sum of Total Sold Premium",
       "Sum of In Force Monthly Premium",
       "Sum of Total Converted Monthly Premiums",
       "Sold Rate",
@@ -726,7 +726,7 @@ test("summary rows keep converted column visible and backfill zero converted cou
   assert.equal(row["Sum of Converted"], "1");
 });
 
-test("overrideSummaryDatasetConvertedCount changes only sum of converted from detail rows", () => {
+test("overrideOnlySumOfConverted changes only sum of converted from detail rows", () => {
   const detailRows = [
     {
       "SCF Grouping": "770",
@@ -789,7 +789,7 @@ test("overrideSummaryDatasetConvertedCount changes only sum of converted from de
     ],
   };
 
-  const dataset = overrideSummaryDatasetConvertedCount(summaryDataset, detailRows);
+  const dataset = overrideOnlySumOfConverted(summaryDataset, detailRows);
   const row = getAggregateRow(dataset, "770");
 
   assert.equal(row["Sum of Mailed"], "18,251");
@@ -806,4 +806,61 @@ test("overrideSummaryDatasetConvertedCount changes only sum of converted from de
     dataset.summaryValues.find((entry) => entry.key === "Sum of Converted")?.value,
     "2"
   );
+});
+
+test("overrideOnlySumOfConverted keeps Salesforce summary values untouched except converted count for SCF 893", () => {
+  const summaryDataset = {
+    columns: [
+      { key: "SCF Grouping", label: "SCF Grouping" },
+      { key: "Key", label: "Key" },
+      { key: "Sum of Mailed", label: "Sum of Mailed" },
+      { key: "Sum of Sold", label: "Sum of Sold" },
+      { key: "Sum of In Force", label: "Sum of In Force" },
+      { key: "Sum of Converted", label: "Sum of Converted" },
+      { key: "Sum of Total Sold", label: "Sum of Total Sold" },
+      { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium" },
+      { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums" },
+      { key: "Sold Rate", label: "Sold Rate" },
+      { key: "In Force Rate", label: "In Force Rate" },
+      { key: "Converted Rate", label: "Converted Rate" },
+    ],
+    rows: [
+      {
+        "SCF Grouping": "893",
+        Key: "N",
+        "Sum of Mailed": "166",
+        "Sum of Sold": "1",
+        "Sum of In Force": "1",
+        "Sum of Converted": "0",
+        "Sum of Total Sold": "$76.05",
+        "Sum of In Force Monthly Premium": "$76.05",
+        "Sum of Total Converted Monthly Premiums": "$76.05",
+        "Sold Rate": "3.0829914544",
+        "In Force Rate": "3.0829914544",
+        "Converted Rate": "0.0060240964",
+      },
+    ],
+    summaryValues: [],
+  };
+  const detailRows = [
+    {
+      "SCF Grouping": "893",
+      Key: "N",
+      "Payments Minus Credits": "$76.05",
+    },
+  ];
+
+  const result = overrideOnlySumOfConverted(summaryDataset, detailRows);
+  const row = getAggregateRow(result, "893");
+
+  assert.equal(row["Sum of Converted"], 1);
+  assert.equal(row["Sum of Mailed"], "166");
+  assert.equal(row["Sum of Sold"], "1");
+  assert.equal(row["Sum of In Force"], "1");
+  assert.equal(row["Sum of Total Sold"], "$76.05");
+  assert.equal(row["Sum of In Force Monthly Premium"], "$76.05");
+  assert.equal(row["Sum of Total Converted Monthly Premiums"], "$76.05");
+  assert.equal(row["Sold Rate"], "3.0829914544");
+  assert.equal(row["In Force Rate"], "3.0829914544");
+  assert.equal(row["Converted Rate"], "0.0060240964");
 });

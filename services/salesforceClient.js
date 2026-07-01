@@ -3157,25 +3157,8 @@ function buildConvertedCountByScfKey(detailRows = []) {
   return convertedCountByScfKey;
 }
 
-function overrideSummaryRowsConvertedCount(summaryRows = [], detailRows = []) {
-  const convertedCountByScfKey = buildConvertedCountByScfKey(detailRows);
-
-  return (Array.isArray(summaryRows) ? summaryRows : []).map((row) => {
-    const nextRow = { ...(row || {}) };
-    const rowKey = getAnalysisSummaryRowKey(nextRow);
-    const calculatedConverted = convertedCountByScfKey.get(rowKey) || 0;
-
-    nextRow["Sum of Converted"] = calculatedConverted;
-    nextRow["SUM OF CONVERTED"] = calculatedConverted;
-    nextRow["sum of converted"] = calculatedConverted;
-    nextRow.sumConverted = calculatedConverted;
-
-    return nextRow;
-  });
-}
-
-function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = []) {
-  const convertedTotal = Array.from(buildConvertedCountByScfKey(detailRows).values())
+function overrideOnlySumOfConvertedSummaryValue(summaryValues = [], convertedCountByScfKey = new Map()) {
+  const convertedTotal = Array.from(convertedCountByScfKey.values())
     .reduce((sum, value) => sum + Number(value || 0), 0);
 
   return (Array.isArray(summaryValues) ? summaryValues : []).map((entry) => {
@@ -3236,16 +3219,32 @@ function ensureSumOfConvertedColumn(columns = []) {
   return safeColumns;
 }
 
-function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows = []) {
+function overrideOnlySumOfConverted(summaryDataset = {}, detailRows = []) {
   const safeDataset = summaryDataset && typeof summaryDataset === "object"
     ? summaryDataset
     : { columns: [], rows: [], summaryValues: [] };
+  const convertedCountByScfKey = buildConvertedCountByScfKey(detailRows);
+  const rows = (Array.isArray(safeDataset.rows) ? safeDataset.rows : []).map((row) => {
+    const nextRow = { ...(row || {}) };
+    const rowKey = getAnalysisSummaryRowKey(nextRow);
+    const convertedCount = convertedCountByScfKey.get(rowKey) || 0;
+
+    nextRow["Sum of Converted"] = convertedCount;
+    nextRow["SUM OF CONVERTED"] = convertedCount;
+    nextRow["sum of converted"] = convertedCount;
+    nextRow.sumConverted = convertedCount;
+
+    return nextRow;
+  });
 
   return {
     ...safeDataset,
     columns: ensureSumOfConvertedColumn(safeDataset.columns),
-    rows: overrideSummaryRowsConvertedCount(safeDataset.rows, detailRows),
-    summaryValues: overrideSummaryValuesConvertedCount(safeDataset.summaryValues, detailRows),
+    rows,
+    summaryValues: overrideOnlySumOfConvertedSummaryValue(
+      safeDataset.summaryValues,
+      convertedCountByScfKey
+    ),
   };
 }
 
@@ -4055,22 +4054,33 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     });
   }
 
-  const mergedFlattened = mergeAnalysisSummaryDatasets(
-    flattened.rows.length || flattened.columns.length ? flattened : normalizedDetailSummary,
-    normalizedDetailSummary,
-    preferredExportSummary,
-    payloadDetailSummary,
-    opportunityAggregateSummary
-  );
   const baseSummaryDataset = flattened.rows.length || flattened.columns.length
     ? flattened
     : normalizedDetailSummary;
-  const convertedOverrideDetailRows = preferredExport.rows.length
-    ? preferredExport.rows
-    : (reportPayloadDetailExport.rows.length ? reportPayloadDetailExport.rows : fullDetailExport.rows);
-  const finalizedFlattened = overrideSummaryDatasetConvertedCount(
+  const convertedDetailRows = reportPayloadDetailExport.rows.length
+    ? reportPayloadDetailExport.rows
+    : fullDetailExport.rows.length
+      ? fullDetailExport.rows
+      : preferredExport.rows;
+  const convertedCountByScfKey = buildConvertedCountByScfKey(convertedDetailRows);
+  console.log("[Sum of Converted Override]", {
+    summaryRows: Array.isArray(baseSummaryDataset.rows) ? baseSummaryDataset.rows.length : 0,
+    detailRows: Array.isArray(convertedDetailRows) ? convertedDetailRows.length : 0,
+    calculatedConvertedTotal: Array.from(convertedCountByScfKey.values()).reduce(
+      (sum, value) => sum + Number(value || 0),
+      0
+    ),
+    sampleSummaryRows: (Array.isArray(baseSummaryDataset.rows) ? baseSummaryDataset.rows : []).slice(0, 5).map((row) => ({
+      rowKey: getAnalysisSummaryRowKey(row),
+      scf: row["SCF Grouping"] ?? row["scf grouping"],
+      key: row["Key"] ?? row.key,
+      beforeSumConverted: row["Sum of Converted"] ?? row["sum of converted"],
+      convertedPremium: row["Sum of Total Converted Monthly Premiums"] ?? row["sum of total converted monthly premiums"],
+    })),
+  });
+  const finalizedFlattened = overrideOnlySumOfConverted(
     baseSummaryDataset,
-    convertedOverrideDetailRows
+    convertedDetailRows
   );
   const rowDebugTrace = buildAnalysisRowDebugTrace(flattened.rows, finalizedFlattened.rows, "047");
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
@@ -4839,7 +4849,7 @@ module.exports = {
   parseConvertedNumber,
   parseDateValue,
   parseNumber,
-  overrideSummaryDatasetConvertedCount,
+  overrideOnlySumOfConverted,
   resolveConvertedValue,
   resolveAnalysisConvertedCount,
   resolveAnalysisDateRange,
