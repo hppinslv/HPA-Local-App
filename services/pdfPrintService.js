@@ -10,9 +10,23 @@ const PDF_BROWSER_CANDIDATES = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
 ];
+const WORD_CANDIDATES = [
+  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+  "C:\\Program Files (x86)\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+  "C:\\Program Files\\Microsoft Office\\Office16\\WINWORD.EXE",
+  "C:\\Program Files (x86)\\Microsoft Office\\Office16\\WINWORD.EXE",
+];
+
+function quotePowerShellLiteral(value) {
+  return String(value ?? "").replace(/'/g, "''");
+}
 
 function resolvePdfBrowserPath() {
   return PDF_BROWSER_CANDIDATES.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
+function resolveWordPath() {
+  return WORD_CANDIDATES.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
 function generatePdfFromHtml(html, pdfPath) {
@@ -54,6 +68,46 @@ function generatePdfFromHtml(html, pdfPath) {
   }
 }
 
+function generatePdfFromDocx(docxPath, pdfPath) {
+  const wordPath = resolveWordPath();
+  if (!wordPath) {
+    throw new Error("Microsoft Word was not found. Install Word to generate the final summary letter PDF.");
+  }
+
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    "$word = $null",
+    "$document = $null",
+    "try {",
+    "  $word = New-Object -ComObject Word.Application",
+    "  $word.Visible = $false",
+    `  $document = $word.Documents.Open('${quotePowerShellLiteral(docxPath)}', $false, $true)`,
+    `  $document.SaveAs([ref] '${quotePowerShellLiteral(pdfPath)}', [ref] 17)`,
+    "} finally {",
+    "  if ($document -ne $null) { $document.Close([ref] 0) }",
+    "  if ($word -ne $null) { $word.Quit() }",
+    "  [System.GC]::Collect()",
+    "  [System.GC]::WaitForPendingFinalizers()",
+    "}",
+  ].join("; ");
+
+  const result = spawnSync(
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    ["-NoProfile", "-Command", command],
+    {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 120000,
+    }
+  );
+
+  if (result.status !== 0 || !fs.existsSync(pdfPath)) {
+    throw new Error(
+      result.stderr?.trim() || result.stdout?.trim() || "Unable to generate PDF output from Word."
+    );
+  }
+}
+
 function createPrintableArtifactFromHtml({
   html,
   outputDir,
@@ -90,6 +144,8 @@ function createPrintableArtifactFromHtml({
 
 module.exports = {
   createPrintableArtifactFromHtml,
+  generatePdfFromDocx,
   generatePdfFromHtml,
   resolvePdfBrowserPath,
+  resolveWordPath,
 };

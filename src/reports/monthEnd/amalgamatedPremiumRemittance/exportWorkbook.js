@@ -3,7 +3,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { buildFinalColumns } = require("./config");
-const { createPrintableArtifactFromHtml } = require("../../../../services/pdfPrintService");
+const { generatePdfFromHtml } = require("../../../../services/pdfPrintService");
 const { formatReportMonthFilePrefix } = require("../../../../services/monthlyReportServiceHelpers");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "..", "..", "Amalgamated_Premium_Remittance.xlsx");
@@ -126,6 +126,46 @@ function updateTableRef(tableXml, ref) {
     .replace(/ref="[^"]*"/, `ref="${ref}"`)
     .replace(/<autoFilter ref="[^"]*"/, `<autoFilter ref="${ref}"`)
     .replace(/<sortState ref="[^"]*"/, `<sortState ref="${ref}"`);
+}
+
+function sanitizeWorksheetXml(worksheetXml) {
+  return worksheetXml
+    .replace(/<pageSetup\b[\s\S]*?\/>/g, "")
+    .replace(/<customProperties\b[\s\S]*?<\/customProperties>/g, "")
+    .replace(/<extLst\b[\s\S]*?<\/extLst>/g, "");
+}
+
+function sanitizeWorksheetRelationships(relationshipsXml) {
+  return relationshipsXml
+    .replace(
+      /<Relationship[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/printerSettings"[^>]*\/>/g,
+      ""
+    )
+    .replace(
+      /<Relationship[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/customProperty"[^>]*\/>/g,
+      ""
+    );
+}
+
+function sanitizeWorksheetArtifacts(extractDir, sheetFileName) {
+  const worksheetPath = path.join(extractDir, "xl", "worksheets", sheetFileName);
+  const relsPath = path.join(extractDir, "xl", "worksheets", "_rels", `${sheetFileName}.rels`);
+
+  if (fs.existsSync(worksheetPath)) {
+    fs.writeFileSync(
+      worksheetPath,
+      sanitizeWorksheetXml(fs.readFileSync(worksheetPath, "utf8")),
+      "utf8"
+    );
+  }
+
+  if (fs.existsSync(relsPath)) {
+    fs.writeFileSync(
+      relsPath,
+      sanitizeWorksheetRelationships(fs.readFileSync(relsPath, "utf8")),
+      "utf8"
+    );
+  }
 }
 
 function buildCertSheetXml(templateXml, rows) {
@@ -608,6 +648,10 @@ function writeWorkbook(report, destinationPath) {
     );
   });
 
+  ["sheet2.xml", "sheet3.xml", "sheet4.xml", "sheet5.xml", "sheet6.xml", "sheet7.xml"].forEach((sheetFileName) => {
+    sanitizeWorksheetArtifacts(extractDir, sheetFileName);
+  });
+
   stripCalcChain(extractDir);
 
   runPowerShell(
@@ -866,23 +910,12 @@ function buildPrintableHtml(report) {
 }
 
 function writeArtifacts(runDir, report) {
-  const artifacts = [];
   const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
   const workbookFileName = `${filePrefix}_Amalgamated_Premium_Remittance.xlsx`;
   const pdfFileName = `${filePrefix}_Amalgamated_Premium_Remittance.pdf`;
-  const htmlFileName = `${filePrefix}_Amalgamated_Premium_Remittance.html`;
   const jsonFileName = `${filePrefix}_Amalgamated_Premium_Remittance.json`;
   const printableHtml = buildPrintableHtml(report);
-
-  const printableArtifact = createPrintableArtifactFromHtml({
-    html: printableHtml,
-    outputDir: runDir,
-    pdfFileName,
-    htmlFileName,
-  });
-  if (printableArtifact.warning) {
-    report.printArtifactWarning = printableArtifact.warning;
-  }
+  const artifacts = [];
   fs.writeFileSync(path.join(runDir, jsonFileName), `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
   if (!report.blockingErrors.length) {
@@ -895,8 +928,20 @@ function writeArtifacts(runDir, report) {
     });
   }
 
+  try {
+    generatePdfFromHtml(printableHtml, path.join(runDir, pdfFileName));
+    artifacts.push({
+      kind: "print",
+      label: "Download PDF",
+      fileName: pdfFileName,
+      contentType: "application/pdf",
+    });
+    report.printArtifactWarning = "";
+  } catch (error) {
+    report.printArtifactWarning = `PDF output was unavailable: ${error.message}`;
+  }
+
   artifacts.push(
-    printableArtifact.artifact,
     {
       kind: "json",
       label: "Download JSON",

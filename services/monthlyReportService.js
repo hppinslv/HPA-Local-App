@@ -20,7 +20,7 @@ const {
 } = require("../src/reports/monthEnd/amalgamatedPremiumRemittance/exportWorkbook");
 const { formatReportMonth, formatReportMonthFilePrefix } = require("./monthlyReportServiceHelpers");
 const {
-  createPrintableArtifactFromHtml,
+  generatePdfFromDocx,
   generatePdfFromHtml,
 } = require("./pdfPrintService");
 
@@ -1165,23 +1165,17 @@ function createFinalSummaryLetterArtifacts(runId, report) {
   const safeMonthLabel = letterData.reportMonthLabel.replace(/[^A-Za-z0-9-]/g, "-");
   const docxFileName = `Final_Summary_Letter_${safeMonthLabel}.docx`;
   const pdfFileName = `${filePrefix}_Premier - Letter.pdf`;
-  const htmlFileName = `${filePrefix}_Premier - Letter.html`;
   const jsonFileName = `${filePrefix}_Premier - Letter.json`;
-  const printableHtml = buildFinalSummaryLetterHtml(letterData);
+  const docxPath = path.join(runDir, docxFileName);
+  const pdfPath = path.join(runDir, pdfFileName);
 
-  buildFinalSummaryLetterDocx(letterData, path.join(runDir, docxFileName));
-  fs.writeFileSync(path.join(runDir, htmlFileName), printableHtml, "utf8");
+  buildFinalSummaryLetterDocx(letterData, docxPath);
+  generatePdfFromDocx(docxPath, pdfPath);
   fs.writeFileSync(
     path.join(runDir, jsonFileName),
     `${JSON.stringify(letterData, null, 2)}\n`,
     "utf8"
   );
-  const printableArtifact = createPrintableArtifactFromHtml({
-    html: printableHtml,
-    outputDir: runDir,
-    pdfFileName,
-    htmlFileName,
-  });
 
   return {
     letterData,
@@ -1193,28 +1187,19 @@ function createFinalSummaryLetterArtifacts(runId, report) {
         contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       },
       {
-        kind: "summary-letter-preview",
-        label:
-          printableArtifact.artifact.contentType === "application/pdf"
-            ? "Open Final Summary Letter Preview"
-            : "Open Final Summary Letter HTML Preview",
-        fileName: printableArtifact.artifact.fileName,
-        contentType: printableArtifact.artifact.contentType,
-      },
-      {
         kind: "summary-letter-json",
         label: "Download Final Summary Letter JSON",
         fileName: jsonFileName,
         contentType: "application/json; charset=utf-8",
       },
       {
-        kind: printableArtifact.artifact.kind,
-        label: printableArtifact.artifact.label,
-        fileName: printableArtifact.artifact.fileName,
-        contentType: printableArtifact.artifact.contentType,
+        kind: "print",
+        label: "Download PDF",
+        fileName: pdfFileName,
+        contentType: "application/pdf",
       },
     ],
-    printArtifactWarning: printableArtifact.warning,
+    printArtifactWarning: "",
   };
 }
 
@@ -1844,19 +1829,30 @@ function writeArtifacts(runId, report) {
   const filePrefix = formatReportMonthFilePrefix(report.reportMonth);
   const workbookFileName = `${filePrefix}_AHA HPA Transaction Summary.xlsm`;
   const pdfFileName = `${filePrefix}_AHA HPA Transaction Summary.pdf`;
-  const htmlFileName = `${filePrefix}_AHA HPA Transaction Summary.html`;
   const jsonFileName = `${filePrefix}_AHA HPA Transaction Summary.json`;
   const printableHtml = buildPrintableHtml(report);
 
   buildTemplateWorkbook(report, path.join(runDir, workbookFileName));
-  const printableArtifact = createPrintableArtifactFromHtml({
-    html: printableHtml,
-    outputDir: runDir,
-    pdfFileName,
-    htmlFileName,
-  });
-  if (printableArtifact.warning) {
-    report.printArtifactWarning = printableArtifact.warning;
+  const artifacts = [
+    {
+      kind: "spreadsheet",
+      label: "Download Workbook",
+      fileName: workbookFileName,
+      contentType:
+        "application/vnd.ms-excel.sheet.macroEnabled.12",
+    },
+  ];
+  try {
+    generatePdfFromHtml(printableHtml, path.join(runDir, pdfFileName));
+    artifacts.push({
+      kind: "print",
+      label: "Download PDF",
+      fileName: pdfFileName,
+      contentType: "application/pdf",
+    });
+    report.printArtifactWarning = "";
+  } catch (error) {
+    report.printArtifactWarning = `PDF output was unavailable: ${error.message}`;
   }
   fs.writeFileSync(
     path.join(runDir, jsonFileName),
@@ -1865,14 +1861,7 @@ function writeArtifacts(runId, report) {
   );
 
   return [
-    {
-      kind: "spreadsheet",
-      label: "Download Workbook",
-      fileName: workbookFileName,
-      contentType:
-        "application/vnd.ms-excel.sheet.macroEnabled.12",
-    },
-    printableArtifact.artifact,
+    ...artifacts,
     {
       kind: "json",
       label: "Download JSON",
@@ -1959,20 +1948,12 @@ function buildRecoveredArtifacts(run) {
     );
     pushArtifact(
       "print",
-      fs.existsSync(path.join(runDir, `${filePrefix}_AHA HPA Transaction Detail.pdf`))
-        || fs.existsSync(path.join(runDir, `aha-hpa-transaction-detail-${reportMonth}.pdf`))
-        ? "Download PDF"
-        : "Open Print View",
+      "Download PDF",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_AHA HPA Transaction Detail.pdf`,
-        `${filePrefix}_AHA HPA Transaction Detail.html`,
         `aha-hpa-transaction-detail-${reportMonth}.pdf`,
-        `aha-hpa-transaction-detail-${reportMonth}.html`,
       ]),
-      fs.existsSync(path.join(runDir, `${filePrefix}_AHA HPA Transaction Detail.pdf`))
-        || fs.existsSync(path.join(runDir, `aha-hpa-transaction-detail-${reportMonth}.pdf`))
-        ? "application/pdf"
-        : "text/html; charset=utf-8"
+      "application/pdf"
     );
     pushArtifact(
       "json",
@@ -1998,20 +1979,12 @@ function buildRecoveredArtifacts(run) {
     );
     pushArtifact(
       "print",
-      fs.existsSync(path.join(runDir, `${filePrefix}_Amalgamated_Premium_Remittance.pdf`))
-        || fs.existsSync(path.join(runDir, `amalgamated-premium-remittance-${reportMonth}.pdf`))
-        ? "Download PDF"
-        : "Open Print View",
+      "Download PDF",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_Amalgamated_Premium_Remittance.pdf`,
-        `${filePrefix}_Amalgamated_Premium_Remittance.html`,
         `amalgamated-premium-remittance-${reportMonth}.pdf`,
-        `amalgamated-premium-remittance-${reportMonth}.html`,
       ]),
-      fs.existsSync(path.join(runDir, `${filePrefix}_Amalgamated_Premium_Remittance.pdf`))
-        || fs.existsSync(path.join(runDir, `amalgamated-premium-remittance-${reportMonth}.pdf`))
-        ? "application/pdf"
-        : "text/html; charset=utf-8"
+      "application/pdf"
     );
     pushArtifact(
       "json",
@@ -2032,25 +2005,37 @@ function buildRecoveredArtifacts(run) {
       run?.report?.finalSummaryLetter
     ) {
       try {
-        const printableHtml = buildFinalSummaryLetterHtml(run.report.finalSummaryLetter);
-        generatePdfFromHtml(printableHtml, generatedPdfPath);
+        const docxFileName = findSummaryLetterDocx(runDir);
+        if (docxFileName) {
+          generatePdfFromDocx(path.join(runDir, docxFileName), generatedPdfPath);
+        }
       } catch {
         // Leave the older artifacts in place if PDF recovery is unavailable.
       }
     }
     pushArtifact(
+      "summary-letter",
+      "Download Final Summary Letter",
+      findSummaryLetterDocx(runDir),
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    pushArtifact(
       "print",
       "Download PDF",
       findFirstExistingArtifactFile(runDir, [
         `${filePrefix}_Premier - Letter.pdf`,
-        `${filePrefix}_Premier - Letter.html`,
         `final-summary-letter-${reportMonth}.pdf`,
-        `final-summary-letter-${reportMonth}.html`,
       ]),
-      fs.existsSync(path.join(runDir, `${filePrefix}_Premier - Letter.pdf`))
-        || fs.existsSync(path.join(runDir, `final-summary-letter-${reportMonth}.pdf`))
-        ? "application/pdf"
-        : "text/html; charset=utf-8"
+      "application/pdf"
+    );
+    pushArtifact(
+      "summary-letter-json",
+      "Download Final Summary Letter JSON",
+      findFirstExistingArtifactFile(runDir, [
+        `${filePrefix}_Premier - Letter.json`,
+        `final-summary-letter-${reportMonth}.json`,
+      ]),
+      "application/json; charset=utf-8"
     );
     return artifacts;
   }
@@ -2066,20 +2051,12 @@ function buildRecoveredArtifacts(run) {
   );
   pushArtifact(
     "print",
-    fs.existsSync(path.join(runDir, `${filePrefix}_AHA HPA Transaction Summary.pdf`))
-      || fs.existsSync(path.join(runDir, `aha-hpa-transaction-summary-${reportMonth}.pdf`))
-      ? "Download PDF"
-      : "Open Print View",
+    "Download PDF",
     findFirstExistingArtifactFile(runDir, [
       `${filePrefix}_AHA HPA Transaction Summary.pdf`,
-      `${filePrefix}_AHA HPA Transaction Summary.html`,
       `aha-hpa-transaction-summary-${reportMonth}.pdf`,
-      `aha-hpa-transaction-summary-${reportMonth}.html`,
     ]),
-    fs.existsSync(path.join(runDir, `${filePrefix}_AHA HPA Transaction Summary.pdf`))
-      || fs.existsSync(path.join(runDir, `aha-hpa-transaction-summary-${reportMonth}.pdf`))
-      ? "application/pdf"
-      : "text/html; charset=utf-8"
+    "application/pdf"
   );
   pushArtifact(
     "json",
@@ -2097,18 +2074,13 @@ function buildRecoveredArtifacts(run) {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
   );
   pushArtifact(
-    "summary-letter-preview",
-    "Open Final Summary Letter Preview",
+    "print",
+    "Download PDF",
     findFirstExistingArtifactFile(runDir, [
       `${filePrefix}_Premier - Letter.pdf`,
-      `${filePrefix}_Premier - Letter.html`,
       `final-summary-letter-${reportMonth}.pdf`,
-      `final-summary-letter-${reportMonth}.html`,
     ]),
-    fs.existsSync(path.join(runDir, `${filePrefix}_Premier - Letter.pdf`))
-      || fs.existsSync(path.join(runDir, `final-summary-letter-${reportMonth}.pdf`))
-      ? "application/pdf"
-      : "text/html; charset=utf-8"
+    "application/pdf"
   );
   pushArtifact(
     "summary-letter-json",
