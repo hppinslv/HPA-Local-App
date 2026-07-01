@@ -155,9 +155,21 @@ function hasAnalysisMetricValue(row = {}, labels = []) {
 }
 
 function resolveAnalysisConvertedPremiumValue(row = {}, precomputedConvertedPremium = null) {
+  return getConvertedPremiumAmount(row, precomputedConvertedPremium);
+}
+
+function parseMoneyNumber(value) {
+  return parseNumber(value ?? 0);
+}
+
+function getConvertedPremiumAmount(row = {}, precomputedConvertedPremium = null) {
   return precomputedConvertedPremium === null
-    ? parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0)
-    : parseNumber(precomputedConvertedPremium);
+    ? parseMoneyNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0)
+    : parseMoneyNumber(precomputedConvertedPremium);
+}
+
+function getConvertedCountForSourceRow(row = {}, precomputedConvertedPremium = null) {
+  return getConvertedPremiumAmount(row, precomputedConvertedPremium) > 0 ? 1 : 0;
 }
 
 function resolveAnalysisSoldOpportunityCount(row = {}, options = {}) {
@@ -184,8 +196,8 @@ function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = n
   if (explicitConvertedCount !== null && explicitConvertedCount > 0) {
     return explicitConvertedCount;
   }
-  if (allowPremiumRowInference && convertedPremium > 1) {
-    return 1;
+  if (allowPremiumRowInference) {
+    return getConvertedCountForSourceRow(row, convertedPremium);
   }
   if (explicitConvertedCount !== null) {
     return 0;
@@ -2141,12 +2153,16 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
   const safeRows = Array.isArray(rows) ? rows : [];
   const totals = safeRows.reduce((acc, row) => {
     acc.mailed += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.mailed) ?? 0);
-    acc.oppCount += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.oppCount) ?? 0);
+    acc.oppCount += resolveAnalysisSoldOpportunityCount(row, {
+      convertedCountFallback: 0,
+    });
     acc.inForce += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForce) ?? 0);
-    acc.sold += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ?? 0);
+    acc.sold += resolveAnalysisConvertedCount(row, null, {
+      allowPremiumRowInference: false,
+    });
     acc.totalMonthlyPremium += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalMonthlyPremium) ?? 0);
     acc.inForceMonthlyPremium += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.inForceMonthlyPremium) ?? 0);
-    acc.totalConvertedMonthlyPremiums += parseNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0);
+    acc.totalConvertedMonthlyPremiums += getConvertedPremiumAmount(row);
     return acc;
   }, {
     mailed: 0,
@@ -2164,7 +2180,7 @@ function buildAnalysisSummaryValuesFromRows(rows = []) {
 
   return [
     { key: "Sum of Mailed", label: "Sum of Mailed", value: Math.round(totals.mailed).toLocaleString("en-US") },
-    { key: "Sum of Opp Count", label: "Sum of Opp Count", value: Math.round(totals.oppCount).toLocaleString("en-US") },
+    { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(totals.oppCount).toLocaleString("en-US") },
     { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(totals.inForce).toLocaleString("en-US") },
     { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(totals.sold).toLocaleString("en-US") },
     { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: totals.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }) },
@@ -2716,6 +2732,8 @@ function buildFlatReportRows(reportPayload) {
 
 function buildFlatRowsFromDetailExport(exportRows = []) {
   const aggregateMap = new Map();
+  let convertedPremiumRowCount = 0;
+  let convertedCountTotal = 0;
   exportRows.forEach((row) => {
     const scf = normalizeScf(
       row["SCF Grouping"] ??
@@ -2750,7 +2768,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "Sum of In Force Monthly Premium",
       ]) ?? 0
     );
-    const rowConvertedPremium = parseNumber(
+    const rowConvertedPremium = getConvertedPremiumAmount(row, parseMoneyNumber(
       getLikelyColumnValue(row, [
         "Payments Minus Credits",
         "Payments_Minus_Credits__c",
@@ -2758,13 +2776,15 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "Sum of Total Converted Monthly Premiums",
         "Converted Monthly Premium",
       ]) ?? 0
-    );
-    const rowConvertedCount = resolveAnalysisConvertedCount(row, rowConvertedPremium, {
-      allowPremiumRowInference: true,
-    });
+    ));
+    const rowConvertedCount = getConvertedCountForSourceRow(row, rowConvertedPremium);
     const rowSoldCount = resolveAnalysisSoldOpportunityCount(row, {
       convertedCountFallback: rowConvertedCount,
     });
+    if (rowConvertedCount > 0) {
+      convertedPremiumRowCount += 1;
+      convertedCountTotal += rowConvertedCount;
+    }
     const rowSalesforceSoldRate = resolveAnalysisExplicitRate(row, ["Sold Rate"]);
     const rowSalesforceInForceRate = resolveAnalysisExplicitRate(row, ["In Force Rate"]);
     const rowSalesforceConvertedRate = resolveAnalysisExplicitRate(row, ["Converted Rate"]);
@@ -2887,14 +2907,14 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "sum of mailed": Math.round(entry.mailed).toLocaleString("en-US"),
         "Sum of Opp Count": Math.round(entry.oppCount).toLocaleString("en-US"),
         "sum of opp count": Math.round(entry.oppCount).toLocaleString("en-US"),
+        "Sum of Sold": Math.round(entry.oppCount).toLocaleString("en-US"),
+        "sum of sold": Math.round(entry.oppCount).toLocaleString("en-US"),
         "Sum of In Force": Math.round(entry.inForce).toLocaleString("en-US"),
         "sum of in force": Math.round(entry.inForce).toLocaleString("en-US"),
         "Sum of Converted": Math.round(entry.sold).toLocaleString("en-US"),
         "sum of converted": Math.round(entry.sold).toLocaleString("en-US"),
         "Converted": Math.round(entry.sold).toLocaleString("en-US"),
         "converted": Math.round(entry.sold).toLocaleString("en-US"),
-        "Sum of Sold": Math.round(entry.sold).toLocaleString("en-US"),
-        "sum of sold": Math.round(entry.sold).toLocaleString("en-US"),
         "Sum of Total Monthly Premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "sum of total monthly premium": entry.totalMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
         "Sum of In Force Monthly Premium": entry.inForceMonthlyPremium.toLocaleString("en-US", { style: "currency", currency: "USD" }),
@@ -2922,7 +2942,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       { key: "SCF Grouping", label: "SCF Grouping", normalized: "scf grouping", dataType: "string" },
       { key: "Key", label: "Key", normalized: "key", dataType: "string" },
       { key: "Sum of Mailed", label: "Sum of Mailed", normalized: "sum of mailed", dataType: "double" },
-      { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
+      { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
       { key: "Sum of In Force", label: "Sum of In Force", normalized: "sum of in force", dataType: "double" },
       { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", normalized: "sum of total monthly premium", dataType: "currency" },
@@ -2935,13 +2955,15 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     rows,
     summaryValues: [
       { key: "Sum of Mailed", label: "Sum of Mailed", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.mailed, 0)).toLocaleString("en-US") },
-      { key: "Sum of Opp Count", label: "Sum of Opp Count", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.oppCount, 0)).toLocaleString("en-US") },
+      { key: "Sum of Sold", label: "Sum of Sold", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.oppCount, 0)).toLocaleString("en-US") },
       { key: "Sum of In Force", label: "Sum of In Force", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForce, 0)).toLocaleString("en-US") },
       { key: "Sum of Converted", label: "Sum of Converted", value: Math.round(Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.sold, 0)).toLocaleString("en-US") },
       { key: "Sum of Total Monthly Premium", label: "Sum of Total Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.inForceMonthlyPremium, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", value: Array.from(aggregateMap.values()).reduce((sum, entry) => sum + entry.totalConvertedMonthlyPremiums, 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) },
     ],
+    convertedPremiumRowCount,
+    convertedCountTotal,
   };
 }
 
@@ -3839,6 +3861,8 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   diagnostics.rowDebugTrace = rowDebugTrace;
   diagnostics.convertedDebug = {
     ...(convertedDiagnostics || buildConvertedDebugSummary([])),
+    rowsWithPositiveConvertedPremium: flattened.convertedPremiumRowCount || 0,
+    displayedConvertedCountTotal: flattened.convertedCountTotal || 0,
     finalizedSummaryRowsChecked: finalizedFlattened.rows.length,
     finalizedSummaryConvertedTotal: buildConvertedDebugSummary(finalizedFlattened.rows).convertedTotalFromSource,
     finalizedSummaryResolutionSamples: buildConvertedDebugSummary(finalizedFlattened.rows).convertedResolutionSamples,
@@ -3858,6 +3882,8 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
       totalRowsChecked: diagnostics.convertedDebug.totalRowsChecked || 0,
       rowsWithConvertedSource: diagnostics.convertedDebug.rowsWithConvertedSource || 0,
       rowsWithConvertedNumericValue: diagnostics.convertedDebug.rowsWithConvertedNumericValue || 0,
+      rowsWithPositiveConvertedPremium: diagnostics.convertedDebug.rowsWithPositiveConvertedPremium || 0,
+      displayedConvertedCountTotal: diagnostics.convertedDebug.displayedConvertedCountTotal || 0,
       convertedTotalFromSource: diagnostics.convertedDebug.convertedTotalFromSource || 0,
       warnings: diagnostics.convertedDebug.warnings || [],
     }, null, 2));

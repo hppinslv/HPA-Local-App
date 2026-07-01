@@ -890,7 +890,6 @@ function buildAnalysisReportSummary({ inputRowCount, exportRowCount, zeroReason,
 
 const ANALYSIS_REPORT_LABEL_MAP = {
   "Sum of Total Monthly Premium": "Sum of Total Sold",
-  "Sum of Sold": "Sum of Converted",
   "Average Monthly Premium": "Average Monthly Premium",
   "Sold Rate": "Sold Rate",
   "Converted Rate": "Converted Rate",
@@ -3403,6 +3402,10 @@ function getAnalysisComparisonSetup(setupId, comparisonId) {
   return comparisonSetups.find((entry) => String(entry.id || "").trim() === String(comparisonId || "").trim()) || null;
 }
 
+function isCompletedAnalysisStatus(value = "") {
+  return String(value || "").trim().toLowerCase() === "complete";
+}
+
 function saveAnalysisSetup(body = {}) {
   const request = normalizeAnalysisRequest(body);
   const setups = readAnalysisSetups();
@@ -3411,6 +3414,9 @@ function saveAnalysisSetup(body = {}) {
   const timestamp = new Date().toISOString();
   const existingStatusNormalized = String(existingSetup?.status || "").trim().toLowerCase();
   const requestedStatusNormalized = String(request.status || "").trim().toLowerCase();
+  if (existingSetup && isCompletedAnalysisStatus(existingStatusNormalized)) {
+    throw new Error("Completed analyses are read-only. Undo or reopen the analysis before making changes.");
+  }
   const shouldPreserveCompletedState =
     !!existingSetup
     && existingStatusNormalized === "complete"
@@ -3594,6 +3600,9 @@ function deleteAnalysisSetup(setupId, options = {}) {
   if (!setup) {
     throw new Error("Analysis setup not found.");
   }
+  if (isCompletedAnalysisStatus(setup.status || "")) {
+    throw new Error("Completed analyses cannot be deleted. Undo or reopen the analysis first.");
+  }
 
   const revertReferenceLists = options.revertReferenceLists === true;
   const actor = String(options.actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR;
@@ -3601,6 +3610,9 @@ function deleteAnalysisSetup(setupId, options = {}) {
   const relatedRunIds = new Set(relatedRuns.map((entry) => String(entry.id || "").trim()).filter(Boolean));
   const reports = readAnalysisReports();
   const relatedReports = reports.filter((entry) => relatedRunIds.has(String(entry.runId || "").trim()));
+  if (relatedReports.length) {
+    throw new Error("Analysis setups with saved reports cannot be deleted because reports are historical records.");
+  }
 
   let revertedLists = [];
   if (revertReferenceLists && hasMeaningfulReferenceListChanges(setup.referenceListChanges || [])) {
@@ -3760,70 +3772,28 @@ function getAnalysisReport(reportId) {
 
 function deleteAnalysisRun(runId) {
   const runs = readAnalysisRuns();
-  const nextRuns = runs.filter((entry) => entry.id !== runId);
-  if (nextRuns.length === runs.length) {
+  const run = runs.find((entry) => String(entry.id || "").trim() === String(runId || "").trim());
+  if (!run) {
     throw new Error("Analysis run not found.");
   }
+  const linkedSetup = readAnalysisSetups().find((entry) => String(entry.id || "").trim() === String(run.setupId || "").trim());
+  if (isCompletedAnalysisStatus(run.status || "") || isCompletedAnalysisStatus(linkedSetup?.status || "")) {
+    throw new Error("Completed analysis runs are historical records and cannot be deleted.");
+  }
+  const hasSavedReports = readAnalysisReports().some((entry) => String(entry.runId || "").trim() === String(run.id || "").trim());
+  if (hasSavedReports) {
+    throw new Error("Analysis runs with saved reports cannot be deleted because reports are historical records.");
+  }
+  const nextRuns = runs.filter((entry) => entry.id !== run.id);
   writeAnalysisRuns(nextRuns);
 }
 
 function deleteAnalysisReport(reportId) {
-  const reports = readAnalysisReports();
-  const report = reports.find((entry) => entry.id === reportId);
-  if (!report) {
-    throw new Error("Analysis report not found.");
-  }
-
-  if (report.export_file_path) {
-    try {
-      fs.unlinkSync(report.export_file_path);
-    } catch (error) {
-      // Ignore cleanup failures for already-removed exports.
-    }
-  }
-
-  const nextReports = reports.filter((entry) => entry.id !== reportId);
-  writeAnalysisReports(nextReports);
-  removeDeletedReportsFromRuns([report]);
+  throw new Error("Saved analysis reports are historical records and cannot be deleted.");
 }
 
 function deleteAnalysisReports(reportIds = []) {
-  const normalizedIds = Array.from(
-    new Set(
-      ensureArray(reportIds)
-        .map((entry) => String(entry || "").trim())
-        .filter(Boolean)
-    )
-  );
-
-  if (!normalizedIds.length) {
-    throw new Error("Select at least one analysis report to delete.");
-  }
-
-  const reports = readAnalysisReports();
-  const reportMap = new Map(reports.map((entry) => [String(entry.id || "").trim(), entry]));
-  const missingIds = normalizedIds.filter((id) => !reportMap.has(id));
-  if (missingIds.length) {
-    throw new Error("One or more selected analysis reports could not be found.");
-  }
-
-  normalizedIds.forEach((id) => {
-    const report = reportMap.get(id);
-    if (report?.export_file_path) {
-      try {
-        fs.unlinkSync(report.export_file_path);
-      } catch (error) {
-        // Ignore cleanup failures for already-removed exports.
-      }
-    }
-  });
-
-  const deletedReports = normalizedIds
-    .map((id) => reportMap.get(id))
-    .filter(Boolean);
-  writeAnalysisReports(reports.filter((entry) => !normalizedIds.includes(String(entry.id || "").trim())));
-  removeDeletedReportsFromRuns(deletedReports);
-  return normalizedIds;
+  throw new Error("Saved analysis reports are historical records and cannot be deleted.");
 }
 
 function removeDeletedReportsFromRuns(reportsToDelete = []) {
@@ -3896,122 +3866,11 @@ function removeDeletedReportsFromRuns(reportsToDelete = []) {
 }
 
 function renameAnalysisReport(reportId, nextTitle) {
-  const normalizedId = String(reportId || "").trim();
-  const normalizedTitle = String(nextTitle || "").trim();
-
-  if (!normalizedId) {
-    throw new Error("Analysis report not found.");
-  }
-
-  if (!normalizedTitle) {
-    throw new Error("Report title is required.");
-  }
-
-  const reports = readAnalysisReports();
-  const reportIndex = reports.findIndex((entry) => entry.id === normalizedId);
-  if (reportIndex === -1) {
-    throw new Error("Analysis report not found.");
-  }
-
-  const existingReport = reports[reportIndex];
-  reports[reportIndex] = {
-    ...existingReport,
-    report_name: normalizedTitle,
-    updated_at: new Date().toISOString(),
-  };
-
-  writeAnalysisReports(reports);
-  return serializeAnalysisReport(reports[reportIndex]);
+  throw new Error("Saved analysis reports are historical records and cannot be renamed.");
 }
 
 async function rebuildAnalysisReport(reportId) {
-  const normalizedId = String(reportId || "").trim();
-  if (!normalizedId) {
-    throw new Error("Analysis report not found.");
-  }
-
-  const reports = readAnalysisReports();
-  const reportIndex = reports.findIndex((entry) => entry.id === normalizedId);
-  if (reportIndex === -1) {
-    throw new Error("Analysis report not found.");
-  }
-
-  const existingReport = reports[reportIndex];
-  const parameters = existingReport.parameters || {};
-  const run = {
-    id: existingReport.runId || existingReport.run_id || "rebuild_run",
-    runName: existingReport.run_name || existingReport.runName || "",
-    createdAt: existingReport.created_at || existingReport.createdAt || new Date().toISOString(),
-  };
-  const pull = {
-    id: existingReport.pullId || existingReport.pull_id || "rebuild_pull",
-    reportId: parameters.report_id || DEFAULT_REPORT_ID,
-    analysisLabel: parameters.analysis_label || existingReport.report_name || "",
-    keyCodes: ensureArray(parameters.key_codes),
-    years: ensureArray(parameters.selected_years),
-    dateRange: {
-      startDate: parameters.start_date || "",
-      endDate: parameters.end_date || "",
-    },
-    scf: parameters.scf_filter || "",
-    clientType: parameters.client_type || "",
-    notes: parameters.notes || "",
-  };
-
-  const filterValues = buildSalesforceFilterValues(pull);
-  const result = await fetchFlexibleSalesforceReportData(pull.reportId, {
-    keyCodes: filterValues.keyCodes,
-    years: pull.years,
-    dateRange: pull.dateRange,
-    scf: pull.scf,
-    clientType: filterValues.clientType,
-  });
-
-  const inputRows = Number(result.unfilteredRowCount || 0);
-  const effectiveListType = resolveAnalysisReferenceListTypeFromPull(pull);
-  const effectiveClientType = effectiveListType === "nhcl" ? "NHCL" : effectiveListType === "rfc" ? "RFC" : pull.clientType;
-  const rows = padAnalysisRowsWithReferenceList(result.rows, result.columns, effectiveClientType);
-  const exportRows = ensureArray(result.exportRows).length
-    ? ensureArray(result.exportRows)
-    : ensureArray(result.rows);
-  const exportRowCount = Number(result.exportRowCount || exportRows.length || 0);
-  let zeroReason = "";
-  if (inputRows === 0) {
-    zeroReason = "No matching source rows were returned from Salesforce.";
-  } else if (rows.length === 0) {
-    zeroReason = "Filters removed all rows for this report.";
-  }
-  if (
-    rows.length === 0 &&
-    Array.isArray(result.availableKeyValues) &&
-    result.availableKeyValues.length > 0 &&
-    buildSalesforceFilterValues(pull).keyCodes.length > 0
-  ) {
-    zeroReason = `No rows matched the selected Key filter. Available Key values in this report: ${result.availableKeyValues.join(", ")}.`;
-  }
-
-  const rebuiltReport = buildAnalysisReportRecord(run, pull, {
-    id: existingReport.id,
-    createdAt: existingReport.created_at || existingReport.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    completedAt: new Date().toISOString(),
-    status: "complete",
-    rows,
-    columns: result.columns,
-    summaryValues: result.summaryValues || [],
-    exportColumns: result.exportColumns || [],
-    exportRows,
-    exportRowCount,
-    inputRowCount: inputRows,
-    zeroReason,
-  });
-
-  reports[reportIndex] = {
-    ...rebuiltReport,
-    report_name: existingReport.report_name || rebuiltReport.report_name,
-  };
-  writeAnalysisReports(reports);
-  return serializeAnalysisReport(reports[reportIndex]);
+  throw new Error("Saved analysis reports are historical records and cannot be rebuilt.");
 }
 
 async function getAnalysisReportScfMetrics(reportId, scf) {

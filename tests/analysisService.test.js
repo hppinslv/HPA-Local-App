@@ -955,7 +955,7 @@ test("undo latest completed analysis restores mailing lists to the pre-completio
   assert.ok(nhclAfterUndo.history.some((entry) => entry.actionType === "undo-analysis-complete"));
 });
 
-test("deleting a completed analysis restores list history and keeps normalized source names", (t) => {
+test("completed analyses stay locked instead of being deleted for historical preservation", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir, {
     lists: [
@@ -986,18 +986,20 @@ test("deleting a completed analysis restores list history and keeps normalized s
     }),
   });
 
-  const deletion = service.deleteAnalysisSetup(setup.id, {
-    revertReferenceLists: true,
-    actor: "Melinda Harris",
-  });
-  const nhclAfterDelete = service.getReferenceListByType("nhcl");
-  const rfcAfterDelete = service.getReferenceListByType("rfc");
+  assert.throws(
+    () => service.deleteAnalysisSetup(setup.id, {
+      revertReferenceLists: true,
+      actor: "Melinda Harris",
+    }),
+    /cannot be deleted|reopen/i
+  );
 
-  assert.deepEqual(deletion.revertedLists.sort(), ["nhcl", "rfc"]);
-  assert.equal(nhclAfterDelete.sourceName, "NHCL SCF's_2025.10");
-  assert.equal(rfcAfterDelete.sourceName, "RFC SCF's_2025.10");
-  assert.ok(nhclAfterDelete.history.some((entry) => entry.actionType === "restore-analysis-delete"));
-  assert.ok(rfcAfterDelete.history.some((entry) => entry.actionType === "restore-analysis-delete"));
+  const nhclAfterAttempt = service.getReferenceListByType("nhcl");
+  const rfcAfterAttempt = service.getReferenceListByType("rfc");
+  assert.equal(nhclAfterAttempt.sourceName, "NHCL SCF's_2025.10");
+  assert.equal(rfcAfterAttempt.sourceName, "RFC SCF's_2025.10");
+  assert.ok(!nhclAfterAttempt.history.some((entry) => entry.actionType === "restore-analysis-delete"));
+  assert.ok(!rfcAfterAttempt.history.some((entry) => entry.actionType === "restore-analysis-delete"));
 });
 
 test("saving a new open analysis archives older open analyses so only one stays active", (t) => {
@@ -1069,4 +1071,67 @@ test("only the most recent completed analysis can be undone", (t) => {
     /most recent completed analysis/i
   );
   assert.doesNotThrow(() => service.undoLatestCompletedAnalysis(latestSetup.id, { actor: "Melinda Harris" }));
+});
+
+test("completed analyses cannot be edited or deleted until they are reopened", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const completed = service.saveAnalysisSetup(createComparisonPayload({
+    status: "complete",
+    completedAt: "2026-06-26T15:30:00.000Z",
+  }));
+
+  assert.throws(
+    () => service.saveAnalysisSetup({
+      ...completed,
+      notes: "changed after completion",
+    }),
+    /read-only|reopen/i
+  );
+  assert.throws(
+    () => service.deleteAnalysisSetup(completed.id, { actor: "Local User" }),
+    /cannot be deleted|reopen/i
+  );
+});
+
+test("saved analysis reports are immutable historical records", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-reports.json"),
+    JSON.stringify([
+      {
+        id: "report_immutable",
+        runId: "run_immutable",
+        pullId: "pull_immutable",
+        report_name: "Immutable Report",
+        report_type: "analysis-report",
+        created_at: "2026-06-29T00:00:00.000Z",
+        updated_at: "2026-06-29T00:00:00.000Z",
+        completed_at: "2026-06-29T00:00:00.000Z",
+        status: "complete",
+        rows: [],
+        columns: [],
+        exportRows: [],
+        exportColumns: [],
+        summaryValues: [],
+      },
+    ], null, 2)
+  );
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  assert.throws(() => service.deleteAnalysisReport("report_immutable"), /historical records|cannot be deleted/i);
+  assert.throws(() => service.deleteAnalysisReports(["report_immutable"]), /historical records|cannot be deleted/i);
+  assert.throws(() => service.renameAnalysisReport("report_immutable", "New Name"), /historical records|cannot be renamed/i);
 });

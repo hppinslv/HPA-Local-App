@@ -231,6 +231,16 @@ test("converted count uses one certificate per positive converted premium row in
   assert.equal(convertedCount, 1);
 });
 
+test("converted count uses any positive converted premium amount", () => {
+  assert.equal(
+    resolveAnalysisConvertedCount({
+      "Payments Minus Credits": "$0.01",
+      "Sum of Converted": "",
+    }),
+    1
+  );
+});
+
 test("sold opportunity count falls back to converted certificate count when converted premium is positive", () => {
   const soldCount = resolveAnalysisSoldOpportunityCount(
     {
@@ -247,7 +257,7 @@ test("sold opportunity count falls back to converted certificate count when conv
   assert.equal(soldCount, 3);
 });
 
-test("aggregate rows count converted-premium certificates in both sold and opp count columns", () => {
+test("aggregate rows count converted-premium certificates in converted and sold columns", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
       "SCF Grouping": "088",
@@ -281,8 +291,13 @@ test("aggregate rows count converted-premium certificates in both sold and opp c
   const summary = summarizeAnalysisExportRows(dataset.rows, dataset.columns);
   const row = getAggregateRow(summary, "088");
   assert.equal(row["Sum of Opp Count"], "3");
+  assert.equal(row["Sum of Sold"], "3");
   assert.equal(row["Sum of In Force"], "0");
   assert.equal(row["Sum of Converted"], "3");
+  assert.equal(
+    summary.summaryValues.find((entry) => entry.key === "Sum of Sold")?.value,
+    "3"
+  );
 });
 
 test("payments minus credits greater than one dollar counts the certificate as converted", () => {
@@ -360,10 +375,10 @@ test("summary rows do not collapse converted count to one from aggregate premium
   );
 });
 
-test("converted count requires the Salesforce converted field to be greater than one dollar", () => {
+test("converted count requires the converted premium to be positive", () => {
   assert.equal(
     resolveAnalysisConvertedCount({
-      "Payments Minus Credits": "$1.00",
+      "Payments Minus Credits": "$0.00",
       "Sum of Converted": "",
     }),
     0
@@ -371,7 +386,7 @@ test("converted count requires the Salesforce converted field to be greater than
 
   assert.equal(
     resolveAnalysisConvertedCount({
-      "Payments Minus Credits": "$1.01",
+      "Payments Minus Credits": "$0.01",
       "Sum of Converted": "",
     }),
     1
@@ -560,6 +575,26 @@ test("detail summary rows override grouped converted counts and summary totals",
   assert.equal(row["Sum of Converted"], "3");
   assert.equal(
     merged.summaryValues.find((entry) => entry.key === "Sum of Converted")?.value,
+    "3"
+  );
+});
+
+test("detail export labels sold count as sum of sold", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "088",
+      Key: "N",
+      Mailed: 100,
+      "Opp Count": 3,
+      "In Force": 0,
+      "Total Converted Monthly Premiums": 25,
+    },
+  ]);
+
+  assert.equal(dataset.columns.some((column) => column.key === "Sum of Sold"), true);
+  assert.equal(dataset.columns.some((column) => column.key === "Sum of Opp Count"), false);
+  assert.equal(
+    dataset.summaryValues.find((entry) => entry.key === "Sum of Sold")?.value,
     "3"
   );
 });

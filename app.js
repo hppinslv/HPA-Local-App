@@ -7362,8 +7362,8 @@ function normalizeAnalysisMetricRow(row = {}) {
   normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
   normalizedRow["Sum of Opp Count"] = formatNavigatorCount(soldCount);
   normalizedRow["sum of opp count"] = formatNavigatorCount(soldCount);
-  normalizedRow["Sum of Sold"] = formatNavigatorCount(convertedCount);
-  normalizedRow["sum of sold"] = formatNavigatorCount(convertedCount);
+  normalizedRow["Sum of Sold"] = formatNavigatorCount(soldCount);
+  normalizedRow["sum of sold"] = formatNavigatorCount(soldCount);
   normalizedRow["Sum of Converted"] = formatNavigatorCount(convertedCount);
   normalizedRow["sum of converted"] = formatNavigatorCount(convertedCount);
   normalizedRow["Converted"] = formatNavigatorCount(convertedCount);
@@ -7500,8 +7500,8 @@ function buildSyntheticNavigatorRow({
     "sum of opp count": formatNavigatorCount(safeOppCount),
     "Sum of In Force": formatNavigatorCount(safeInForce),
     "sum of in force": formatNavigatorCount(safeInForce),
-    "Sum of Sold": formatNavigatorCount(safeSold),
-    "sum of sold": formatNavigatorCount(safeSold),
+    "Sum of Sold": formatNavigatorCount(safeOppCount),
+    "sum of sold": formatNavigatorCount(safeOppCount),
     "Sum of Converted": formatNavigatorCount(safeSold),
     "sum of converted": formatNavigatorCount(safeSold),
     Converted: formatNavigatorCount(safeSold),
@@ -12575,22 +12575,16 @@ async function loadAnalysisReports() {
     return rows;
   }
   rows.forEach((report) => {
-    const isEditing = state.analysis.editingReportId === report.id;
-    const isSelected = getSelectedAnalysisReportIds().includes(report.id);
-    const titleCell = isEditing
-      ? `<input class="field-input" data-edit-report-title="${esc(report.id)}" type="text" value="${esc(
-          state.analysis.editingReportTitle || getAnalysisReportDisplayName(report)
-        )}"${readOnly ? " disabled" : ""} />`
-      : `<div class="analysis-report-row-title">
-           <strong>${esc(getAnalysisReportDisplayName(report))}</strong>
-           <span>${esc(report.report_id || report.reportId || report.id || "")}</span>
-         </div>`;
+    const titleCell = `<div class="analysis-report-row-title">
+         <strong>${esc(getAnalysisReportDisplayName(report))}</strong>
+         <span>${esc(report.report_id || report.reportId || report.id || "")}</span>
+       </div>`;
     const downloadMarkup = report.download_url || report.downloadUrl
       ? `<a class="secondary-button table-action-button analysis-table-link-button" href="${esc(report.download_url || report.downloadUrl)}" download>Download</a>`
       : '<span class="analysis-report-download-empty">No file</span>';
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><input type="checkbox" data-select-report="${esc(report.id)}" aria-label="Select ${esc(getAnalysisReportDisplayName(report))}"${isSelected ? " checked" : ""}${readOnly ? " disabled" : ""} /></td>
+      <td><span class="analysis-report-download-empty">Locked</span></td>
       <td>${titleCell}</td>
       <td>${formatDate(report.created_at || report.createdAt)}</td>
       <td>${esc(report.status || "idle")}</td>
@@ -12598,74 +12592,10 @@ async function loadAnalysisReports() {
       <td>${downloadMarkup}</td>
       <td class="action-row">
         <button class="secondary-button table-action-button" data-view-report="${esc(report.id)}">View</button>
-        ${isEditing
-          ? `<button class="secondary-button table-action-button" data-save-report-title="${esc(report.id)}"${readOnly ? " disabled" : ""}>Save</button>
-             <button class="secondary-button table-action-button" data-cancel-report-title="${esc(report.id)}"${readOnly ? " disabled" : ""}>Cancel</button>`
-          : `<button class="secondary-button table-action-button" data-edit-report="${esc(report.id)}"${readOnly ? " disabled" : ""}>Edit Title</button>`}
-        <button class="secondary-button table-action-button" data-delete-report="${esc(report.id)}"${readOnly ? " disabled" : ""}>Delete</button>
+        <span class="analysis-report-download-empty">History Locked</span>
       </td>
     `;
     tbody.appendChild(tr);
-  });
-
-  all("[data-select-report]").forEach((input) => {
-    input.addEventListener("change", () => {
-      const id = input.getAttribute("data-select-report");
-      if (!id) return;
-      const selected = new Set(getSelectedAnalysisReportIds());
-      if (input.checked) {
-        selected.add(id);
-      } else {
-        selected.delete(id);
-      }
-      setSelectedAnalysisReportIds(Array.from(selected));
-      updateAnalysisReportSelectionUi();
-    });
-  });
-
-  all("[data-edit-report-title]").forEach((input) => {
-    input.addEventListener("input", () => {
-      const id = input.getAttribute("data-edit-report-title");
-      if (!id) return;
-      state.analysis.editingReportId = id;
-      state.analysis.editingReportTitle = input.value;
-    });
-  });
-
-  all("[data-edit-report]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const id = button.getAttribute("data-edit-report");
-      if (!id) return;
-      const report = rows.find((entry) => entry.id === id);
-      state.analysis.editingReportId = id;
-      state.analysis.editingReportTitle = report ? getAnalysisReportDisplayName(report) : "";
-      loadAnalysisReports();
-    });
-  });
-
-  all("[data-save-report-title]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const id = button.getAttribute("data-save-report-title");
-      if (!id) return;
-      button.disabled = true;
-      try {
-        await renameSavedAnalysisReport(id);
-      } finally {
-        button.disabled = false;
-      }
-    });
-  });
-
-  all("[data-cancel-report-title]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const id = button.getAttribute("data-cancel-report-title");
-      if (!id) return;
-      if (state.analysis.editingReportId === id) {
-        state.analysis.editingReportId = "";
-        state.analysis.editingReportTitle = "";
-      }
-      loadAnalysisReports();
-    });
   });
 
   all("[data-view-report]").forEach((button) => {
@@ -12693,35 +12623,6 @@ async function loadAnalysisReports() {
     });
   });
 
-  all("[data-delete-report]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const id = button.getAttribute("data-delete-report");
-      if (!id) return;
-      if (!confirm("Delete this report?")) return;
-      const row = button.closest("tr");
-      button.disabled = true;
-      try {
-        await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-        });
-        state.analysis.savedReports = state.analysis.savedReports.filter((report) => report.id !== id);
-        if (row) {
-          row.remove();
-        }
-        if (state.analysis.currentReportId === id) {
-          state.analysis.currentReportId = "";
-          renderAnalysisResults(null);
-          setStatus("analysis-status-detail", "Analysis report deleted.");
-        }
-        await loadAnalysisReports();
-        renderAnalysisComparePanel();
-      } catch (error) {
-        button.disabled = false;
-        setStatus("analysis-status-detail", `Delete failed: ${error.message}`);
-      }
-    });
-  });
-
   updateAnalysisReportSelectionUi();
   return rows;
 }
@@ -12743,8 +12644,8 @@ function updateAnalysisReportSelectionUi() {
   }
   const deleteButton = el("analysis-delete-selected-button");
   if (deleteButton) {
-    deleteButton.disabled = selectedCount === 0;
-    deleteButton.textContent = selectedCount > 0 ? `Delete Selected (${selectedCount})` : "Delete Selected";
+    deleteButton.disabled = true;
+    deleteButton.hidden = true;
   }
 }
 
@@ -12847,7 +12748,7 @@ async function loadAnalysisSetups() {
 
   rows.forEach((entry) => {
     const showUndo = entry.sourceType === "setup" && entry.isTopRow && (entry.canUndoLatestCompletion || entry.isCompleted);
-    const showDelete = entry.sourceType === "setup";
+    const showDelete = entry.sourceType === "setup" && !entry.isCompleted;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${esc(entry.name)}</td>

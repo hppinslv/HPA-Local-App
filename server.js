@@ -1049,7 +1049,7 @@ const server = http.createServer((request, response) => {
       deleteAnalysisReport(analysisReportMatch[1]);
       sendJson(response, 200, { reports: listAnalysisReports() });
     } catch (error) {
-      sendJson(response, 404, { error: error.message || "Analysis report not found." });
+      sendJson(response, 400, { error: error.message || "Unable to delete analysis report." });
     }
     return;
   }
