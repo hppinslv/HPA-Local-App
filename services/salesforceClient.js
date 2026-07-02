@@ -94,7 +94,7 @@ const ANALYSIS_METRIC_LABELS = {
   convertedCount: ["Sum of Converted", "Converted"],
   totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
   inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
-  totalConvertedMonthlyPremiums: ["Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium", "Sum of Payment Received", "Payment Received", "Payments Minus Credits", "Payments_Minus_Credits__c", "Total Payments", "Sum of Total Payments"],
+  totalConvertedMonthlyPremiums: ["Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium", "Payments Minus Credits", "Payments_Minus_Credits__c"],
 };
 
 const CONVERTED_DIRECT_CANDIDATE_KEYS = [
@@ -227,7 +227,20 @@ function getConvertedPremiumAmount(row = {}, precomputedConvertedPremium = null)
   return 0;
 }
 
+function getPaymentReceivedCountForSourceRow(row = {}) {
+  const paymentReceivedValue =
+    getAnalysisMetricValue(row, CONVERTED_PAYMENT_FALLBACK_KEYS) ??
+    getLikelyColumnValue(row, CONVERTED_PAYMENT_FALLBACK_KEYS);
+  const parsed = parseConvertedNumber(paymentReceivedValue, { allowPaymentReceivedFallback: true });
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 function getConvertedCountForSourceRow(row = {}, precomputedConvertedPremium = null) {
+  const paymentReceivedCount = getPaymentReceivedCountForSourceRow(row);
+  if (paymentReceivedCount > 0) {
+    return 1;
+  }
+
   return getConvertedPremiumAmount(row, precomputedConvertedPremium) > 0 ? 1 : 0;
 }
 
