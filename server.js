@@ -271,7 +271,7 @@ function getRequestProtocol(request) {
   return forwardedProto === "https" ? "https" : "http";
 }
 
-const server = http.createServer((request, response) => {
+const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
   if (requestUrl.pathname === "/api/monthly-reports" && request.method === "GET") {
@@ -1027,9 +1027,9 @@ const server = http.createServer((request, response) => {
 
   if (requestUrl.pathname === "/api/analysis/reports/bulk-delete" && request.method === "POST") {
     collectRequestBody(request)
-      .then((body) => {
-        const deletedIds = deleteAnalysisReports(body.reportIds);
-        sendJson(response, 200, { deletedIds, reports: listAnalysisReports() });
+      .then(async (body) => {
+        const result = await deleteAnalysisReports(body.reportIds);
+        sendJson(response, 200, result);
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to delete selected analysis reports." });
@@ -1052,8 +1052,8 @@ const server = http.createServer((request, response) => {
 
   if (analysisReportMatch && request.method === "DELETE") {
     try {
-      deleteAnalysisReport(analysisReportMatch[1]);
-      sendJson(response, 200, { reports: listAnalysisReports() });
+      const result = await deleteAnalysisReport(analysisReportMatch[1]);
+      sendJson(response, 200, result);
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to delete analysis report." });
     }

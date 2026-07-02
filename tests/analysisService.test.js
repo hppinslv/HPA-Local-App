@@ -214,6 +214,99 @@ test("saved analysis reports keep sum of sold labels in view and export columns"
   assert.equal(report.exportRows[0]["Sum of Sold"], "1");
 });
 
+test("saved analysis reports inherit setup ownership from their linked run", () => {
+  const tempDir = createTempAnalysisDir();
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-runs.json"),
+    JSON.stringify([
+      {
+        id: "run_1",
+        setupId: "setup_1",
+        status: "complete",
+        reportPulls: [],
+        comparisonRequests: [],
+      },
+    ], null, 2)
+  );
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-reports.json"),
+    JSON.stringify([
+      {
+        id: "report_1",
+        runId: "run_1",
+        pullId: "pull_1",
+        report_type: "analysis-report",
+        report_name: "Test Report",
+        created_at: "2026-06-29T00:00:00.000Z",
+        updated_at: "2026-06-29T00:00:00.000Z",
+        completed_at: "2026-06-29T00:00:00.000Z",
+        status: "complete",
+        result_count: 1,
+        export_row_count: 1,
+        input_row_count: 1,
+        columns: [],
+        rows: [],
+        exportColumns: [],
+        exportRows: [],
+      },
+    ], null, 2)
+  );
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const [report] = service.listAnalysisReports();
+
+  assert.equal(report.setupId, "setup_1");
+  assert.equal(report.setup_id, "setup_1");
+});
+
+test("stale Nevada DNM entries are removed on load and do not mark SCF 893 as do not mail", () => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir, {
+    lists: [
+      {
+        type: "dnm",
+        name: "Do Not Mail",
+        sourceName: "Seeded from 2025.10 instructions",
+        items: [
+          {
+            scf: "893",
+            state: "NV",
+            scope: "NV",
+            addedAt: "2026-06-15T20:11:51.259Z",
+            addedBy: "codex-repair",
+            reason: "Imported from the initial analysis requirements.",
+            sourceAnalysis: "initial-seed",
+          },
+          {
+            scf: "700",
+            state: "Louisiana - just the AD&D",
+            scope: "Louisiana - just the AD&D",
+            stateKey: "louisiana-add",
+            addedAt: "2026-06-15T20:11:51.259Z",
+            addedBy: "codex-repair",
+            reason: "Imported from the initial analysis requirements.",
+            sourceAnalysis: "initial-seed",
+          },
+        ],
+      },
+      { type: "nhcl", name: "NHCL Mailing SCFs", sourceName: "Test", items: [] },
+      { type: "rfc", name: "RFC Mailing SCFs", sourceName: "Test", items: [] },
+      { type: "candidate", name: "Candidate SCFs", sourceName: "Test", items: [] },
+    ],
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  const lists = service.listReferenceLists();
+  const dnm = lists.find((entry) => entry.type === "dnm");
+  const persisted = JSON.parse(fs.readFileSync(path.join(tempDir, "scf-reference-lists.json"), "utf8"));
+
+  assert.ok(dnm);
+  assert.equal(dnm.items.some((entry) => entry.scf === "893"), false);
+  assert.equal(dnm.items.some((entry) => entry.scf === "700"), true);
+  assert.equal(service.isDoNotMailScf("893"), false);
+  assert.equal(persisted.lists.find((entry) => entry.type === "dnm").items.some((entry) => entry.scf === "893"), false);
+});
+
 test("analysis report names use Refinance title format with run date", () => {
   const reportName = buildAnalysisReportName(
     {
@@ -1100,7 +1193,7 @@ test("completed analyses cannot be edited or deleted until they are reopened", (
   );
 });
 
-test("completed analysis reports stay locked but open analysis reports can be deleted", (t) => {
+test("completed analysis reports stay locked but open analysis reports can be deleted", async (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);
   t.after(() => {
@@ -1187,9 +1280,150 @@ test("completed analysis reports stay locked but open analysis reports can be de
   );
 
   const service = loadAnalysisServiceWithTempDir(tempDir);
-  assert.equal(service.deleteAnalysisReport("report_open"), "report_open");
+  const deleted = await service.deleteAnalysisReport("report_open");
+  assert.equal(deleted.deletedId, "report_open");
+  assert.equal(deleted.remainingCount, 1);
   assert.equal(service.getAnalysisReport("report_open"), null);
-  assert.throws(() => service.deleteAnalysisReport("report_immutable"), /still open|reopen|undo completed/i);
-  assert.throws(() => service.deleteAnalysisReports(["report_immutable"]), /still open|reopen|undo completed/i);
+  const secondDelete = await service.deleteAnalysisReport("report_open");
+  assert.equal(secondDelete.deletedId, "report_open");
+  assert.equal(secondDelete.alreadyDeleted, true);
+  await assert.rejects(() => service.deleteAnalysisReport("report_immutable"), /still open|reopen|undo completed/i);
+  await assert.rejects(() => service.deleteAnalysisReports(["report_immutable"]), /still open|reopen|undo completed/i);
   assert.throws(() => service.renameAnalysisReport("report_immutable", "New Name"), /historical records|cannot be renamed/i);
+});
+
+test("saved report deletes by unique id, prunes setup references, and persists after reload", async (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-setups.json"),
+    JSON.stringify([
+      {
+        id: "setup_1",
+        runName: "July 2026",
+        status: "draft",
+        createdAt: "2026-07-02T10:45:00.000Z",
+        updatedAt: "2026-07-02T10:45:00.000Z",
+        reportPulls: [],
+        comparisonRequests: [
+          {
+            id: "comparison_1",
+            comparisonName: "July Compare",
+            keyCodeGroup: "NHCL",
+            selectedReportIds: ["report_mid", "report_keep"],
+            reportIds: ["report_mid", "report_keep"],
+            reportAId: "report_mid",
+            reportBId: "report_keep",
+          },
+        ],
+        reviewState: {
+          reviewPrimaryReportIds: {
+            comparison_1: "report_mid",
+          },
+        },
+      },
+    ], null, 2)
+  );
+
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-runs.json"),
+    JSON.stringify([
+      {
+        id: "run_1",
+        setupId: "setup_1",
+        status: "complete",
+        reportPulls: [],
+        comparisonRequests: [
+          {
+            id: "comparison_1",
+            reportIds: ["report_mid", "report_keep"],
+            reportAId: "report_mid",
+            reportBId: "report_keep",
+          },
+        ],
+      },
+    ], null, 2)
+  );
+
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-reports.json"),
+    JSON.stringify([
+      {
+        id: "report_keep",
+        runId: "run_1",
+        pullId: "pull_keep",
+        report_name: "Same Name",
+        report_type: "analysis-report",
+        created_at: "2026-07-02T10:45:00.000Z",
+        updated_at: "2026-07-02T10:45:00.000Z",
+        completed_at: "2026-07-02T10:45:00.000Z",
+        status: "complete",
+        rows: [],
+        columns: [],
+        exportRows: [],
+        exportColumns: [],
+        summaryValues: [],
+      },
+      {
+        id: "report_mid",
+        runId: "run_1",
+        pullId: "pull_mid",
+        report_name: "Same Name",
+        report_type: "analysis-report",
+        created_at: "2026-07-02T10:46:00.000Z",
+        updated_at: "2026-07-02T10:46:00.000Z",
+        completed_at: "2026-07-02T10:46:00.000Z",
+        status: "complete",
+        rows: [],
+        columns: [],
+        exportRows: [],
+        exportColumns: [],
+        summaryValues: [],
+      },
+      {
+        id: "report_other",
+        runId: "run_1",
+        pullId: "pull_other",
+        report_name: "Different Name",
+        report_type: "analysis-report",
+        created_at: "2026-07-02T10:47:00.000Z",
+        updated_at: "2026-07-02T10:47:00.000Z",
+        completed_at: "2026-07-02T10:47:00.000Z",
+        status: "complete",
+        rows: [],
+        columns: [],
+        exportRows: [],
+        exportColumns: [],
+        summaryValues: [],
+      },
+    ], null, 2)
+  );
+
+  let service = loadAnalysisServiceWithTempDir(tempDir);
+  const deleteResult = await service.deleteAnalysisReport("report_mid");
+  assert.equal(deleteResult.deletedId, "report_mid");
+  assert.equal(deleteResult.remainingCount, 2);
+  assert.equal(deleteResult.removedReferencesCount > 0, true);
+  assert.deepEqual(
+    service.listAnalysisReports().map((report) => report.id).sort(),
+    ["report_keep", "report_other"]
+  );
+
+  const setupAfterDelete = service.getAnalysisSetup("setup_1");
+  assert.equal(setupAfterDelete.comparisonRequests.length, 0);
+  assert.equal(setupAfterDelete.reviewState.reviewPrimaryReportIds.comparison_1, undefined);
+
+  service = loadAnalysisServiceWithTempDir(tempDir);
+  assert.deepEqual(
+    service.listAnalysisReports().map((report) => report.id).sort(),
+    ["report_keep", "report_other"]
+  );
+  const secondDelete = await service.deleteAnalysisReport("report_mid");
+  assert.equal(secondDelete.alreadyDeleted, true);
+  assert.equal(secondDelete.remainingCount, 2);
 });

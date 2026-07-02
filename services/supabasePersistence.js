@@ -413,10 +413,20 @@ async function saveStateObject(stateKey, payload) {
   return true;
 }
 
+async function flushStateObject(stateKey, payload) {
+  try {
+    return await saveStateObject(stateKey, payload);
+  } catch (error) {
+    logPersistenceWarning("save", stateKey, error.message);
+    return false;
+  }
+}
+
 module.exports = {
   hasObject,
   buildStatePath,
   loadStateObject,
   queueStateSync,
+  flushStateObject,
   saveStateObject,
 };

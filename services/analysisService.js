@@ -10,7 +10,7 @@ const {
   hasAnalysisDetailExportRows,
   normalizeLabel,
 } = require("./salesforceClient");
-const { loadStateObject, queueStateSync } = require("./supabasePersistence");
+const { flushStateObject, loadStateObject, queueStateSync } = require("./supabasePersistence");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const ANALYSIS_STORAGE_DIR = process.env.HPA_ANALYSIS_DATA_DIR
@@ -312,7 +312,6 @@ const DNM_STATE_SCFS = Object.freeze({
   Missouri: ["630", "631", "633", "634", "635", "636", "637", "638", "639", "640", "641", "644", "645", "646", "647", "648", "649", "650", "651", "652", "653", "654", "655", "656", "657", "658"],
   Montana: ["590", "591", "592", "593", "594", "595", "596", "597", "598", "599"],
   Nebraska: ["680", "681", "683", "684", "685", "686", "687", "688", "689", "690", "691", "692", "693"],
-  Nevada: ["889", "890", "891", "893", "894", "895", "897", "898"],
   "New Hampshire": ["030", "031", "032", "033", "034", "035", "036", "037", "038"],
   "New Jersey": ["070", "071", "072", "073", "074", "075", "076", "077", "078", "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089"],
   "New Mexico": ["870", "871", "873", "874", "875", "877", "878", "879", "880", "881", "882", "883", "884"],
@@ -366,7 +365,6 @@ const DNM_SEED_GROUPS = [
   { key: "missouri", state: "Missouri", label: "Missouri", scope: "Missouri", scfs: DNM_STATE_SCFS.Missouri },
   { key: "montana", state: "Montana", label: "Montana", scope: "Montana", scfs: DNM_STATE_SCFS.Montana },
   { key: "nebraska", state: "Nebraska", label: "Nebraska", scope: "Nebraska", scfs: DNM_STATE_SCFS.Nebraska },
-  { key: "nevada", state: "Nevada", label: "Nevada", scope: "Nevada", scfs: DNM_STATE_SCFS.Nevada },
   { key: "new-hampshire", state: "New Hampshire", label: "New Hampshire", scope: "New Hampshire", scfs: DNM_STATE_SCFS["New Hampshire"] },
   { key: "new-jersey", state: "New Jersey", label: "New Jersey", scope: "New Jersey", scfs: DNM_STATE_SCFS["New Jersey"] },
   { key: "new-mexico", state: "New Mexico", label: "New Mexico", scope: "New Mexico", scfs: DNM_STATE_SCFS["New Mexico"] },
@@ -677,6 +675,40 @@ function rebuildActiveDnmStateGroups(payload = null) {
   }
 
   return { payload, changed };
+}
+
+function pruneDeprecatedDnmEntries(payload = null) {
+  if (!payload || !Array.isArray(payload.lists)) {
+    return { payload, changed: false };
+  }
+
+  const dnmList = payload.lists.find((entry) => entry?.type === "dnm");
+  if (!dnmList) {
+    return { payload, changed: false };
+  }
+
+  const items = ensureArray(dnmList.items);
+  const filteredItems = items.filter((entry) => {
+    const normalizedScf = normalizeScf(entry?.scf);
+    const group = normalizeScopeForDnm(entry?.scope || entry?.state || "") || DNM_SEED_GROUPS.find((candidate) => candidate.key === String(entry?.stateKey || "").trim()) || null;
+
+    if (!group) {
+      return false;
+    }
+
+    if (!normalizedScf) {
+      return true;
+    }
+
+    return group.scfs.includes(normalizedScf);
+  });
+
+  if (filteredItems.length === items.length) {
+    return { payload, changed: false };
+  }
+
+  dnmList.items = filteredItems;
+  return { payload, changed: true };
 }
 
 function buildReferenceListHistoryEntry({
@@ -1121,6 +1153,7 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
   return {
     id: reportId,
     runId: run.id,
+    setupId: run.setupId || null,
     pullId: pull.id,
     report_type: sanitizeSlug(pull.analysisLabel || pull.clientType || pull.reportId || "analysis-report"),
     report_name: reportName,
@@ -1264,7 +1297,22 @@ function normalizePersistedAnalysisReports(reports = []) {
 function normalizePersistedAnalysisReport(report = {}) {
   const exportRows = ensureArray(report.exportRows);
   if (!exportRows.length || !hasAnalysisDetailExportRows(exportRows) || typeof buildFlatRowsFromDetailExport !== "function") {
-    return { changed: false, report };
+    const linkedRun = report.runId
+      ? readAnalysisRuns().find((entry) => String(entry.id || "").trim() === String(report.runId || "").trim()) || null
+      : null;
+    const nextSetupId = linkedRun?.setupId || report.setupId || report.setup_id || null;
+    if (String(report.setupId || report.setup_id || "").trim() === String(nextSetupId || "").trim()) {
+      return { changed: false, report };
+    }
+
+    return {
+      changed: true,
+      report: {
+        ...report,
+        setupId: nextSetupId,
+        setup_id: nextSetupId,
+      },
+    };
   }
 
   const parameters = report.parameters || {};
@@ -1339,9 +1387,11 @@ function readReferenceLists() {
       referenceListsCache = normalizeReferenceListsPayload(createDefaultReferenceLists());
     }
 
+    const pruned = pruneDeprecatedDnmEntries(referenceListsCache);
+    referenceListsCache = normalizeReferenceListsPayload(pruned.payload);
     const repaired = rebuildActiveDnmStateGroups(referenceListsCache);
     referenceListsCache = normalizeReferenceListsPayload(repaired.payload);
-    if (repaired.changed) {
+    if (pruned.changed || repaired.changed) {
       const savedPrimary = persistJsonFile(SCF_REFERENCE_LISTS_PATH, referenceListsCache);
       if (!savedPrimary) {
         persistJsonFile(SCF_REFERENCE_LISTS_FALLBACK_PATH, referenceListsCache);
@@ -3190,10 +3240,15 @@ function serializeAnalysisReport(report) {
   const linkedRun = report.runId
     ? readAnalysisRuns().find((entry) => String(entry.id || "").trim() === String(report.runId || "").trim()) || null
     : null;
+  const storedSetupId = String(report.setupId || report.setup_id || "").trim();
   const linkedSetup = linkedRun?.setupId
     ? readAnalysisSetups().find((entry) => String(entry.id || "").trim() === String(linkedRun.setupId || "").trim()) || null
     : null;
-  const canDelete = isOpenAnalysisStatus(linkedSetup?.status || "");
+  const setupId = storedSetupId || linkedRun?.setupId || null;
+  const setupEntry = setupId
+    ? readAnalysisSetups().find((entry) => String(entry.id || "").trim() === String(setupId || "").trim()) || null
+    : null;
+  const canDelete = isOpenAnalysisStatus(setupEntry?.status || linkedSetup?.status || "");
 
   return {
     id: report.id,
@@ -3245,10 +3300,10 @@ function serializeAnalysisReport(report) {
     diagnostics: report.diagnostics || null,
     errorMessage: report.error_message || "",
     error_message: report.error_message || "",
-    setupId: linkedRun?.setupId || null,
-    setup_id: linkedRun?.setupId || null,
-    setupStatus: linkedSetup?.status || null,
-    setup_status: linkedSetup?.status || null,
+    setupId,
+    setup_id: setupId,
+    setupStatus: setupEntry?.status || linkedSetup?.status || null,
+    setup_status: setupEntry?.status || linkedSetup?.status || null,
     canDelete,
     can_delete: canDelete,
   };
@@ -3839,16 +3894,126 @@ function deleteAnalysisRun(runId) {
   writeAnalysisRuns(nextRuns);
 }
 
-function deleteAnalysisReport(reportId) {
+function pruneDeletedReportsFromSetup(setup, deletedReportIds = new Set()) {
+  const setupClone = clone(setup);
+  const deletedIdSet = deletedReportIds instanceof Set ? deletedReportIds : new Set(ensureArray(deletedReportIds));
+  let changed = false;
+  let removedReferencesCount = 0;
+
+  const nextReportPulls = ensureArray(setupClone.reportPulls).map((pull) => {
+    const savedReportId = String(pull?.savedReportId || pull?.saved_report_id || "").trim();
+    if (!savedReportId || !deletedIdSet.has(savedReportId)) {
+      return pull;
+    }
+    changed = true;
+    removedReferencesCount += 1;
+    const nextPull = { ...pull };
+    delete nextPull.savedReportId;
+    delete nextPull.saved_report_id;
+    return nextPull;
+  });
+
+  const nextComparisonRequests = ensureArray(setupClone.comparisonRequests)
+    .map((comparison) => {
+      const nextComparison = comparison && typeof comparison === "object" ? { ...comparison } : comparison;
+      if (!nextComparison || typeof nextComparison !== "object") {
+        return null;
+      }
+      const selectedReportIds = Array.from(
+        new Set(
+          ensureArray(nextComparison.selectedReportIds || nextComparison.reportIds || [nextComparison.reportAId, nextComparison.reportBId])
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        )
+      ).filter((reportId) => !deletedIdSet.has(reportId));
+      if (selectedReportIds.length < 2) {
+        changed = true;
+        if (selectedReportIds.length) {
+          removedReferencesCount += 1;
+        }
+        return null;
+      }
+      const originalSelected = Array.from(
+        new Set(
+          ensureArray(nextComparison.selectedReportIds || nextComparison.reportIds || [nextComparison.reportAId, nextComparison.reportBId])
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        )
+      );
+      if (selectedReportIds.length !== originalSelected.length) {
+        changed = true;
+        removedReferencesCount += originalSelected.length - selectedReportIds.length;
+      }
+      nextComparison.selectedReportIds = selectedReportIds;
+      nextComparison.reportIds = selectedReportIds;
+      nextComparison.reportAId = selectedReportIds[0] || "";
+      nextComparison.reportBId = selectedReportIds[1] || "";
+      return nextComparison;
+    })
+    .filter(Boolean);
+
+  if (nextReportPulls.length !== ensureArray(setupClone.reportPulls).length) {
+    changed = true;
+  }
+  setupClone.reportPulls = nextReportPulls;
+
+  if (nextComparisonRequests.length !== ensureArray(setupClone.comparisonRequests).length) {
+    changed = true;
+  }
+  setupClone.comparisonRequests = nextComparisonRequests;
+  setupClone.comparisonSetups = buildPersistedComparisonSetups(
+    setupClone.id,
+    nextComparisonRequests,
+    normalizeAnalysisReviewState(setupClone.reviewState),
+    setupClone.comparisonSetups,
+    setupClone.updatedAt || setupClone.createdAt || new Date().toISOString()
+  );
+
+  const reviewState = normalizeAnalysisReviewState(setupClone.reviewState);
+  let reviewChanged = false;
+  Object.entries(reviewState.reviewPrimaryReportIds || {}).forEach(([comparisonId, reportId]) => {
+    const normalizedReportId = String(reportId || "").trim();
+    if (normalizedReportId && deletedIdSet.has(normalizedReportId)) {
+      delete reviewState.reviewPrimaryReportIds[comparisonId];
+      reviewChanged = true;
+      removedReferencesCount += 1;
+    }
+  });
+  if (reviewChanged) {
+    changed = true;
+  }
+  setupClone.reviewState = reviewState;
+
+  return {
+    changed,
+    removedReferencesCount,
+    setup: setupClone,
+  };
+}
+
+async function deleteAnalysisReport(reportId) {
   const normalizedReportId = String(reportId || "").trim();
   if (!normalizedReportId) {
-    throw new Error("Analysis report not found.");
+    return {
+      deletedId: "",
+      remainingCount: readAnalysisReports().length,
+      removedReferencesCount: 0,
+      alreadyDeleted: true,
+      reports: listAnalysisReports(),
+    };
   }
   const reports = readAnalysisReports();
   const report = reports.find((entry) => String(entry.id || "").trim() === normalizedReportId);
   if (!report) {
-    throw new Error("Analysis report not found.");
+    return {
+      deletedId: normalizedReportId,
+      remainingCount: reports.length,
+      removedReferencesCount: 0,
+      alreadyDeleted: true,
+      reports: listAnalysisReports(),
+    };
   }
+
   const linkedRun = readAnalysisRuns().find((entry) => String(entry.id || "").trim() === String(report.runId || "").trim()) || null;
   const linkedSetup = linkedRun?.setupId
     ? readAnalysisSetups().find((entry) => String(entry.id || "").trim() === String(linkedRun.setupId || "").trim()) || null
@@ -3856,6 +4021,12 @@ function deleteAnalysisReport(reportId) {
   if (isCompletedAnalysisStatus(linkedSetup?.status || "") || !isOpenAnalysisStatus(linkedSetup?.status || "")) {
     throw new Error("Saved reports can only be deleted while the analysis is still open. Reopen or undo completed analyses first.");
   }
+
+  console.log("[Saved Reports] deleting report pull", {
+    reportId: normalizedReportId,
+    setupId: String(report.setupId || linkedRun?.setupId || "").trim(),
+  });
+  console.log("[Saved Reports] before delete count", reports.length);
 
   if (report?.export_file_path) {
     try {
@@ -3865,12 +4036,40 @@ function deleteAnalysisReport(reportId) {
     }
   }
 
-  writeAnalysisReports(reports.filter((entry) => String(entry.id || "").trim() !== normalizedReportId));
+  const nextReports = reports.filter((entry) => String(entry.id || "").trim() !== normalizedReportId);
+  writeAnalysisReports(nextReports);
   removeDeletedReportsFromRuns([report]);
-  return normalizedReportId;
+  await flushStateObject(ANALYSIS_REPORTS_SUPABASE_KEY, analysisReportsCache);
+
+  const setups = readAnalysisSetups();
+  const deletedIdSet = new Set([normalizedReportId]);
+  let removedReferencesCount = 0;
+  const nextSetups = setups.map((setup) => {
+    const pruned = pruneDeletedReportsFromSetup(setup, deletedIdSet);
+    if (pruned.changed) {
+      removedReferencesCount += pruned.removedReferencesCount;
+      return pruned.setup;
+    }
+    return setup;
+  });
+  if (removedReferencesCount > 0 || nextSetups.length !== setups.length) {
+    writeAnalysisSetups(nextSetups);
+    await flushStateObject(ANALYSIS_SETUPS_SUPABASE_KEY, analysisSetupsCache);
+  }
+
+  console.log("[Saved Reports] after delete count", nextReports.length);
+  console.log("[Saved Reports] removed from setup references", removedReferencesCount);
+
+  return {
+    deletedId: normalizedReportId,
+    remainingCount: nextReports.length,
+    removedReferencesCount,
+    alreadyDeleted: false,
+    reports: listAnalysisReports(),
+  };
 }
 
-function deleteAnalysisReports(reportIds = []) {
+async function deleteAnalysisReports(reportIds = []) {
   const normalizedIds = Array.from(
     new Set(
       ensureArray(reportIds)
@@ -3879,14 +4078,24 @@ function deleteAnalysisReports(reportIds = []) {
     )
   );
   if (!normalizedIds.length) {
-    return [];
+    return {
+      deletedIds: [],
+      remainingCount: readAnalysisReports().length,
+      removedReferencesCount: 0,
+      reports: listAnalysisReports(),
+    };
   }
 
   const reports = readAnalysisReports();
   const reportsById = new Map(reports.map((entry) => [String(entry.id || "").trim(), entry]));
   const reportsToDelete = normalizedIds.map((id) => reportsById.get(id)).filter(Boolean);
   if (!reportsToDelete.length) {
-    return [];
+    return {
+      deletedIds: [],
+      remainingCount: reports.length,
+      removedReferencesCount: 0,
+      reports: listAnalysisReports(),
+    };
   }
 
   reportsToDelete.forEach((report) => {
@@ -3910,9 +4119,44 @@ function deleteAnalysisReports(reportIds = []) {
   });
 
   const deleteIdSet = new Set(reportsToDelete.map((entry) => String(entry.id || "").trim()));
-  writeAnalysisReports(reports.filter((entry) => !deleteIdSet.has(String(entry.id || "").trim())));
+  const nextReports = reports.filter((entry) => !deleteIdSet.has(String(entry.id || "").trim()));
+  writeAnalysisReports(nextReports);
   removeDeletedReportsFromRuns(reportsToDelete);
-  return reportsToDelete.map((entry) => String(entry.id || "").trim());
+  await flushStateObject(ANALYSIS_REPORTS_SUPABASE_KEY, analysisReportsCache);
+
+  const setups = readAnalysisSetups();
+  let removedReferencesCount = 0;
+  const nextSetups = setups.map((setup) => {
+    const pruned = pruneDeletedReportsFromSetup(setup, deleteIdSet);
+    if (pruned.changed) {
+      removedReferencesCount += pruned.removedReferencesCount;
+      return pruned.setup;
+    }
+    return setup;
+  });
+  if (removedReferencesCount > 0) {
+    writeAnalysisSetups(nextSetups);
+    await flushStateObject(ANALYSIS_SETUPS_SUPABASE_KEY, analysisSetupsCache);
+  }
+
+  console.log("[Saved Reports] deleting report pull", {
+    reportIds: normalizedIds,
+    setupIds: Array.from(
+      new Set(
+        reportsToDelete.map((report) => String(report.setupId || "").trim()).filter(Boolean)
+      )
+    ),
+  });
+  console.log("[Saved Reports] before delete count", reports.length);
+  console.log("[Saved Reports] after delete count", nextReports.length);
+  console.log("[Saved Reports] removed from setup references", removedReferencesCount);
+
+  return {
+    deletedIds: reportsToDelete.map((entry) => String(entry.id || "").trim()),
+    remainingCount: nextReports.length,
+    removedReferencesCount,
+    reports: listAnalysisReports(),
+  };
 }
 
 function removeDeletedReportsFromRuns(reportsToDelete = []) {

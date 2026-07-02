@@ -2873,15 +2873,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "893",
-          "state": "NV",
-          "scope": "NV",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "967",
           "state": "CA",
           "scope": "CA",

@@ -1214,7 +1214,7 @@ function setRoute(route) {
       || activeAnalysisPanel === "compare-review"
       || (activeAnalysisPanel === "workspace" && activeAnalysisSubtab === "runs")
     ) {
-      loadAnalysisSetupView({ excludeCompleted: true }).catch((error) => {
+      loadAnalysisSetupView({ excludeCompleted: true, freshComparisonSetup: true }).catch((error) => {
         setStatus("analysis-comparison-status", `Unable to load analysis setup: ${error.message}`);
       });
     } else if (activeAnalysisPanel === "workspace" && activeAnalysisSubtab === "mailing-lists") {
@@ -12343,6 +12343,28 @@ function resetAnalysisWorkspace(clearPersistedSetup = true) {
   renderAnalysisResults(null);
 }
 
+function resetComparisonWorkspace() {
+  clearComparisonSetupAutosave();
+  state.analysis.comparisonRequests = [];
+  state.analysis.comparisonLinks = [createComparisonLink(0)];
+  state.analysis.comparisonResults = [];
+  state.analysis.selectedComparisonId = "";
+  state.analysis.lastEditedComparisonId = "";
+  state.analysis.reviewPrimaryReportIds = {};
+  state.analysis.reviewSelectedScfs = {};
+  state.analysis.reviewExcludedScfs = {};
+  state.analysis.reviewBaselineLists = [];
+  state.analysis.reviewWorkingLists = [];
+  state.analysis.reviewZeroRateRemovals = [];
+  state.analysis.reviewBulkPreview = null;
+  state.analysis.reviewSummary = null;
+  state.analysis.reviewSummaryMode = "review";
+  state.analysis.reviewSummaryNotes = "";
+  state.analysis.reviewSummaryApproved = false;
+  state.analysis.reviewCompletedByName = "";
+  state.analysis.reviewCompletedOnDate = getTodayIsoDate();
+}
+
 function loadSetupIntoWorkspace(setup) {
   clearComparisonSetupAutosave();
   stopAnalysisRunPolling();
@@ -12567,7 +12589,7 @@ function bindAnalysisSubtabs() {
       }
       if (target === "set-up-comparisons") {
         state.analysis.reviewSummaryMode = "review";
-        loadAnalysisSetupView({ excludeCompleted: true })
+        loadAnalysisSetupView({ excludeCompleted: true, freshComparisonSetup: true })
           .then(() => {
             showAnalysisPanel("home");
             setStatus("analysis-comparison-status", "Choose the reports and key code list for each comparison.");
@@ -12728,21 +12750,26 @@ async function loadAnalysisReports(providedRows = null) {
       }
       button.disabled = true;
       setStatus("analysis-status-detail", `Deleting analysis report ${reportName}...`);
-  try {
-    const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
-        const nextReports = ensureArray(state.analysis.savedReports).filter((entry) => String(entry.id || "").trim() !== id);
-        state.analysis.savedReports = nextReports;
-        setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((entry) => entry !== id));
-        if (state.analysis.currentReportId === id) {
-      state.analysis.currentReportId = "";
-      renderAnalysisResults(null);
-    }
-    analysisReportsLoadPromise = null;
-    await loadAnalysisReports(nextReports);
-    renderAnalysisComparePanel();
-    setStatus("analysis-status-detail", `Deleted analysis report ${reportName}.`);
+      try {
+        console.log("[Saved Reports] delete requested", {
+          reportId: id,
+          setupId: String(report?.setupId || report?.setup_id || "").trim(),
+        });
+        const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        console.log("[Saved Reports] delete response", response);
+        const deletedId = String(response.deletedId || id || "").trim();
+        setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((entry) => entry !== deletedId));
+        if (state.analysis.currentReportId === deletedId) {
+          state.analysis.currentReportId = "";
+          renderAnalysisResults(null);
+        }
+        analysisReportsLoadPromise = null;
+        const refreshedReports = await loadAnalysisReports();
+        console.log("[Saved Reports] refetched saved reports after delete", refreshedReports);
+        renderAnalysisComparePanel();
+        setStatus("analysis-status-detail", `Deleted analysis report ${reportName}.`);
       } catch (error) {
         button.disabled = false;
         setStatus("analysis-status-detail", `Delete failed: ${error.message}`);
@@ -12830,17 +12857,17 @@ async function deleteSelectedAnalysisReports() {
       method: "POST",
       body: { reportIds: selectedIds },
     });
+    console.log("[Saved Reports] delete response", response);
     const deletedIds = ensureArray(response.deletedIds).map((entry) => String(entry || "").trim()).filter(Boolean);
     const deletedIdSet = new Set(deletedIds);
-    const nextReports = ensureArray(state.analysis.savedReports).filter((report) => !deletedIdSet.has(String(report.id || "").trim()));
-    state.analysis.savedReports = nextReports;
     setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => !deletedIdSet.has(id)));
     if (state.analysis.currentReportId && deletedIdSet.has(state.analysis.currentReportId)) {
       state.analysis.currentReportId = "";
       renderAnalysisResults(null);
     }
     analysisReportsLoadPromise = null;
-    await loadAnalysisReports(nextReports);
+    const refreshedReports = await loadAnalysisReports();
+    console.log("[Saved Reports] refetched saved reports after delete", refreshedReports);
     renderAnalysisComparePanel();
     setStatus("analysis-status-detail", `Deleted ${deletedIds.length} analysis report${deletedIds.length === 1 ? "" : "s"}.`);
   } catch (error) {
@@ -13104,8 +13131,13 @@ async function loadAnalysisSetupView(options = {}) {
       persistAnalysisSetupId("");
       setStatus("analysis-comparison-status", `Unable to restore saved comparison setup: ${error.message}`);
     }
-  } else if (!targetSetupId && !state.analysis.setupHydrated) {
+  } else if (!targetSetupId && !state.analysis.setupHydrated && !options.freshComparisonSetup) {
     restorePersistedAnalysisSetupDraft("");
+  }
+
+  if (options.freshComparisonSetup === true) {
+    resetComparisonWorkspace();
+    persistAnalysisSetupDraft();
   }
 
   state.analysis.setupHydrated = true;
@@ -13211,7 +13243,7 @@ function bindAnalysisButtons() {
   continueButton?.addEventListener("click", async () => {
     setStatus("analysis-comparison-status", "Loading saved reports...");
     try {
-      await loadAnalysisSetupView({ excludeCompleted: true });
+      await loadAnalysisSetupView({ excludeCompleted: true, freshComparisonSetup: true });
       showAnalysisPanel("home");
       setStatus("analysis-comparison-status", "Choose the reports and key code list for each comparison.");
     } catch (error) {
