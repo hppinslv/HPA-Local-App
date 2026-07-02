@@ -94,7 +94,7 @@ const ANALYSIS_METRIC_LABELS = {
   convertedCount: ["Sum of Converted", "Converted"],
   totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
   inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
-  totalConvertedMonthlyPremiums: ["Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium", "Total Payments", "Sum of Total Payments", "Sum of Payment Received", "Payment Received"],
+  totalConvertedMonthlyPremiums: ["Sum of Payment Received", "Payment Received", "Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium", "Total Payments", "Sum of Total Payments"],
 };
 
 const CONVERTED_DIRECT_CANDIDATE_KEYS = [
@@ -3022,6 +3022,10 @@ function getConvertedPremiumForConvertedCount(detailRow = {}) {
   }
 
   const exactCandidates = [
+    "Sum of Payment Received",
+    "sum of payment received",
+    "Payment Received",
+    "payment received",
     "Payments Minus Credits",
     "payments minus credits",
     "Payments_Minus_Credits__c",
@@ -3038,10 +3042,6 @@ function getConvertedPremiumForConvertedCount(detailRow = {}) {
     "total payments",
     "Sum of Total Payments",
     "sum of total payments",
-    "Sum of Payment Received",
-    "sum of payment received",
-    "Payment Received",
-    "payment received",
     "HPATotal_Converted_Monthly_Premiums__c",
     "hpatotal converted monthly premiums c",
   ];
