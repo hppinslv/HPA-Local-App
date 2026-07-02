@@ -3251,6 +3251,14 @@ function ensureSumOfConvertedColumn(columns = []) {
   return safeColumns;
 }
 
+function removePaymentReceivedColumn(columns = []) {
+  const safeColumns = Array.isArray(columns) ? [...columns] : [];
+  return safeColumns.filter((column) => {
+    const label = normalizeLabel(column?.label || column?.key || "");
+    return label !== "sum of payment received";
+  });
+}
+
 function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows = []) {
   const safeDataset = summaryDataset && typeof summaryDataset === "object"
     ? summaryDataset
@@ -3261,7 +3269,7 @@ function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows 
     ...safeDataset,
 
     // Preserve the report's visible columns and only ensure the converted field exists.
-    columns: ensureSumOfConvertedColumn(safeDataset.columns),
+    columns: removePaymentReceivedColumn(ensureSumOfConvertedColumn(safeDataset.columns)),
 
     // This only overwrites Sum of Converted.
     rows,

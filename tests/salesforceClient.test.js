@@ -912,13 +912,11 @@ test("overrideOnlySumOfConverted changes only sum of converted from detail rows"
       "Sum of Total Sold",
       "Sum of In Force Monthly Premium",
       "Sum of Total Converted Monthly Premiums",
-      "Sum of Payment Received",
       "Sold Rate",
       "In Force Rate",
       "Converted Rate",
     ]
   );
-  assert.equal(dataset.columns.some((column) => column.label === "Sum of Payment Received"), true);
   assert.equal(row["Sum of Mailed"], "18,251");
   assert.equal(row["Sum of Sold"], "5");
   assert.equal(row["Sum of In Force"], "2");
