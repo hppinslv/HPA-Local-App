@@ -1823,9 +1823,9 @@ async function deleteCheckImportRows(sessionId, rowIds = []) {
     return !(entry.session_id === normalizedSessionId && normalizedRowIds.includes(entry.id));
   });
   writeRows(remainingRows);
-  const session = revalidateSession(normalizedSessionId);
+  const updatedSession = revalidateSession(normalizedSessionId);
   await flushCheckImportPersistence();
-  return session;
+  return updatedSession;
 }
 
 function buildCheckSalesforceRecord(row, template) {
