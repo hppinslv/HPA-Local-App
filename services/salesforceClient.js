@@ -94,7 +94,7 @@ const ANALYSIS_METRIC_LABELS = {
   convertedCount: ["Sum of Converted", "Converted"],
   totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
   inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
-  totalConvertedMonthlyPremiums: ["Sum of Payment Received", "Payment Received", "Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium", "Total Payments", "Sum of Total Payments"],
+  totalConvertedMonthlyPremiums: ["Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium", "Sum of Payment Received", "Payment Received", "Payments Minus Credits", "Payments_Minus_Credits__c", "Total Payments", "Sum of Total Payments"],
 };
 
 const CONVERTED_DIRECT_CANDIDATE_KEYS = [
@@ -2756,6 +2756,10 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         "Total Converted Monthly Premiums",
         "Sum of Total Converted Monthly Premiums",
         "Converted Monthly Premium",
+        "Total Payments",
+        "Sum of Total Payments",
+        "Sum of Payment Received",
+        "Payment Received",
       ]) ?? 0
     ));
     const rowConvertedCount = getConvertedCountForSourceRow(row, rowConvertedPremium);
@@ -3250,6 +3254,40 @@ function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows 
     // This only overwrites the top summary Sum of Converted value.
     summaryValues: overrideSummaryValuesConvertedCount(safeDataset.summaryValues, detailRows),
   };
+}
+
+function aliasPaymentReceivedAsConverted(row = {}) {
+  const paymentReceived =
+    row["Sum of Payment Received"] ??
+    row["sum of payment received"] ??
+    row["Payment Received"] ??
+    row["payment received"];
+
+  if (paymentReceived !== undefined && paymentReceived !== null && String(paymentReceived).trim() !== "") {
+    row["Sum of Converted"] = paymentReceived;
+    row["SUM OF CONVERTED"] = paymentReceived;
+    row["sum of converted"] = paymentReceived;
+    row.sumConverted = paymentReceived;
+  }
+
+  return row;
+}
+
+function renamePaymentReceivedColumnToConverted(columns = []) {
+  return (Array.isArray(columns) ? columns : []).map((column) => {
+    const label = normalizeLabel(column?.label || column?.key || "");
+
+    if (label === "sum of payment received" || label === "payment received") {
+      return {
+        ...column,
+        key: "Sum of Converted",
+        label: "Sum of Converted",
+        normalized: "sum of converted",
+      };
+    }
+
+    return column;
+  });
 }
 
 function getAnalysisCurrencyMetricNumber(row = {}, labels = []) {
@@ -4831,6 +4869,8 @@ module.exports = {
   fetchMonthlySalesforceReportData,
   fetchRawSalesforceReportRows,
   fetchReportDescribe,
+  aliasPaymentReceivedAsConverted,
+  ensureSumOfConvertedColumn,
   getAnalysisDebugFilePath,
   getConnectedSalesforceToken,
   getMonthDateRange,
@@ -4842,7 +4882,9 @@ module.exports = {
   parseConvertedNumber,
   parseDateValue,
   parseNumber,
+  renamePaymentReceivedColumnToConverted,
   overrideSummaryDatasetConvertedCount,
+  overrideOnlySumOfConverted: overrideSummaryDatasetConvertedCount,
   resolveConvertedValue,
   resolveAnalysisConvertedCount,
   resolveAnalysisDateRange,

@@ -14,10 +14,7 @@ const {
   resolveAnalysisConvertedCount,
   resolveAnalysisSoldOpportunityCount,
   mergeAnalysisSummaryDatasets,
-  aliasPaymentReceivedAsConverted,
-  ensureSumOfConvertedColumn,
   overrideOnlySumOfConverted,
-  renamePaymentReceivedColumnToConverted,
   summarizeAnalysisExportRows,
   shouldFallbackToSoqlForReportPayload,
 } = require("../services/salesforceClient");
@@ -222,119 +219,25 @@ test("converted rate is app-calculated from converted count and mailed", () => {
   assert.equal(row["Converted Rate"], "0.0060240964");
 });
 
-test("aliasPaymentReceivedAsConverted copies payment received into converted aliases without changing rates", () => {
-  const sourceRow = {
-    "SCF Grouping": "893",
-    Key: "N",
-    "Sum of Payment Received": "1",
-    "Sum of Converted": "0",
-    "Sold Rate": "3.0829914544",
-    "In Force Rate": "3.0829914544",
-    "Converted Rate": "0.0060240964",
-  };
-
-  const row = aliasPaymentReceivedAsConverted({ ...sourceRow });
-
-  assert.equal(row["Sum of Converted"], "1");
-  assert.equal(row["SUM OF CONVERTED"], "1");
-  assert.equal(row["sum of converted"], "1");
-  assert.equal(row.sumConverted, "1");
-  assert.equal(row["Sold Rate"], "3.0829914544");
-  assert.equal(row["In Force Rate"], "3.0829914544");
-  assert.equal(row["Converted Rate"], "0.0060240964");
-});
-
-test("renamePaymentReceivedColumnToConverted preserves order and keeps Sum of Converted visible", () => {
-  const columns = renamePaymentReceivedColumnToConverted([
-    { key: "SCF Grouping", label: "SCF Grouping" },
-    { key: "Key", label: "Key" },
-    { key: "Sum of Mailed", label: "Sum of Mailed" },
-    { key: "Sum of Sold", label: "Sum of Sold" },
-    { key: "Sum of In Force", label: "Sum of In Force" },
-    { key: "Sum of Payment Received", label: "Sum of Payment Received" },
-    { key: "Sum of Total Sold", label: "Sum of Total Sold" },
-    { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium" },
-    { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums" },
-    { key: "Sold Rate", label: "Sold Rate" },
-    { key: "In Force Rate", label: "In Force Rate" },
-    { key: "Converted Rate", label: "Converted Rate" },
+test("total converted monthly premiums uses the Salesforce total converted monthly premiums column directly", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "770",
+      Key: "N",
+      Mailed: 166,
+      "Opp Count": 1,
+      "In Force": 1,
+      "Sum of Sold": 0,
+      "Sum of Payment Received": "$1.00",
+      "Sum of Total Converted Monthly Premiums": "$76.05",
+      "Sold Rate": 3.082991454,
+      "In Force Rate": 3.082991454,
+    },
   ]);
 
-  const ensuredColumns = columns.map((column) => ({ ...column }));
-  const convertedIndex = ensuredColumns.findIndex((column) => column.label === "Sum of Converted");
-  const inForceIndex = ensuredColumns.findIndex((column) => column.label === "Sum of In Force");
-  const totalSoldIndex = ensuredColumns.findIndex((column) => column.label === "Sum of Total Sold");
-
-  assert.equal(convertedIndex, inForceIndex + 1);
-  assert.equal(ensuredColumns.some((column) => column.label === "Sum of Payment Received"), false);
-  assert.equal(ensuredColumns.some((column) => column.label === "Sum of Converted"), true);
-  assert.equal(ensuredColumns[totalSoldIndex - 1].label, "Sum of Converted");
-});
-
-test("ensureSumOfConvertedColumn inserts Sum of Converted after Sum of In Force when missing", () => {
-  const columns = ensureSumOfConvertedColumn([
-    { key: "SCF Grouping", label: "SCF Grouping" },
-    { key: "Key", label: "Key" },
-    { key: "Sum of Mailed", label: "Sum of Mailed" },
-    { key: "Sum of Sold", label: "Sum of Sold" },
-    { key: "Sum of In Force", label: "Sum of In Force" },
-    { key: "Sum of Total Sold", label: "Sum of Total Sold" },
-    { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium" },
-    { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums" },
-    { key: "Sold Rate", label: "Sold Rate" },
-    { key: "In Force Rate", label: "In Force Rate" },
-    { key: "Converted Rate", label: "Converted Rate" },
-  ]);
-
-  const labels = columns.map((column) => column.label);
-
-  assert.deepEqual(labels, [
-    "SCF Grouping",
-    "Key",
-    "Sum of Mailed",
-    "Sum of Sold",
-    "Sum of In Force",
-    "Sum of Converted",
-    "Sum of Total Sold",
-    "Sum of In Force Monthly Premium",
-    "Sum of Total Converted Monthly Premiums",
-    "Sold Rate",
-    "In Force Rate",
-    "Converted Rate",
-  ]);
-});
-
-test("ensureSumOfConvertedColumn moves an existing Sum of Converted column after Sum of In Force", () => {
-  const columns = ensureSumOfConvertedColumn([
-    { key: "SCF Grouping", label: "SCF Grouping" },
-    { key: "Key", label: "Key" },
-    { key: "Sum of Mailed", label: "Sum of Mailed" },
-    { key: "Sum of Sold", label: "Sum of Sold" },
-    { key: "Sum of Converted", label: "Sum of Converted" },
-    { key: "Sum of In Force", label: "Sum of In Force" },
-    { key: "Sum of Total Sold", label: "Sum of Total Sold" },
-    { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium" },
-    { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums" },
-    { key: "Sold Rate", label: "Sold Rate" },
-    { key: "In Force Rate", label: "In Force Rate" },
-    { key: "Converted Rate", label: "Converted Rate" },
-  ]);
-
-  const labels = columns.map((column) => column.label);
-  assert.deepEqual(labels, [
-    "SCF Grouping",
-    "Key",
-    "Sum of Mailed",
-    "Sum of Sold",
-    "Sum of In Force",
-    "Sum of Converted",
-    "Sum of Total Sold",
-    "Sum of In Force Monthly Premium",
-    "Sum of Total Converted Monthly Premiums",
-    "Sold Rate",
-    "In Force Rate",
-    "Converted Rate",
-  ]);
+  const row = getAggregateRow(dataset, "770");
+  assert.equal(row["Sum of Total Converted Monthly Premiums"], "$76.05");
+  assert.equal(row["sum of total converted monthly premiums"], "$76.05");
 });
 
 test("converted count uses one certificate per positive converted premium row instead of sold count", () => {

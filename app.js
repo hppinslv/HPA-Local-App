@@ -95,6 +95,7 @@ const state = {
     savedReports: [],
     selectedComparisonId: "",
     lastEditedComparisonId: "",
+    lastReportsLoadAt: 0,
     reviewTableSort: { key: "soldRate", direction: "desc" },
     reviewSoldRateOperator: ">",
     reviewSoldRateMin: "",
@@ -2079,11 +2080,6 @@ async function openAnalysisWorkspace() {
   }
 
   showAnalysisPanel("workspace");
-  try {
-    await loadAnalysisReports();
-  } catch (error) {
-    setStatus("analysis-status-detail", `Unable to load analysis reports: ${error.message}`);
-  }
 }
 
 function getComparisonReviewResultFromEntry(entry = {}) {
@@ -5472,9 +5468,12 @@ function showAnalysisPanel(panelName) {
       renderAnalysisWorkspace();
     }
     if (panelName === "workspace" && (state.analysis.subtab || "runs") === "runs") {
-      loadAnalysisReports().catch((error) => {
-        setStatus("analysis-status-detail", `Unable to load analysis reports: ${error.message}`);
-      });
+      const recentlyLoadedReports = Date.now() - Number(state.analysis.lastReportsLoadAt || 0) < 1500;
+      if (!recentlyLoadedReports) {
+        loadAnalysisReports().catch((error) => {
+          setStatus("analysis-status-detail", `Unable to load analysis reports: ${error.message}`);
+        });
+      }
     } else if (panelName === "workspace") {
       loadAndRenderMailingList(state.analysis.mailingListType || "dnm").catch((error) => {
         setStatus("mailing-list-status", `Unable to load mailing list: ${error.message}`);
@@ -12574,13 +12573,29 @@ function bindAnalysisSubtabs() {
   });
 }
 
+let analysisReportsLoadPromise = null;
+let analysisSetupsLoadPromise = null;
+
+function fetchAnalysisReportsPayload() {
+  if (!analysisReportsLoadPromise) {
+    analysisReportsLoadPromise = apiRequest("/api/analysis/reports")
+      .then((response) => ensureArray(response.reports))
+      .finally(() => {
+        analysisReportsLoadPromise = null;
+      });
+  }
+
+  return analysisReportsLoadPromise;
+}
+
 async function loadAnalysisReports(providedRows = null) {
   const tbody = el("analysis-history-body");
   const rows = Array.isArray(providedRows)
     ? providedRows
-    : (await apiRequest("/api/analysis/reports")).reports || [];
+    : await fetchAnalysisReportsPayload();
   state.analysis.reportScfMetricCache = {};
   state.analysis.savedReports = rows;
+  state.analysis.lastReportsLoadAt = Date.now();
   hydrateAnalysisWorkspaceFromSavedReports();
   recoverComparisonSetupFromWorkspace();
   const validReportIds = new Set(rows.map((report) => String(report.id || "").trim()).filter(Boolean));
@@ -12703,9 +12718,16 @@ async function loadAnalysisReports(providedRows = null) {
   return rows;
 }
 
-async function fetchAnalysisSetupsPayload() {
-  const setupsPayload = await apiRequest("/api/analysis/setups");
-  return ensureArray(setupsPayload.setups).filter((entry) => shouldDisplayAnalysisHistoryEntry(entry));
+function fetchAnalysisSetupsPayload() {
+  if (!analysisSetupsLoadPromise) {
+    analysisSetupsLoadPromise = apiRequest("/api/analysis/setups")
+      .then((response) => ensureArray(response.setups).filter((entry) => shouldDisplayAnalysisHistoryEntry(entry)))
+      .finally(() => {
+        analysisSetupsLoadPromise = null;
+      });
+  }
+
+  return analysisSetupsLoadPromise;
 }
 
 function updateAnalysisReportSelectionUi() {
@@ -12772,11 +12794,11 @@ async function deleteSelectedAnalysisReports() {
   }
 }
 
-async function loadAnalysisSetups() {
+function renderAnalysisSetups(normalizedSetups = []) {
   const tbody = el("analysis-setup-body");
   if (!tbody) return;
-  const normalizedSetups = await fetchAnalysisSetupsPayload();
-  const openSetups = normalizedSetups
+  const visibleSetups = ensureArray(normalizedSetups).filter((entry) => shouldDisplayAnalysisHistoryEntry(entry));
+  const openSetups = visibleSetups
     .filter((entry) => !entry.archived && !isCompletedAnalysisSetup(entry))
     .sort((left, right) => {
       const leftTime = Date.parse(left.updated_at || left.updatedAt || left.created_at || left.createdAt || "") || 0;
@@ -12784,7 +12806,7 @@ async function loadAnalysisSetups() {
       return rightTime - leftTime;
     });
   const newestOpenSetupId = String(openSetups[0]?.id || "").trim();
-  const setups = normalizedSetups.filter((entry) => {
+  const setups = visibleSetups.filter((entry) => {
     if (isCompletedAnalysisSetup(entry)) {
       return true;
     }
@@ -12887,6 +12909,10 @@ async function loadAnalysisSetups() {
   });
 }
 
+async function loadAnalysisSetups() {
+  return renderAnalysisSetups(await fetchAnalysisSetupsPayload());
+}
+
 async function deleteAnalysisSetupEntry(setupId) {
   const normalizedSetupId = String(setupId || "").trim();
   if (!normalizedSetupId) {
@@ -12935,7 +12961,11 @@ async function deleteAnalysisSetupEntry(setupId) {
   if (Array.isArray(result.lists)) {
     state.referenceLists = result.lists;
   }
-  await loadAnalysisSetups();
+  if (Array.isArray(result.setups)) {
+    renderAnalysisSetups(result.setups);
+  } else {
+    await loadAnalysisSetups();
+  }
   setStatus(
     "analysis-setup-status",
     revertReferenceLists && Array.isArray(result?.result?.revertedLists) && result.result.revertedLists.length
@@ -12967,7 +12997,11 @@ async function undoAnalysisSetupEntry(setupId) {
 
   const restoredSetup = undoResponse.setup || {};
   state.referenceLists = Array.isArray(undoResponse.lists) ? undoResponse.lists : state.referenceLists;
-  await loadAnalysisSetups();
+  if (Array.isArray(undoResponse.setups)) {
+    renderAnalysisSetups(undoResponse.setups);
+  } else {
+    await loadAnalysisSetups();
+  }
   loadSetupIntoWorkspace(restoredSetup);
   const landing = resolveAnalysisLandingFromEntry(restoredSetup);
   state.analysis.reviewSummaryMode = landing.summaryMode;
