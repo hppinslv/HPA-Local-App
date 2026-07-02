@@ -109,6 +109,7 @@ test("SCF 893 keeps the Salesforce sold and in-force rates instead of recalculat
       "Opp Count": 1,
       "In Force": 1,
       "Sum of Sold": 0,
+      "Sum of Payment Received": 1,
       "Sold Rate": 3.082991454,
       "In Force Rate": 3.082991454,
       "Total Converted Monthly Premiums": "$75.62",
@@ -169,7 +170,7 @@ test("converted count is derived from positive converted premium even when Sales
       "Sum of Sold": 0,
       "Sum of Total Converted Monthly Premiums": "$10.00",
     }),
-    1
+    0
   );
 
   assert.equal(
@@ -177,7 +178,7 @@ test("converted count is derived from positive converted premium even when Sales
       "Sum of Sold": "",
       "Sum of Total Converted Monthly Premiums": "$10.00",
     }),
-    1
+    0
   );
 });
 
@@ -208,6 +209,7 @@ test("converted rate is app-calculated from converted count and mailed", () => {
       "Opp Count": 2,
       "In Force": 1,
       "Sum of Sold": 0,
+      "Sum of Payment Received": 1,
       "Sold Rate": 6.165982908,
       "In Force Rate": 3.082991454,
       "Total Converted Monthly Premiums": 100,
@@ -250,7 +252,7 @@ test("converted count uses one certificate per positive converted premium row in
     }
   );
 
-  assert.equal(convertedCount, 1);
+  assert.equal(convertedCount, 0);
 });
 
 test("converted count uses any positive converted premium amount", () => {
@@ -259,7 +261,7 @@ test("converted count uses any positive converted premium amount", () => {
       "Payments Minus Credits": "$0.01",
       "Sum of Converted": "",
     }),
-    1
+    0
   );
 });
 
@@ -269,14 +271,14 @@ test("converted count treats total payments as a converted source for certificat
       "Total Payments": "$0.01",
       "Sum of Converted": "",
     }),
-    1
+    0
   );
 });
 
 test("converted count treats sum of payment received as a converted source for certificate reports", () => {
   assert.equal(
     resolveAnalysisConvertedCount({
-      "Sum of Payment Received": "$0.01",
+      "Sum of Payment Received": "1",
       "Sum of Converted": "",
     }),
     1
@@ -287,7 +289,7 @@ test("converted count prefers positive payment received over a zero converted pr
   assert.equal(
     resolveAnalysisConvertedCount({
       "Sum of Total Converted Monthly Premiums": "$0.00",
-      "Sum of Payment Received": "$76.05",
+      "Sum of Payment Received": "1",
       "Sum of Converted": "",
     }),
     1
@@ -318,6 +320,7 @@ test("aggregate rows count converted-premium certificates in converted and sold 
       Mailed: 100,
       "Opp Count": 0,
       "In Force": 0,
+      "Sum of Payment Received": 1,
       "Total Converted Monthly Premiums": 102.01,
       "In Force Monthly Premium": 0,
     },
@@ -327,6 +330,7 @@ test("aggregate rows count converted-premium certificates in converted and sold 
       Mailed: 100,
       "Opp Count": 0,
       "In Force": 0,
+      "Sum of Payment Received": 1,
       "Total Converted Monthly Premiums": 31.17,
       "In Force Monthly Premium": 0,
     },
@@ -336,6 +340,7 @@ test("aggregate rows count converted-premium certificates in converted and sold 
       Mailed: 100,
       "Opp Count": 0,
       "In Force": 0,
+      "Sum of Payment Received": 1,
       "Total Converted Monthly Premiums": 96.73,
       "In Force Monthly Premium": 0,
     },
@@ -366,6 +371,7 @@ test("payments minus credits greater than one dollar counts the certificate as c
       "Opp Count": 9,
       "In Force": 5,
       "Sum of Sold": 9,
+      "Sum of Payment Received": 1,
       "Payments Minus Credits": 19038.1,
       "Total Converted Monthly Premiums": 0,
       "Sold Rate": 3.082991454,
@@ -385,6 +391,7 @@ test("total payments greater than zero counts the certificate as converted", () 
       Mailed: 166,
       "Opp Count": 1,
       "In Force": 1,
+      "Sum of Payment Received": 1,
       "Total Payments": "$76.05",
       "Sold Rate": 3.082991454,
       "In Force Rate": 3.082991454,
@@ -403,7 +410,7 @@ test("sum of payment received greater than zero counts the certificate as conver
       Mailed: 166,
       "Opp Count": 1,
       "In Force": 1,
-      "Sum of Payment Received": "$76.05",
+      "Sum of Payment Received": 1,
       "Sold Rate": 3.082991454,
       "In Force Rate": 3.082991454,
     },
@@ -421,6 +428,7 @@ test("sum of converted counts every converted certificate row in the SCF, not ju
       Mailed: 1000,
       "Opp Count": 1,
       "In Force": 1,
+      "Sum of Payment Received": 1,
       "Payments Minus Credits": 50,
       "Total Converted Monthly Premiums": 0,
       "Sold Rate": 1.5,
@@ -432,6 +440,7 @@ test("sum of converted counts every converted certificate row in the SCF, not ju
       Mailed: 1000,
       "Opp Count": 1,
       "In Force": 1,
+      "Sum of Payment Received": 1,
       "Payments Minus Credits": 20,
       "Total Converted Monthly Premiums": 0,
       "Sold Rate": 1.5,
@@ -443,6 +452,7 @@ test("sum of converted counts every converted certificate row in the SCF, not ju
       Mailed: 1000,
       "Opp Count": 1,
       "In Force": 1,
+      "Sum of Payment Received": 0,
       "Payments Minus Credits": 0,
       "Total Converted Monthly Premiums": 0,
       "Sold Rate": 1.5,
@@ -482,7 +492,7 @@ test("converted count requires the converted premium to be positive", () => {
       "Payments Minus Credits": "$0.01",
       "Sum of Converted": "",
     }),
-    1
+    0
   );
 });
 
@@ -511,18 +521,18 @@ test("normalizeScf preserves leading zeros and pads short numeric values", () =>
 
 test("rows with SCF 10, 010, and numeric 10 aggregate together under 010", () => {
   const dataset = buildFlatRowsFromDetailExport([
-    { "SCF Grouping": "10", Key: "N", Mailed: 100, "Opp Count": 1, "In Force": 0, "Sold Rate": 3.082991454, "In Force Rate": 0, "Total Converted Monthly Premiums": 0 },
-    { "SCF Grouping": "010", Key: "N", Mailed: 50, "Opp Count": 0, "In Force": 1, "Sold Rate": 3.082991454, "In Force Rate": 3.082991454, "Total Converted Monthly Premiums": 15 },
-    { "SCF Grouping": 10, Key: "N", Mailed: 16, "Opp Count": 0, "In Force": 0, "Total Converted Monthly Premiums": 0 },
+    { "SCF Grouping": "10", Key: "N", Mailed: 100, "Opp Count": 1, "In Force": 0, "Sum of Payment Received": 1, "Sold Rate": 3.082991454, "In Force Rate": 0, "Total Converted Monthly Premiums": 0 },
+    { "SCF Grouping": "010", Key: "N", Mailed: 50, "Opp Count": 0, "In Force": 1, "Sum of Payment Received": 1, "Sold Rate": 3.082991454, "In Force Rate": 3.082991454, "Total Converted Monthly Premiums": 15 },
+    { "SCF Grouping": 10, Key: "N", Mailed: 16, "Opp Count": 0, "In Force": 0, "Sum of Payment Received": 0, "Total Converted Monthly Premiums": 0 },
   ]);
 
   const row = getAggregateRow(dataset, "010");
   assert.equal(row["Sum of Mailed"], "166");
   assert.equal(row["Sum of Opp Count"], "2");
-  assert.equal(row["Sum of Converted"], "1");
+  assert.equal(row["Sum of Converted"], "2");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "0.0060240964");
+  assert.equal(row["Converted Rate"], "0.0120481928");
 });
 
 test("aggregate-shaped saved rows are not mistaken for detail export rows", () => {
@@ -680,6 +690,7 @@ test("detail export keeps sold and converted counts as separate saved fields", (
       Mailed: 100,
       "Opp Count": 3,
       "In Force": 0,
+      "Sum of Payment Received": 1,
       "Total Converted Monthly Premiums": 25,
     },
   ]);
@@ -750,14 +761,17 @@ test("detail summary rows calculate converted count and premium totals for SCF 7
   const rows = [
     {
       "SCF Grouping": "770",
+      "Sum of Payment Received": 1,
       "Total Converted Monthly Premiums": "$100.00",
     },
     {
       "SCF Grouping": "770",
+      "Sum of Payment Received": 0,
       "Total Converted Monthly Premiums": "$0.00",
     },
     {
       "SCF Grouping": "770",
+      "Sum of Payment Received": 1,
       "Total Converted Monthly Premiums": "$225.44",
     },
   ];
@@ -797,6 +811,7 @@ test("summary rows keep converted column visible and backfill zero converted cou
         "Sum of Opp Count": "4",
         "Sum of Sold": "4",
         "Sum of Converted": "0",
+        "Sum of Payment Received": "1",
         "Sum of Total Converted Monthly Premiums": "$325.44",
       },
     ],
@@ -805,6 +820,7 @@ test("summary rows keep converted column visible and backfill zero converted cou
       { key: "Sum of Opp Count", label: "Sum of Opp Count", normalized: "sum of opp count", dataType: "double" },
       { key: "Sum of Sold", label: "Sum of Sold", normalized: "sum of sold", dataType: "double" },
       { key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted", dataType: "double" },
+      { key: "Sum of Payment Received", label: "Sum of Payment Received", normalized: "sum of payment received", dataType: "double" },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums", normalized: "sum of total converted monthly premiums", dataType: "currency" },
     ]
   );
@@ -812,6 +828,7 @@ test("summary rows keep converted column visible and backfill zero converted cou
   const row = getAggregateRow(dataset, "770");
   assert.equal(dataset.columns.some((column) => column.key === "Sum of Converted"), true);
   assert.equal(row["Sum of Converted"], "1");
+  assert.equal(row["Sum of Payment Received"], "1");
 });
 
 test("overrideOnlySumOfConverted changes only sum of converted from detail rows", () => {
@@ -894,12 +911,13 @@ test("overrideOnlySumOfConverted changes only sum of converted from detail rows"
       "Sum of Total Sold",
       "Sum of In Force Monthly Premium",
       "Sum of Total Converted Monthly Premiums",
+      "Sum of Payment Received",
       "Sold Rate",
       "In Force Rate",
       "Converted Rate",
     ]
   );
-  assert.equal(dataset.columns.some((column) => column.label === "Sum of Payment Received"), false);
+  assert.equal(dataset.columns.some((column) => column.label === "Sum of Payment Received"), true);
   assert.equal(row["Sum of Mailed"], "18,251");
   assert.equal(row["Sum of Sold"], "5");
   assert.equal(row["Sum of In Force"], "2");
@@ -940,6 +958,7 @@ test("overrideOnlySumOfConverted keeps Salesforce summary values untouched excep
         "Sum of Sold": "1",
         "Sum of In Force": "1",
         "Sum of Converted": "0",
+        "Sum of Payment Received": "1",
         "Sum of Total Sold": "$76.05",
         "Sum of In Force Monthly Premium": "$76.05",
         "Sum of Total Converted Monthly Premiums": "$76.05",
@@ -954,7 +973,7 @@ test("overrideOnlySumOfConverted keeps Salesforce summary values untouched excep
     {
       "SCF Grouping": "893",
       Key: "N",
-      "Payments Minus Credits": "$76.05",
+      "Sum of Payment Received": "1",
     },
   ];
 

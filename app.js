@@ -1214,7 +1214,7 @@ function setRoute(route) {
       || activeAnalysisPanel === "compare-review"
       || (activeAnalysisPanel === "workspace" && activeAnalysisSubtab === "runs")
     ) {
-      loadAnalysisSetupView().catch((error) => {
+      loadAnalysisSetupView({ excludeCompleted: true }).catch((error) => {
         setStatus("analysis-comparison-status", `Unable to load analysis setup: ${error.message}`);
       });
     } else if (activeAnalysisPanel === "workspace" && activeAnalysisSubtab === "mailing-lists") {
@@ -2144,7 +2144,11 @@ function resolveAnalysisLandingFromEntry(entry = {}) {
 
 function choosePreferredAnalysisSetup(setups = [], options = {}) {
   const normalizedSetups = ensureArray(setups).filter((entry) => !entry?.archived);
-  if (!normalizedSetups.length) {
+  const excludeCompleted = options.excludeCompleted !== false;
+  const candidateSetups = excludeCompleted
+    ? normalizedSetups.filter((entry) => !isCompletedAnalysisSetup(entry))
+    : normalizedSetups;
+  if (!candidateSetups.length) {
     return null;
   }
 
@@ -2172,7 +2176,7 @@ function choosePreferredAnalysisSetup(setups = [], options = {}) {
     return score;
   };
 
-  return [...normalizedSetups].sort((a, b) => {
+  return [...candidateSetups].sort((a, b) => {
     const scoreDiff = scoreSetup(b) - scoreSetup(a);
     if (scoreDiff !== 0) {
       return scoreDiff;
@@ -2210,7 +2214,7 @@ async function openAnalysisLanding() {
   }
 
   if (landing.panel === "home") {
-    await loadAnalysisSetupView();
+    await loadAnalysisSetupView({ excludeCompleted: true });
     showAnalysisPanel("home");
     return;
   }
@@ -12530,7 +12534,7 @@ function bindAnalysisSubtabs() {
       }
       if (target === "set-up-comparisons") {
         state.analysis.reviewSummaryMode = "review";
-        loadAnalysisSetupView()
+        loadAnalysisSetupView({ excludeCompleted: true })
           .then(() => {
             showAnalysisPanel("home");
             setStatus("analysis-comparison-status", "Choose the reports and key code list for each comparison.");
@@ -12543,7 +12547,7 @@ function bindAnalysisSubtabs() {
       if (target === "run-analysis") {
         state.analysis.reviewSummaryMode = "review";
         state.analysis.reviewSummaryApproved = false;
-        Promise.all([loadAnalysisSetupView(), loadReferenceLists()])
+        Promise.all([loadAnalysisSetupView({ excludeCompleted: true }), loadReferenceLists()])
           .then(() => {
             if (!Array.isArray(state.analysis.comparisonRequests) || !state.analysis.comparisonRequests.length) {
               showAnalysisPanel("home");
@@ -13027,7 +13031,7 @@ async function undoAnalysisSetupEntry(setupId) {
   );
 }
 
-async function loadAnalysisSetupView() {
+async function loadAnalysisSetupView(options = {}) {
   setStatus("analysis-setup-status", "Loading analysis...");
   let normalizedSetups = [];
   try {
@@ -13043,6 +13047,7 @@ async function loadAnalysisSetupView() {
   const persistedSetupId = state.analysis.currentSetupId || readPersistedAnalysisSetupId();
   const preferredSetup = choosePreferredAnalysisSetup(normalizedSetups, {
     preferredId: persistedSetupId,
+    excludeCompleted: options.excludeCompleted !== false,
   });
   const targetSetupId = String(preferredSetup?.id || persistedSetupId || "").trim();
   if (targetSetupId && (!state.analysis.setupHydrated || state.analysis.currentSetupId !== targetSetupId)) {
@@ -13162,7 +13167,7 @@ function bindAnalysisButtons() {
   continueButton?.addEventListener("click", async () => {
     setStatus("analysis-comparison-status", "Loading saved reports...");
     try {
-      await loadAnalysisSetupView();
+      await loadAnalysisSetupView({ excludeCompleted: true });
       showAnalysisPanel("home");
       setStatus("analysis-comparison-status", "Choose the reports and key code list for each comparison.");
     } catch (error) {
@@ -15570,7 +15575,7 @@ async function init() {
     const requestedAnalysisPanel = state.analysis.panel || "home";
     if (["home", "compare", "compare-review"].includes(requestedAnalysisPanel) || launchState?.analysis?.setupId) {
       try {
-        await loadAnalysisSetupView();
+        await loadAnalysisSetupView({ excludeCompleted: Boolean(launchState?.analysis?.setupId) });
         if (launchState?.analysis?.comparisonId) {
           state.analysis.selectedComparisonId = launchState.analysis.comparisonId;
           state.analysis.lastEditedComparisonId = launchState.analysis.comparisonId;

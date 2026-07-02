@@ -231,17 +231,11 @@ function getPaymentReceivedCountForSourceRow(row = {}) {
   const paymentReceivedValue =
     getAnalysisMetricValue(row, CONVERTED_PAYMENT_FALLBACK_KEYS) ??
     getLikelyColumnValue(row, CONVERTED_PAYMENT_FALLBACK_KEYS);
-  const parsed = parseConvertedNumber(paymentReceivedValue, { allowPaymentReceivedFallback: true });
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  return parseNumber(paymentReceivedValue ?? 0);
 }
 
 function getConvertedCountForSourceRow(row = {}, precomputedConvertedPremium = null) {
-  const paymentReceivedCount = getPaymentReceivedCountForSourceRow(row);
-  if (paymentReceivedCount > 0) {
-    return 1;
-  }
-
-  return getConvertedPremiumAmount(row, precomputedConvertedPremium) > 0 ? 1 : 0;
+  return getPaymentReceivedCountForSourceRow(row);
 }
 
 function resolveAnalysisSoldOpportunityCount(row = {}, options = {}) {
@@ -259,16 +253,15 @@ function resolveAnalysisSoldOpportunityCount(row = {}, options = {}) {
 
 function resolveAnalysisConvertedCount(row = {}, precomputedConvertedPremium = null, options = {}) {
   applyAnalysisMetricAliases(row);
-  const allowPremiumRowInference = options?.allowPremiumRowInference !== false;
-  const convertedPremium = resolveAnalysisConvertedPremiumValue(row, precomputedConvertedPremium);
-  if (allowPremiumRowInference) {
-    return convertedPremium > 0 ? 1 : 0;
+  const explicitConvertedCount = parseNumber(
+    getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ??
+    0
+  );
+  if (explicitConvertedCount > 0) {
+    return explicitConvertedCount;
   }
 
-  const explicitConvertedCount = parseNumber(
-    getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.convertedCount) ?? 0
-  );
-  return explicitConvertedCount > 0 ? explicitConvertedCount : 0;
+  return getPaymentReceivedCountForSourceRow(row);
 }
 
 function resolveAnalysisExplicitRate(row = {}, labels = []) {
@@ -3116,8 +3109,7 @@ function buildConvertedCountByScfKey(detailRows = []) {
     ).trim().toUpperCase();
 
     const mapKey = `${scf}::${keyCode}`;
-    const convertedPremium = getConvertedPremiumForConvertedCount(detailRow);
-    const convertedCount = convertedPremium > 0 ? 1 : 0;
+    const convertedCount = getPaymentReceivedCountForSourceRow(detailRow);
 
     convertedCountByScfKey.set(
       mapKey,
@@ -3129,7 +3121,7 @@ function buildConvertedCountByScfKey(detailRows = []) {
         index,
         scf,
         keyCode,
-        convertedPremium,
+        convertedCount,
         rawPaymentsMinusCredits:
           detailRow["Payments Minus Credits"] ??
           detailRow["payments minus credits"] ??
@@ -3211,21 +3203,6 @@ function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = []
   });
 }
 
-function mergePaymentReceivedIntoConvertedColumn(columns = []) {
-  const safeColumns = Array.isArray(columns) ? [...columns] : [];
-  const paymentReceivedIndex = safeColumns.findIndex((column) => {
-    const label = normalizeLabel(column?.label || column?.key || "");
-    return label === "sum of payment received" || label === "payment received";
-  });
-
-  if (paymentReceivedIndex < 0) {
-    return ensureSumOfConvertedColumn(safeColumns);
-  }
-
-  safeColumns.splice(paymentReceivedIndex, 1);
-  return ensureSumOfConvertedColumn(safeColumns);
-}
-
 function ensureSumOfConvertedColumn(columns = []) {
   const safeColumns = Array.isArray(columns) ? [...columns] : [];
 
@@ -3276,8 +3253,8 @@ function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows 
   return {
     ...safeDataset,
 
-    // This only makes the already-calculated field visible in the report table.
-    columns: mergePaymentReceivedIntoConvertedColumn(safeDataset.columns),
+    // Preserve the report's visible columns and only ensure the converted field exists.
+    columns: ensureSumOfConvertedColumn(safeDataset.columns),
 
     // This only overwrites Sum of Converted.
     rows,
