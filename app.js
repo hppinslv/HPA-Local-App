@@ -12687,13 +12687,14 @@ async function loadAnalysisReports(providedRows = null) {
         const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`, {
           method: "DELETE",
         });
-        state.analysis.savedReports = ensureArray(response.reports);
+        const nextReports = ensureArray(state.analysis.savedReports).filter((entry) => String(entry.id || "").trim() !== id);
+        state.analysis.savedReports = nextReports;
         setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((entry) => entry !== id));
         if (state.analysis.currentReportId === id) {
           state.analysis.currentReportId = "";
           renderAnalysisResults(null);
         }
-        await loadAnalysisReports(state.analysis.savedReports);
+        await loadAnalysisReports(nextReports);
         renderAnalysisComparePanel();
         setStatus("analysis-status-detail", `Deleted analysis report ${reportName}.`);
       } catch (error) {
@@ -12785,13 +12786,14 @@ async function deleteSelectedAnalysisReports() {
     });
     const deletedIds = ensureArray(response.deletedIds).map((entry) => String(entry || "").trim()).filter(Boolean);
     const deletedIdSet = new Set(deletedIds);
-    state.analysis.savedReports = ensureArray(response.reports);
+    const nextReports = ensureArray(state.analysis.savedReports).filter((report) => !deletedIdSet.has(String(report.id || "").trim()));
+    state.analysis.savedReports = nextReports;
     setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => !deletedIdSet.has(id)));
     if (state.analysis.currentReportId && deletedIdSet.has(state.analysis.currentReportId)) {
       state.analysis.currentReportId = "";
       renderAnalysisResults(null);
     }
-    await loadAnalysisReports(ensureArray(response.reports));
+    await loadAnalysisReports(nextReports);
     renderAnalysisComparePanel();
     setStatus("analysis-status-detail", `Deleted ${deletedIds.length} analysis report${deletedIds.length === 1 ? "" : "s"}.`);
   } catch (error) {
