@@ -12594,36 +12594,44 @@ function fetchAnalysisReportsPayload() {
   return analysisReportsLoadPromise;
 }
 
+function getActiveAnalysisReportSetupId() {
+  return String(state.analysis.currentSetupId || readPersistedAnalysisSetupId() || "").trim();
+}
+
 async function loadAnalysisReports(providedRows = null) {
   const loadVersion = ++analysisReportsLoadVersion;
   const tbody = el("analysis-history-body");
+  const activeSetupId = getActiveAnalysisReportSetupId();
   const rows = Array.isArray(providedRows)
     ? providedRows
     : await fetchAnalysisReportsPayload();
+  const scopedRows = activeSetupId
+    ? rows.filter((report) => String(report.setupId || report.setup_id || "").trim() === activeSetupId)
+    : rows;
   if (loadVersion !== analysisReportsLoadVersion) {
-    return rows;
+    return scopedRows;
   }
   state.analysis.reportScfMetricCache = {};
-  state.analysis.savedReports = rows;
+  state.analysis.savedReports = scopedRows;
   state.analysis.lastReportsLoadAt = Date.now();
   hydrateAnalysisWorkspaceFromSavedReports();
   recoverComparisonSetupFromWorkspace();
-  const validReportIds = new Set(rows.map((report) => String(report.id || "").trim()).filter(Boolean));
+  const validReportIds = new Set(scopedRows.map((report) => String(report.id || "").trim()).filter(Boolean));
   setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((id) => validReportIds.has(id)));
   if (!tbody) {
-    return rows;
+    return scopedRows;
   }
   const empty = el("analysis-history-empty-row");
   if (empty) empty.remove();
   tbody.innerHTML = "";
-  if (!rows.length) {
+  if (!scopedRows.length) {
     const row = document.createElement("tr");
     row.innerHTML = '<td colspan="7" class="empty-cell">No analysis reports yet.</td>';
     tbody.appendChild(row);
     updateAnalysisReportSelectionUi();
-    return rows;
+    return scopedRows;
   }
-  rows.forEach((report) => {
+  scopedRows.forEach((report) => {
     const canDelete = report.canDelete === true || report.can_delete === true;
     const selected = getSelectedAnalysisReportIds().includes(String(report.id || "").trim());
     const titleCell = `<div class="analysis-report-row-title">
@@ -12727,7 +12735,7 @@ async function loadAnalysisReports(providedRows = null) {
   });
 
   updateAnalysisReportSelectionUi();
-  return rows;
+  return scopedRows;
 }
 
 function fetchAnalysisSetupsPayload() {
@@ -12798,6 +12806,7 @@ async function deleteSelectedAnalysisReports() {
       state.analysis.currentReportId = "";
       renderAnalysisResults(null);
     }
+    analysisReportsLoadPromise = null;
     await loadAnalysisReports(nextReports);
     renderAnalysisComparePanel();
     setStatus("analysis-status-detail", `Deleted ${deletedIds.length} analysis report${deletedIds.length === 1 ? "" : "s"}.`);
