@@ -10884,6 +10884,21 @@ function renderAnalysisComparisonReviewPanel() {
       : isMetricLoading
         ? "Loading..."
         : "-";
+    const totalMonthlyPremiumDisplay = row
+      ? getRowMetricDisplayValue(row, "Sum of Total Monthly Premium")
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
+    const inForceMonthlyPremiumDisplay = row
+      ? getRowMetricDisplayValue(row, "Sum of In Force Monthly Premium")
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
+    const totalConvertedMonthlyPremiumsDisplay = row
+      ? getRowMetricDisplayValue(row, "Sum of Total Converted Monthly Premiums")
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
     const cardStatusLabel = !row && isMetricLoading
       ? "Loading exact report metrics..."
       : hasMetricError && row
@@ -10941,6 +10956,20 @@ function renderAnalysisComparisonReviewPanel() {
           <div>
             <span class="field-label">Total Mailed</span>
             <strong>${esc(displayedTotalMailed)}</strong>
+          </div>
+        </div>
+        <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
+          <div>
+            <span class="field-label">Sum of Total Monthly Premium</span>
+            <strong>${esc(totalMonthlyPremiumDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Sum of In Force Monthly Premium</span>
+            <strong>${esc(inForceMonthlyPremiumDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Sum of Total Converted Monthly Premiums</span>
+            <strong>${esc(totalConvertedMonthlyPremiumsDisplay)}</strong>
           </div>
         </div>
       </article>
