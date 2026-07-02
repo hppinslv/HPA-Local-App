@@ -10858,6 +10858,19 @@ function renderAnalysisComparisonReviewPanel() {
       : isMetricLoading
         ? "Loading..."
         : "-";
+    const rateValues = [
+      getRowMetricNumber(row, "Sold Rate"),
+      getRowMetricNumber(row, "Converted Rate"),
+      getRowMetricNumber(row, "In Force Rate"),
+    ].filter((value) => Number.isFinite(value));
+    const premiumRateAverage = rateValues.length
+      ? rateValues.reduce((sum, value) => sum + value, 0) / rateValues.length
+      : null;
+    const premiumRateHigh = rateValues.length ? Math.max(...rateValues) : null;
+    const premiumRateLow = rateValues.length ? Math.min(...rateValues) : null;
+    const premiumRateAverageDisplay = premiumRateAverage !== null ? premiumRateAverage.toFixed(10) : (isMetricLoading ? "Loading..." : "-");
+    const premiumRateHighDisplay = premiumRateHigh !== null ? premiumRateHigh.toFixed(10) : (isMetricLoading ? "Loading..." : "-");
+    const premiumRateLowDisplay = premiumRateLow !== null ? premiumRateLow.toFixed(10) : (isMetricLoading ? "Loading..." : "-");
     const convertedCountDisplay = row
       ? formatWholeNumber(
           Number.isFinite(Number(row?.appConvertedCount))
@@ -10899,8 +10912,32 @@ function renderAnalysisComparisonReviewPanel() {
             <span class="field-label">In Force Rate</span>
             <strong>${esc(inForceRateDisplay)}</strong>
           </div>
+          <div>
+            <span class="field-label">Average Premium Rate</span>
+            <strong>${esc(premiumRateAverageDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">High Premium Rate</span>
+            <strong>${esc(premiumRateHighDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Low Premium Rate</span>
+            <strong>${esc(premiumRateLowDisplay)}</strong>
+          </div>
         </div>
         <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
+          <div>
+            <span class="field-label">Sum of Sold</span>
+            <strong>${esc(soldCountDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Sum of In Force</span>
+            <strong>${esc(inForceCountDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Sum of Converted</span>
+            <strong>${esc(convertedCountDisplay)}</strong>
+          </div>
           <div>
             <span class="field-label">Total Mailed</span>
             <strong>${esc(displayedTotalMailed)}</strong>
