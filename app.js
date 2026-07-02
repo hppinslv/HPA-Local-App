@@ -12687,20 +12687,21 @@ async function loadAnalysisReports(providedRows = null) {
       }
       button.disabled = true;
       setStatus("analysis-status-detail", `Deleting analysis report ${reportName}...`);
-      try {
-        const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-        });
+  try {
+    const response = await apiRequest(`/api/analysis/reports/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
         const nextReports = ensureArray(state.analysis.savedReports).filter((entry) => String(entry.id || "").trim() !== id);
         state.analysis.savedReports = nextReports;
         setSelectedAnalysisReportIds(getSelectedAnalysisReportIds().filter((entry) => entry !== id));
         if (state.analysis.currentReportId === id) {
-          state.analysis.currentReportId = "";
-          renderAnalysisResults(null);
-        }
-        await loadAnalysisReports(nextReports);
-        renderAnalysisComparePanel();
-        setStatus("analysis-status-detail", `Deleted analysis report ${reportName}.`);
+      state.analysis.currentReportId = "";
+      renderAnalysisResults(null);
+    }
+    analysisReportsLoadPromise = null;
+    await loadAnalysisReports(nextReports);
+    renderAnalysisComparePanel();
+    setStatus("analysis-status-detail", `Deleted analysis report ${reportName}.`);
       } catch (error) {
         button.disabled = false;
         setStatus("analysis-status-detail", `Delete failed: ${error.message}`);
@@ -12981,6 +12982,7 @@ async function deleteAnalysisSetupEntry(setupId) {
   if (Array.isArray(result.setups)) {
     renderAnalysisSetups(result.setups);
   } else {
+    analysisSetupsLoadPromise = null;
     await loadAnalysisSetups();
   }
   setStatus(
@@ -13344,7 +13346,9 @@ function bindAnalysisButtons() {
       });
       setStatus("analysis-status-text", run.status || "Running");
       setStatus("analysis-status-detail", `Analysis queued: ${run.id || "run created"}.`);
-      await loadAnalysisReports();
+      state.analysis.subtab = "runs";
+      renderAnalysisResults(run);
+      el("analysis-results-container")?.scrollIntoView({ behavior: "auto", block: "start" });
       if (run.id) {
         stopAnalysisRunPolling();
         pollAnalysisRun(run.id);
