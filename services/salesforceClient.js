@@ -3237,6 +3237,56 @@ function ensureSumOfConvertedColumn(columns = []) {
   return safeColumns;
 }
 
+function renamePaymentReceivedColumnToConverted(columns = []) {
+  return (Array.isArray(columns) ? columns : []).map((column) => {
+    const label = normalizeLabel(column?.label || column?.key || "");
+
+    if (label === "sum of payment received" || label === "payment received") {
+      return {
+        ...column,
+        key: "Sum of Converted",
+        label: "Sum of Converted",
+        normalized: "sum of converted",
+      };
+    }
+
+    return column;
+  });
+}
+
+function renamePaymentReceivedSummaryValueToConverted(summaryValues = []) {
+  return (Array.isArray(summaryValues) ? summaryValues : []).map((entry) => {
+    const label = normalizeLabel(entry?.label || entry?.key || "");
+
+    if (label === "sum of payment received" || label === "payment received") {
+      return {
+        ...entry,
+        key: "Sum of Converted",
+        label: "Sum of Converted",
+      };
+    }
+
+    return entry;
+  });
+}
+
+function aliasPaymentReceivedAsConverted(row = {}) {
+  const paymentReceived =
+    row["Sum of Payment Received"] ??
+    row["sum of payment received"] ??
+    row["Payment Received"] ??
+    row["payment received"];
+
+  if (paymentReceived !== undefined && paymentReceived !== null && String(paymentReceived).trim() !== "") {
+    row["Sum of Converted"] = paymentReceived;
+    row["SUM OF CONVERTED"] = paymentReceived;
+    row["sum of converted"] = paymentReceived;
+    row.sumConverted = paymentReceived;
+  }
+
+  return row;
+}
+
 function overrideOnlySumOfConverted(summaryDataset = {}, detailRows = []) {
   const safeDataset = summaryDataset && typeof summaryDataset === "object"
     ? summaryDataset
@@ -4075,31 +4125,21 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   const baseSummaryDataset = flattened.rows.length || flattened.columns.length
     ? flattened
     : normalizedDetailSummary;
-  const convertedDetailRows = reportPayloadDetailExport.rows.length
-    ? reportPayloadDetailExport.rows
-    : fullDetailExport.rows.length
-      ? fullDetailExport.rows
-      : preferredExport.rows;
-  const convertedCountByScfKey = buildConvertedCountByScfKey(convertedDetailRows);
-  console.log("[Sum of Converted Override]", {
-    summaryRows: Array.isArray(baseSummaryDataset.rows) ? baseSummaryDataset.rows.length : 0,
-    detailRows: Array.isArray(convertedDetailRows) ? convertedDetailRows.length : 0,
-    calculatedConvertedTotal: Array.from(convertedCountByScfKey.values()).reduce(
-      (sum, value) => sum + Number(value || 0),
-      0
-    ),
-    sampleSummaryRows: (Array.isArray(baseSummaryDataset.rows) ? baseSummaryDataset.rows : []).slice(0, 5).map((row) => ({
-      rowKey: getAnalysisSummaryRowKey(row),
-      scf: row["SCF Grouping"] ?? row["scf grouping"],
-      key: row["Key"] ?? row.key,
-      beforeSumConverted: row["Sum of Converted"] ?? row["sum of converted"],
-      convertedPremium: row["Sum of Total Converted Monthly Premiums"] ?? row["sum of total converted monthly premiums"],
-    })),
-  });
-  const finalizedFlattened = overrideOnlySumOfConverted(
-    baseSummaryDataset,
-    convertedDetailRows
+  const finalRows = (Array.isArray(baseSummaryDataset.rows) ? baseSummaryDataset.rows : []).map((row) =>
+    aliasPaymentReceivedAsConverted({ ...(row || {}) })
   );
+  const finalColumns = ensureSumOfConvertedColumn(
+    renamePaymentReceivedColumnToConverted(baseSummaryDataset.columns)
+  );
+  const finalSummaryValues = renamePaymentReceivedSummaryValueToConverted(
+    baseSummaryDataset.summaryValues
+  );
+  const finalizedFlattened = {
+    ...baseSummaryDataset,
+    columns: finalColumns,
+    rows: finalRows,
+    summaryValues: finalSummaryValues,
+  };
   const rowDebugTrace = buildAnalysisRowDebugTrace(flattened.rows, finalizedFlattened.rows, "047");
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
     flattened,
@@ -4156,6 +4196,23 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   const filteredExportRows = hasAnalysisDetailExportRows(preferredExport.rows)
     ? filterAnalysisRows(preferredExport.rows, filters)
     : [];
+
+  console.log("[Payment Received Converted Alias Check]", {
+    rowsChecked: finalizedFlattened.rows.length,
+    sampleRows: finalizedFlattened.rows.slice(0, 10).map((row) => ({
+      scf: row["SCF Grouping"] ?? row["scf grouping"],
+      key: row["Key"] ?? row.key,
+      paymentReceived:
+        row["Sum of Payment Received"] ??
+        row["sum of payment received"] ??
+        row["Payment Received"] ??
+        row["payment received"],
+      sumConverted:
+        row["Sum of Converted"] ??
+        row["sum of converted"] ??
+        row.sumConverted,
+    })),
+  });
 
   return {
     reportId,
@@ -4856,6 +4913,7 @@ module.exports = {
   fetchMonthlySalesforceReportData,
   fetchRawSalesforceReportRows,
   fetchReportDescribe,
+  aliasPaymentReceivedAsConverted,
   getAnalysisDebugFilePath,
   getConnectedSalesforceToken,
   getMonthDateRange,
@@ -4867,6 +4925,9 @@ module.exports = {
   parseConvertedNumber,
   parseDateValue,
   parseNumber,
+  ensureSumOfConvertedColumn,
+  renamePaymentReceivedColumnToConverted,
+  renamePaymentReceivedSummaryValueToConverted,
   overrideOnlySumOfConverted,
   resolveConvertedValue,
   resolveAnalysisConvertedCount,
