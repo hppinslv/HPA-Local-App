@@ -4071,10 +4071,7 @@ function updateCheckImportSelectionUi() {
   const filteredRows = getCheckImportSelectableFilteredRows();
   const selectedVisibleCount = filteredRows.filter((row) => selectedIds.includes(row.id)).length;
   const pendingEditCount = session && !isCheckImportImportedSession(session) ? collectCheckImportRowEdits(session).length : 0;
-  const saveButtons = [
-    el("check-import-save-all-button"),
-    el("check-import-save-all-toolbar-button"),
-  ].filter(Boolean);
+  const saveButtons = [el("check-import-save-all-button")].filter(Boolean);
   const selectAll = el("check-import-select-all");
   const selectVisibleButton = el("check-import-select-visible-button");
   const clearSelectionButton = el("check-import-clear-selection-button");
@@ -4469,10 +4466,6 @@ function bindCheckImportEvents() {
   });
 
   el("check-import-save-all-button")?.addEventListener("click", () => {
-    void saveCheckImportCorrections();
-  });
-
-  el("check-import-save-all-toolbar-button")?.addEventListener("click", () => {
     void saveCheckImportCorrections();
   });
 
