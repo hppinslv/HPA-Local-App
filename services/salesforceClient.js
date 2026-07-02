@@ -3198,22 +3198,21 @@ function overrideOnlySumOfConvertedSummaryValue(summaryValues = [], convertedCou
 
 function ensureSumOfConvertedColumn(columns = []) {
   const safeColumns = Array.isArray(columns) ? [...columns] : [];
+  const convertedIndex = safeColumns.findIndex((column) =>
+    normalizeLabel(column?.label || column?.key || "") === "sum of converted"
+  );
+  const convertedColumn = convertedIndex >= 0
+    ? { ...safeColumns[convertedIndex], key: "Sum of Converted", label: "Sum of Converted", normalized: "sum of converted" }
+    : {
+        key: "Sum of Converted",
+        label: "Sum of Converted",
+        normalized: "sum of converted",
+        dataType: "double",
+      };
 
-  const hasConvertedColumn = safeColumns.some((column) => {
-    const label = normalizeLabel(column?.label || column?.key || "");
-    return label === "sum of converted";
-  });
-
-  if (hasConvertedColumn) {
-    return safeColumns;
+  if (convertedIndex >= 0) {
+    safeColumns.splice(convertedIndex, 1);
   }
-
-  const convertedColumn = {
-    key: "Sum of Converted",
-    label: "Sum of Converted",
-    normalized: "sum of converted",
-    dataType: "double",
-  };
 
   const inForceIndex = safeColumns.findIndex((column) =>
     normalizeLabel(column?.label || column?.key || "") === "sum of in force"
@@ -4131,14 +4130,13 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   const finalColumns = ensureSumOfConvertedColumn(
     renamePaymentReceivedColumnToConverted(baseSummaryDataset.columns)
   );
-  const finalSummaryValues = renamePaymentReceivedSummaryValueToConverted(
-    baseSummaryDataset.summaryValues
-  );
   const finalizedFlattened = {
     ...baseSummaryDataset,
     columns: finalColumns,
     rows: finalRows,
-    summaryValues: finalSummaryValues,
+    summaryValues: Array.isArray(baseSummaryDataset.summaryValues)
+      ? baseSummaryDataset.summaryValues
+      : [],
   };
   const rowDebugTrace = buildAnalysisRowDebugTrace(flattened.rows, finalizedFlattened.rows, "047");
   const diagnostics = buildAnalysisDollarDiagnostics(reportId, filters, {
@@ -4927,7 +4925,6 @@ module.exports = {
   parseNumber,
   ensureSumOfConvertedColumn,
   renamePaymentReceivedColumnToConverted,
-  renamePaymentReceivedSummaryValueToConverted,
   overrideOnlySumOfConverted,
   resolveConvertedValue,
   resolveAnalysisConvertedCount,

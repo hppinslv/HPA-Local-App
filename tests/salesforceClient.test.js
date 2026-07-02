@@ -18,7 +18,6 @@ const {
   ensureSumOfConvertedColumn,
   overrideOnlySumOfConverted,
   renamePaymentReceivedColumnToConverted,
-  renamePaymentReceivedSummaryValueToConverted,
   summarizeAnalysisExportRows,
   shouldFallbackToSoqlForReportPayload,
 } = require("../services/salesforceClient");
@@ -305,16 +304,37 @@ test("ensureSumOfConvertedColumn inserts Sum of Converted after Sum of In Force 
   ]);
 });
 
-test("renamePaymentReceivedSummaryValueToConverted keeps summary labels aligned with the visible column", () => {
-  const summaryValues = renamePaymentReceivedSummaryValueToConverted([
-    { key: "Sum of Payment Received", label: "Sum of Payment Received", value: "$325.44" },
-    { key: "Sold Rate", label: "Sold Rate", value: "0.1809373745" },
+test("ensureSumOfConvertedColumn moves an existing Sum of Converted column after Sum of In Force", () => {
+  const columns = ensureSumOfConvertedColumn([
+    { key: "SCF Grouping", label: "SCF Grouping" },
+    { key: "Key", label: "Key" },
+    { key: "Sum of Mailed", label: "Sum of Mailed" },
+    { key: "Sum of Sold", label: "Sum of Sold" },
+    { key: "Sum of Converted", label: "Sum of Converted" },
+    { key: "Sum of In Force", label: "Sum of In Force" },
+    { key: "Sum of Total Sold", label: "Sum of Total Sold" },
+    { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium" },
+    { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums" },
+    { key: "Sold Rate", label: "Sold Rate" },
+    { key: "In Force Rate", label: "In Force Rate" },
+    { key: "Converted Rate", label: "Converted Rate" },
   ]);
 
-  assert.equal(summaryValues[0].key, "Sum of Converted");
-  assert.equal(summaryValues[0].label, "Sum of Converted");
-  assert.equal(summaryValues[0].value, "$325.44");
-  assert.equal(summaryValues[1].label, "Sold Rate");
+  const labels = columns.map((column) => column.label);
+  assert.deepEqual(labels, [
+    "SCF Grouping",
+    "Key",
+    "Sum of Mailed",
+    "Sum of Sold",
+    "Sum of In Force",
+    "Sum of Converted",
+    "Sum of Total Sold",
+    "Sum of In Force Monthly Premium",
+    "Sum of Total Converted Monthly Premiums",
+    "Sold Rate",
+    "In Force Rate",
+    "Converted Rate",
+  ]);
 });
 
 test("converted count uses one certificate per positive converted premium row instead of sold count", () => {
