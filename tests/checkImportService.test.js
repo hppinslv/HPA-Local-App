@@ -6,6 +6,7 @@ const {
   deleteCheckImportRows,
   deleteCheckImportSession,
   getCheckImportSession,
+  listCheckImportSessions,
   revalidateSession,
 } = require("../services/checkImportService");
 
@@ -155,6 +156,26 @@ test("selected unimported check import rows can be deleted in bulk", async () =>
   assert.equal(session.row_count, 1);
   assert.equal(session.rows.length, 1);
   assert.equal(session.rows[0].id, "row_2");
+});
+
+test("check import list sessions stay lightweight while detail keeps policy lookup", () => {
+  __setCheckImportStateForTests({
+    sessions: [buildSession()],
+    rows: [buildRow("row_1")],
+    policyCache: {
+      reportId: "00OQm0000016PuPMAU",
+      refreshedAt: "2026-06-24T16:00:00.000Z",
+      source: "test",
+      items: [{ certificate_number: "123456" }],
+    },
+  });
+
+  const sessions = listCheckImportSessions();
+  assert.equal(Array.isArray(sessions), true);
+  assert.equal(Object.prototype.hasOwnProperty.call(sessions[0], "policyLookup"), false);
+
+  const detail = getCheckImportSession("check_session_1");
+  assert.equal(Object.prototype.hasOwnProperty.call(detail, "policyLookup"), true);
 });
 
 test("revalidateSession accepts a matched policy even when certificate record id is blank", () => {

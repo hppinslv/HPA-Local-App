@@ -12,6 +12,7 @@ const {
   listRuns,
   initializeReportRunPersistence,
 } = require("./services/monthlyReportService");
+const { getSupabaseConfig } = require("./services/config");
 const {
   createAuthorizationUrl,
   exchangeCodeForToken,
@@ -44,6 +45,7 @@ const {
   getAnalysisComparisonSetup,
   getAnalysisComparisonSetups,
   getReferenceListByType,
+  flushAnalysisPersistence,
   importReferenceList,
   listAnalysisReports,
   listAnalysisRuns,
@@ -89,6 +91,7 @@ const {
   initializeCheckImportPersistence,
   listCheckImportSessions,
   listCheckImportTemplates,
+  flushCheckImportPersistence,
   refreshCheckImportPolicyLookupFromSalesforce,
   revalidateSession: revalidateCheckImportSession,
   updateCheckImportRow,
@@ -141,6 +144,72 @@ const {
 
 const port = process.env.PORT || 4173;
 const rootDir = __dirname;
+const serverStartedAt = new Date().toISOString();
+const persistenceReadiness = {
+  ready: false,
+  startedAt: null,
+  finishedAt: null,
+  modules: {
+    certificateLookup: { ready: false, error: null },
+    analysis: { ready: false, error: null },
+    checkImports: { ready: false, error: null },
+    monthlyReports: { ready: false, error: null },
+    application: { ready: false, error: null },
+    ccPayments: { ready: false, error: null },
+    achReturns: { ready: false, error: null },
+    mailingData: { ready: false, error: null },
+  },
+};
+
+function sanitizeError(error) {
+  return {
+    message: String(error?.message || error || "Unknown error"),
+    name: String(error?.name || "Error"),
+  };
+}
+
+function getSupabaseTargetHost() {
+  const config = getSupabaseConfig() || {};
+  try {
+    if (!config.url) {
+      return "";
+    }
+    return new URL(config.url).host;
+  } catch {
+    return "";
+  }
+}
+
+function setPersistenceModuleReady(name, error = null) {
+  if (!persistenceReadiness.modules[name]) {
+    persistenceReadiness.modules[name] = { ready: false, error: null };
+  }
+  persistenceReadiness.modules[name].ready = !error;
+  persistenceReadiness.modules[name].error = error ? sanitizeError(error) : null;
+}
+
+function isPersistenceModuleReady(name) {
+  return Boolean(persistenceReadiness.modules[name]?.ready);
+}
+
+function sendPersistenceNotReady(response, moduleName) {
+  sendJson(response, 503, {
+    success: false,
+    error: "persistence_not_ready",
+    message: "Report/import data is still initializing. Please retry.",
+    module: moduleName,
+  });
+}
+
+function logRouteTiming(route, method, startedAt, statusCode, extra = {}) {
+  console.log("[Route timing]", {
+    route,
+    method,
+    durationMs: Date.now() - startedAt,
+    statusCode,
+    ...extra,
+  });
+}
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -272,10 +341,30 @@ function getRequestProtocol(request) {
 }
 
 const server = http.createServer(async (request, response) => {
+  const requestStartedAt = Date.now();
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
+  if (requestUrl.pathname === "/api/debug/runtime" && request.method === "GET") {
+    sendJson(response, 200, {
+      ok: true,
+      serverStartedAt,
+      persistenceReady: Boolean(persistenceReadiness.ready),
+      persistenceStatus: persistenceReadiness.modules,
+      nodeEnv: process.env.NODE_ENV || "development",
+      port: Number(port),
+    });
+    logRouteTiming("/api/debug/runtime", request.method, requestStartedAt, 200);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/monthly-reports" && request.method === "GET") {
+    if (!isPersistenceModuleReady("monthlyReports")) {
+      sendPersistenceNotReady(response, "monthlyReports");
+      logRouteTiming("/api/monthly-reports", request.method, requestStartedAt, 503, { module: "monthlyReports" });
+      return;
+    }
     sendJson(response, 200, { runs: listRuns() });
+    logRouteTiming("/api/monthly-reports", request.method, requestStartedAt, 200, { count: listRuns().length });
     return;
   }
 
@@ -285,12 +374,24 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/analysis/reports" && request.method === "GET") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     sendJson(response, 200, { reports: listAnalysisReports() });
+    logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 200, { count: listAnalysisReports().length });
     return;
   }
 
   if (requestUrl.pathname === "/api/analysis/setups" && request.method === "GET") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     sendJson(response, 200, { setups: listAnalysisSetups() });
+    logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 200, { count: listAnalysisSetups().length });
     return;
   }
 
@@ -298,10 +399,14 @@ const server = http.createServer(async (request, response) => {
     collectRequestBody(request)
       .then((body) => {
         const setup = saveAnalysisSetup(body);
-        sendJson(response, 200, { setup, setups: listAnalysisSetups(), lists: listReferenceLists() });
+        return flushAnalysisPersistence().then(() => {
+          sendJson(response, 200, { setup, setups: listAnalysisSetups(), lists: listReferenceLists() });
+          logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 200, { action: "save" });
+        });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to save analysis setup." });
+        logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 400, { error: error.message || "Unable to save analysis setup." });
       });
     return;
   }
@@ -357,7 +462,13 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/check-imports" && request.method === "GET") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     sendJson(response, 200, { sessions: listCheckImportSessions() });
+    logRouteTiming("/api/check-imports", request.method, requestStartedAt, 200, { count: listCheckImportSessions().length });
     return;
   }
 
@@ -582,6 +693,11 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/check-imports/upload" && request.method === "POST") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/upload", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     collectRequestBody(request)
       .then(async (body) => {
         const session = await createCheckImportSession({
@@ -591,9 +707,11 @@ const server = http.createServer(async (request, response) => {
           templateKey: body.templateKey,
         });
         sendJson(response, 200, { session, sessions: listCheckImportSessions() });
+        logRouteTiming("/api/check-imports/upload", request.method, requestStartedAt, 200, { sessionId: String(session?.id || "") });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to upload check import file." });
+        logRouteTiming("/api/check-imports/upload", request.method, requestStartedAt, 400, { error: error.message || "Unable to upload check import file." });
       });
     return;
   }
@@ -754,6 +872,11 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/monthly-reports/run" && request.method === "POST") {
+    if (!isPersistenceModuleReady("monthlyReports")) {
+      sendPersistenceNotReady(response, "monthlyReports");
+      logRouteTiming("/api/monthly-reports/run", request.method, requestStartedAt, 503, { module: "monthlyReports" });
+      return;
+    }
     collectRequestBody(request)
       .then((body) => {
         try {
@@ -848,6 +971,11 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/monthly-reports/run-all" && request.method === "POST") {
+    if (!isPersistenceModuleReady("monthlyReports")) {
+      sendPersistenceNotReady(response, "monthlyReports");
+      logRouteTiming("/api/monthly-reports/run-all", request.method, requestStartedAt, 503, { module: "monthlyReports" });
+      return;
+    }
     collectRequestBody(request)
       .then((body) => {
         try {
@@ -864,6 +992,11 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/monthly-reports/clear-month" && request.method === "POST") {
+    if (!isPersistenceModuleReady("monthlyReports")) {
+      sendPersistenceNotReady(response, "monthlyReports");
+      logRouteTiming("/api/monthly-reports/clear-month", request.method, requestStartedAt, 503, { module: "monthlyReports" });
+      return;
+    }
     collectRequestBody(request)
       .then((body) => {
         try {
@@ -883,6 +1016,11 @@ const server = http.createServer(async (request, response) => {
     /^\/api\/monthly-reports\/([^/]+)\/final-summary-letter$/
   );
   if (finalSummaryLetterMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("monthlyReports")) {
+      sendPersistenceNotReady(response, "monthlyReports");
+      logRouteTiming("/api/monthly-reports/:id/final-summary-letter", request.method, requestStartedAt, 503, { module: "monthlyReports" });
+      return;
+    }
     try {
       const run = generateFinalSummaryLetter(finalSummaryLetterMatch[1]);
       sendJson(response, 200, { run });
@@ -965,14 +1103,21 @@ const server = http.createServer(async (request, response) => {
 
   const runMatch = requestUrl.pathname.match(/^\/api\/monthly-reports\/([^/]+)$/);
   if (runMatch && request.method === "GET") {
+    if (!isPersistenceModuleReady("monthlyReports")) {
+      sendPersistenceNotReady(response, "monthlyReports");
+      logRouteTiming("/api/monthly-reports/:id", request.method, requestStartedAt, 503, { module: "monthlyReports" });
+      return;
+    }
     const run = getRun(runMatch[1]);
 
     if (!run) {
       sendJson(response, 404, { error: "Run not found." });
+      logRouteTiming("/api/monthly-reports/:id", request.method, requestStartedAt, 404, { runId: runMatch[1] });
       return;
     }
 
     sendJson(response, 200, { run });
+    logRouteTiming("/api/monthly-reports/:id", request.method, requestStartedAt, 200, { runId: runMatch[1] });
     return;
   }
 
@@ -1026,41 +1171,69 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/analysis/reports/bulk-delete" && request.method === "POST") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/reports/bulk-delete", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     collectRequestBody(request)
       .then(async (body) => {
         const result = await deleteAnalysisReports(body.reportIds);
         sendJson(response, 200, result);
+        logRouteTiming("/api/analysis/reports/bulk-delete", request.method, requestStartedAt, 200, {
+          deletedCount: Array.isArray(result.deletedIds) ? result.deletedIds.length : 0,
+        });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to delete selected analysis reports." });
+        logRouteTiming("/api/analysis/reports/bulk-delete", request.method, requestStartedAt, 400, { error: error.message || "Unable to delete selected analysis reports." });
       });
     return;
   }
 
   const analysisReportMatch = requestUrl.pathname.match(/^\/api\/analysis\/reports\/([^/]+)$/);
   if (analysisReportMatch && request.method === "GET") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/reports/:id", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     const report = getAnalysisReport(analysisReportMatch[1]);
 
     if (!report) {
       sendJson(response, 404, { error: "Analysis report not found." });
+      logRouteTiming("/api/analysis/reports/:id", request.method, requestStartedAt, 404, { reportId: analysisReportMatch[1] });
       return;
     }
 
     sendJson(response, 200, { report });
+    logRouteTiming("/api/analysis/reports/:id", request.method, requestStartedAt, 200, { reportId: analysisReportMatch[1] });
     return;
   }
 
   if (analysisReportMatch && request.method === "DELETE") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/reports/:id", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     try {
       const result = await deleteAnalysisReport(analysisReportMatch[1]);
       sendJson(response, 200, result);
+      logRouteTiming("/api/analysis/reports/:id", request.method, requestStartedAt, 200, { reportId: analysisReportMatch[1] });
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to delete analysis report." });
+      logRouteTiming("/api/analysis/reports/:id", request.method, requestStartedAt, 400, { reportId: analysisReportMatch[1], error: error.message || "Unable to delete analysis report." });
     }
     return;
   }
 
   if (analysisReportMatch && request.method === "PATCH") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/reports/:id", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     collectRequestBody(request)
       .then((body) => {
         const shouldRebuild = Boolean(body.rebuild);
@@ -1104,38 +1277,61 @@ const server = http.createServer(async (request, response) => {
 
   const analysisSetupMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)$/);
   if (analysisSetupMatch && request.method === "GET") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     const setup = getAnalysisSetup(analysisSetupMatch[1]);
 
     if (!setup) {
       sendJson(response, 404, { error: "Analysis setup not found." });
+      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 404, { setupId: analysisSetupMatch[1] });
       return;
     }
 
     sendJson(response, 200, { setup });
+    logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 200, { setupId: analysisSetupMatch[1] });
     return;
   }
 
   if (analysisSetupMatch && request.method === "PUT") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     collectRequestBody(request)
       .then((body) => {
         const setup = saveAnalysisSetup({
           ...body,
           id: analysisSetupMatch[1],
         });
-        sendJson(response, 200, { setup, setups: listAnalysisSetups(), lists: listReferenceLists() });
+        return flushAnalysisPersistence().then(() => {
+          sendJson(response, 200, { setup, setups: listAnalysisSetups(), lists: listReferenceLists() });
+          logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 200, { setupId: analysisSetupMatch[1], action: "save" });
+        });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to save analysis setup." });
+        logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 400, { setupId: analysisSetupMatch[1], error: error.message || "Unable to save analysis setup." });
       });
     return;
   }
 
   if (analysisSetupMatch && request.method === "DELETE") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     try {
       deleteAnalysisSetup(analysisSetupMatch[1]);
       sendJson(response, 200, { setups: listAnalysisSetups() });
+      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 200, { setupId: analysisSetupMatch[1], action: "delete" });
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to delete analysis setup." });
+      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 400, { setupId: analysisSetupMatch[1], error: error.message || "Unable to delete analysis setup." });
     }
     return;
   }
@@ -1153,28 +1349,42 @@ const server = http.createServer(async (request, response) => {
 
   const analysisSetupDeleteMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)\/delete$/);
   if (analysisSetupDeleteMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/setups/:id/delete", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     collectRequestBody(request)
       .then((body) => {
         const result = deleteAnalysisSetup(analysisSetupDeleteMatch[1], {
           revertReferenceLists: body.revertReferenceLists === true,
           actor: body.actor,
         });
-        sendJson(response, 200, {
-          result,
-          setups: listAnalysisSetups(),
-          reports: listAnalysisReports(),
-          runs: listAnalysisRuns(),
-          lists: listReferenceLists(),
+        return flushAnalysisPersistence().then(() => {
+          sendJson(response, 200, {
+            result,
+            setups: listAnalysisSetups(),
+            reports: listAnalysisReports(),
+            runs: listAnalysisRuns(),
+            lists: listReferenceLists(),
+          });
+          logRouteTiming("/api/analysis/setups/:id/delete", request.method, requestStartedAt, 200, { setupId: analysisSetupDeleteMatch[1] });
         });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to delete analysis setup." });
+        logRouteTiming("/api/analysis/setups/:id/delete", request.method, requestStartedAt, 400, { setupId: analysisSetupDeleteMatch[1], error: error.message || "Unable to delete analysis setup." });
       });
     return;
   }
 
   const analysisSetupUndoCompleteMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)\/undo-complete$/);
   if (analysisSetupUndoCompleteMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/setups/:id/undo-complete", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     collectRequestBody(request)
       .then((body) => {
         const result = undoLatestCompletedAnalysis(analysisSetupUndoCompleteMatch[1], {
@@ -1186,14 +1396,21 @@ const server = http.createServer(async (request, response) => {
           lists: result.lists,
           setups: listAnalysisSetups(),
         });
+        logRouteTiming("/api/analysis/setups/:id/undo-complete", request.method, requestStartedAt, 200, { setupId: analysisSetupUndoCompleteMatch[1] });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to undo the completed analysis." });
+        logRouteTiming("/api/analysis/setups/:id/undo-complete", request.method, requestStartedAt, 400, { setupId: analysisSetupUndoCompleteMatch[1], error: error.message || "Unable to undo the completed analysis." });
       });
     return;
   }
 
   if (analysisSetupSingleComparisonMatch && request.method === "DELETE") {
+    if (!isPersistenceModuleReady("analysis")) {
+      sendPersistenceNotReady(response, "analysis");
+      logRouteTiming("/api/analysis/setups/:id/comparisons/:comparisonId", request.method, requestStartedAt, 503, { module: "analysis" });
+      return;
+    }
     try {
       const setup = deleteAnalysisComparisonSetup(
         analysisSetupSingleComparisonMatch[1],
@@ -1256,11 +1473,18 @@ const server = http.createServer(async (request, response) => {
 
   const checkImportSessionMatch = requestUrl.pathname.match(/^\/api\/check-imports\/([^/]+)$/);
   if (checkImportSessionMatch && request.method === "GET") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/:id", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     try {
       const session = getCheckImportSession(checkImportSessionMatch[1]);
       sendJson(response, 200, { session });
+      logRouteTiming("/api/check-imports/:id", request.method, requestStartedAt, 200, { sessionId: checkImportSessionMatch[1] });
     } catch (error) {
       sendJson(response, 404, { error: error.message || "Check import session not found." });
+      logRouteTiming("/api/check-imports/:id", request.method, requestStartedAt, 404, { sessionId: checkImportSessionMatch[1] });
     }
     return;
   }
@@ -1322,12 +1546,19 @@ const server = http.createServer(async (request, response) => {
     /^\/api\/check-imports\/([^/]+)\/refresh-policy-lookup$/
   );
   if (checkImportRefreshMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/:id/refresh-policy-lookup", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     refreshCheckImportPolicyLookupFromSalesforce(checkImportRefreshMatch[1])
       .then((session) => {
         sendJson(response, 200, { session });
+        logRouteTiming("/api/check-imports/:id/refresh-policy-lookup", request.method, requestStartedAt, 200, { sessionId: checkImportRefreshMatch[1] });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to refresh check policy lookup." });
+        logRouteTiming("/api/check-imports/:id/refresh-policy-lookup", request.method, requestStartedAt, 400, { sessionId: checkImportRefreshMatch[1], error: error.message || "Unable to refresh check policy lookup." });
       });
     return;
   }
@@ -1336,11 +1567,18 @@ const server = http.createServer(async (request, response) => {
     /^\/api\/check-imports\/([^/]+)\/revalidate$/
   );
   if (checkImportRevalidateMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/:id/revalidate", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     try {
       const session = revalidateCheckImportSession(checkImportRevalidateMatch[1]);
       sendJson(response, 200, { session });
+      logRouteTiming("/api/check-imports/:id/revalidate", request.method, requestStartedAt, 200, { sessionId: checkImportRevalidateMatch[1] });
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to revalidate check import session." });
+      logRouteTiming("/api/check-imports/:id/revalidate", request.method, requestStartedAt, 400, { sessionId: checkImportRevalidateMatch[1], error: error.message || "Unable to revalidate check import session." });
     }
     return;
   }
@@ -1349,15 +1587,22 @@ const server = http.createServer(async (request, response) => {
     /^\/api\/check-imports\/([^/]+)\/confirm-import$/
   );
   if (checkImportConfirmMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/:id/confirm-import", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     collectRequestBody(request)
       .then(async (body) => {
         const session = await confirmCheckImport(checkImportConfirmMatch[1], {
           confirmedBy: body.confirmedBy || body.user,
         });
         sendJson(response, 200, { session });
+        logRouteTiming("/api/check-imports/:id/confirm-import", request.method, requestStartedAt, 200, { sessionId: checkImportConfirmMatch[1] });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to import checks into Salesforce." });
+        logRouteTiming("/api/check-imports/:id/confirm-import", request.method, requestStartedAt, 400, { sessionId: checkImportConfirmMatch[1], error: error.message || "Unable to import checks into Salesforce." });
       });
     return;
   }
@@ -1366,6 +1611,11 @@ const server = http.createServer(async (request, response) => {
     /^\/api\/check-imports\/([^/]+)\/rows\/bulk-delete$/
   );
   if (checkImportBulkDeleteMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/:id/rows/bulk-delete", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     collectRequestBody(request)
       .then(async (body) => {
         const session = await deleteCheckImportRows(
@@ -1373,9 +1623,11 @@ const server = http.createServer(async (request, response) => {
           Array.isArray(body?.rowIds) ? body.rowIds : []
         );
         sendJson(response, 200, { session });
+        logRouteTiming("/api/check-imports/:id/rows/bulk-delete", request.method, requestStartedAt, 200, { sessionId: checkImportBulkDeleteMatch[1], deletedCount: Array.isArray(body?.rowIds) ? body.rowIds.length : 0 });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to delete check import rows." });
+        logRouteTiming("/api/check-imports/:id/rows/bulk-delete", request.method, requestStartedAt, 400, { sessionId: checkImportBulkDeleteMatch[1], error: error.message || "Unable to delete check import rows." });
       });
     return;
   }
@@ -1384,6 +1636,11 @@ const server = http.createServer(async (request, response) => {
     /^\/api\/check-imports\/([^/]+)\/rows\/bulk$/
   );
   if (checkImportBulkRowMatch && request.method === "PATCH") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/:id/rows/bulk", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     collectRequestBody(request)
       .then(async (body) => {
         const session = await updateCheckImportRows(
@@ -1392,20 +1649,30 @@ const server = http.createServer(async (request, response) => {
           body?.corrected_by || "Local User"
         );
         sendJson(response, 200, { session });
+        logRouteTiming("/api/check-imports/:id/rows/bulk", request.method, requestStartedAt, 200, { sessionId: checkImportBulkRowMatch[1], rowCount: Array.isArray(body?.rows) ? body.rows.length : 0 });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to update check import rows." });
+        logRouteTiming("/api/check-imports/:id/rows/bulk", request.method, requestStartedAt, 400, { sessionId: checkImportBulkRowMatch[1], error: error.message || "Unable to update check import rows." });
       });
     return;
   }
 
   const deleteCheckImportSessionMatch = requestUrl.pathname.match(/^\/api\/check-imports\/([^/]+)$/);
   if (deleteCheckImportSessionMatch && request.method === "DELETE") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/:id", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     try {
       const result = deleteCheckImportSession(deleteCheckImportSessionMatch[1]);
+      await flushCheckImportPersistence();
       sendJson(response, 200, result);
+      logRouteTiming("/api/check-imports/:id", request.method, requestStartedAt, 200, { sessionId: deleteCheckImportSessionMatch[1], action: "delete" });
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to delete check import session." });
+      logRouteTiming("/api/check-imports/:id", request.method, requestStartedAt, 400, { sessionId: deleteCheckImportSessionMatch[1], error: error.message || "Unable to delete check import session." });
     }
     return;
   }
@@ -1414,6 +1681,11 @@ const server = http.createServer(async (request, response) => {
     /^\/api\/check-imports\/([^/]+)\/rows\/([^/]+)$/
   );
   if (checkImportRowMatch && request.method === "PATCH") {
+    if (!isPersistenceModuleReady("checkImports")) {
+      sendPersistenceNotReady(response, "checkImports");
+      logRouteTiming("/api/check-imports/:id/rows/:rowId", request.method, requestStartedAt, 503, { module: "checkImports" });
+      return;
+    }
     collectRequestBody(request)
       .then(async (body) => {
         const session = await updateCheckImportRow(checkImportRowMatch[1], checkImportRowMatch[2], body);
@@ -1691,29 +1963,63 @@ const server = http.createServer(async (request, response) => {
   });
 });
 
-server.listen(port, () => {
-  console.log(`HPA Automations is running at http://localhost:${port}`);
-});
-
-initializeCertificateLookupPersistence()
-  .then(() => Promise.all([
-    initializeApplicationPersistence(),
-    initializeAnalysisStatePersistence(),
-    initializeReportRunPersistence(),
-    initializeScoreDashboardSnapshotPersistence(),
-    initializeCcPaymentImportPersistence(),
-    initializeCheckImportPersistence(),
-    initializeAchReturnPersistence(),
-    initializeMailingDataPersistence(),
-  ]))
-  .then(async () => {
-    await maybeRunStartupScoreDashboardSnapshot(console);
-    await maybeRunStartupCertificateLookupRefresh(console);
-    scheduleNextScoreDashboardSnapshot(console);
-    scheduleNextCertificateLookupRefresh(console);
-  })
-  .catch((error) => {
-    console.warn("Could not initialize persistence from Supabase:", error.message);
-    scheduleNextScoreDashboardSnapshot(console);
-    scheduleNextCertificateLookupRefresh(console);
+async function initializeAppPersistence() {
+  persistenceReadiness.startedAt = new Date().toISOString();
+  const supabaseConfig = getSupabaseConfig() || {};
+  const supabaseTargetHost = getSupabaseTargetHost() || "unavailable";
+  console.log("[Startup]", {
+    host: "0.0.0.0",
+    port: Number(port),
+    nodeEnv: process.env.NODE_ENV || "development",
+    supabaseEnabled: Boolean(supabaseConfig.enabled),
+    supabaseTargetHost,
+    persistenceReady: Boolean(persistenceReadiness.ready),
   });
+
+  const initializeModule = async (moduleName, initializer) => {
+    try {
+      await initializer();
+      setPersistenceModuleReady(moduleName, null);
+    } catch (error) {
+      setPersistenceModuleReady(moduleName, error);
+      console.warn(`[Startup] ${moduleName} persistence degraded: ${error.message}`);
+    }
+  };
+
+  await initializeModule("certificateLookup", initializeCertificateLookupPersistence);
+  await initializeModule("checkImports", initializeCheckImportPersistence);
+  await initializeModule("analysis", initializeAnalysisStatePersistence);
+  await initializeModule("monthlyReports", initializeReportRunPersistence);
+  await initializeModule("application", initializeApplicationPersistence);
+  await initializeModule("ccPayments", initializeCcPaymentImportPersistence);
+  await initializeModule("achReturns", initializeAchReturnPersistence);
+  await initializeModule("mailingData", initializeMailingDataPersistence);
+
+  persistenceReadiness.ready = Boolean(
+    isPersistenceModuleReady("certificateLookup")
+    && isPersistenceModuleReady("checkImports")
+    && isPersistenceModuleReady("analysis")
+    && isPersistenceModuleReady("monthlyReports")
+  );
+  persistenceReadiness.finishedAt = new Date().toISOString();
+
+  console.log("[Startup] persistence readiness", persistenceReadiness);
+
+  await maybeRunStartupScoreDashboardSnapshot(console);
+  await maybeRunStartupCertificateLookupRefresh(console);
+  scheduleNextScoreDashboardSnapshot(console);
+  scheduleNextCertificateLookupRefresh(console);
+
+  server.listen(port, () => {
+    console.log(`HPA Automations is running at http://localhost:${port}`);
+  });
+}
+
+initializeAppPersistence().catch((error) => {
+  console.warn("Could not complete app initialization:", error.message);
+  server.listen(port, () => {
+    console.log(`HPA Automations is running at http://localhost:${port} in degraded mode`);
+  });
+  scheduleNextScoreDashboardSnapshot(console);
+  scheduleNextCertificateLookupRefresh(console);
+});

@@ -611,6 +611,34 @@ const apiRequest = async (url, options = {}) => {
   return payload;
 };
 
+function getResolvedApiBaseUrl() {
+  try {
+    return String(window.location.origin || "").trim() || "relative";
+  } catch {
+    return "relative";
+  }
+}
+
+function logHpaDebugStartup() {
+  if (!window?.HPA_DEBUG) {
+    return;
+  }
+  const apiBaseUrl = getResolvedApiBaseUrl();
+  const browserOrigin = String(window.location.origin || "").trim() || "unknown";
+  const apiTargetMode = apiBaseUrl === "relative"
+    ? "relative-api-paths"
+    : apiBaseUrl.includes("localhost")
+      ? "localhost"
+      : /^(https?:\/\/)?(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1]))/.test(apiBaseUrl)
+        ? "lan-ip"
+        : "origin";
+  console.debug("[HPA_DEBUG] startup", {
+    apiBaseUrl,
+    browserOrigin,
+    apiTargetMode,
+  });
+}
+
 const apiDownload = async (url, fallbackFileName) => {
   const res = await fetch(url);
   if (!res.ok) {
@@ -4268,10 +4296,47 @@ async function loadCheckImportTemplates() {
 }
 
 async function loadCheckImportSessions(preferredSessionId = "") {
+  const startedAt = Date.now();
   const payload = await apiRequest("/api/check-imports");
-  state.checkImports.sessions = payload.sessions || [];
-  const nextActiveSession = state.checkImports.sessions.find((session) => !["imported", "imported_with_errors"].includes(String(session.final_status || ""))) || null;
-  const targetSessionId = preferredSessionId || state.checkImports.currentSessionId || nextActiveSession?.id || "";
+  const sessions = ensureArray(payload.sessions);
+  state.checkImports.sessions = sessions;
+  const canonicalSessionIds = new Set(sessions.map((session) => String(session.id || "").trim()).filter(Boolean));
+  const preferredId = String(preferredSessionId || "").trim();
+  const currentId = String(state.checkImports.currentSessionId || "").trim();
+  const nextActiveSession = sessions.find((session) => !["imported", "imported_with_errors"].includes(String(session.final_status || ""))) || null;
+  const targetSessionId = [preferredId, currentId, String(nextActiveSession?.id || "").trim()].find((id) => id && canonicalSessionIds.has(id)) || "";
+
+  if (window?.HPA_DEBUG) {
+    console.debug("[HPA_DEBUG] canonical list loaded", {
+      route: "check-imports",
+      count: sessions.length,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  if (preferredId && !canonicalSessionIds.has(preferredId)) {
+    if (state.checkImports.launchSessionId === preferredId) {
+      state.checkImports.launchSessionId = "";
+    }
+    if (state.checkImports.currentSessionId === preferredId) {
+      state.checkImports.currentSessionId = "";
+      state.checkImports.currentSession = null;
+      state.checkImports.selectedRowIds = [];
+    }
+    if (window?.HPA_DEBUG) {
+      console.debug("[HPA_DEBUG] cleared stale selected check import id", preferredId);
+    }
+  }
+
+  if (currentId && !canonicalSessionIds.has(currentId) && state.checkImports.currentSessionId === currentId) {
+    state.checkImports.currentSessionId = "";
+    state.checkImports.currentSession = null;
+    state.checkImports.selectedRowIds = [];
+    if (window?.HPA_DEBUG) {
+      console.debug("[HPA_DEBUG] cleared stale selected check import id", currentId);
+    }
+  }
+
   if (targetSessionId) {
     await loadCheckImportSession(targetSessionId);
     state.checkImports.launchSessionId = "";
@@ -7368,17 +7433,29 @@ function normalizeAnalysisMetricRow(row = {}) {
   }
 
   const mailed = getRowMetricNumber(row, "Sum of Mailed");
-  const inForceCount = getRowMetricNumber(row, "In Force");
+  const explicitOppCount = getRowMetricNumber(row, "Sum of Opp Count");
+  const explicitSoldCount = getRowMetricNumber(row, "Sum of Sold");
+  const explicitInForceCount = getRowMetricNumber(row, "Sum of In Force");
+  const explicitConvertedCount = Math.max(
+    getRowMetricNumber(row, "Sum of Converted"),
+    getRowMetricNumber(row, "Converted")
+  );
+  const inForceCount = explicitInForceCount > 0
+    ? explicitInForceCount
+    : getRowMetricNumber(row, "In Force");
   const totalMonthlyPremium = getRowMetricNumber(row, "Total Monthly Premium");
   const inForceMonthlyPremium = getRowMetricNumber(row, "In Force Monthly Premium");
   const totalConvertedMonthlyPremiums = getRowMetricNumber(row, "Total Converted Monthly Premiums");
-  const convertedCount = totalConvertedMonthlyPremiums > 0 ? 1 : 0;
-  const soldCount = resolveNavigatorSoldCount(row, {
-    convertedCountFallback: convertedCount,
+  const derivedConvertedCount = totalConvertedMonthlyPremiums > 0 ? 1 : 0;
+  const convertedCount = explicitConvertedCount > 0 ? explicitConvertedCount : derivedConvertedCount;
+  const calculatedSoldCount = resolveNavigatorSoldCount(row, {
+    convertedCountFallback: derivedConvertedCount,
   });
+  const soldCount = explicitSoldCount > 0 ? explicitSoldCount : calculatedSoldCount;
+  const oppCount = explicitOppCount > 0 ? explicitOppCount : calculatedSoldCount;
   const fallbackRates = calculateNavigatorRates({
     mailed,
-    soldCount,
+    soldCount: oppCount,
     inForceCount,
     convertedCount,
   });
@@ -7409,8 +7486,8 @@ function normalizeAnalysisMetricRow(row = {}) {
   normalizedRow["sum of in force monthly premium"] = formatAnalysisCurrency(inForceMonthlyPremium);
   normalizedRow["Sum of Total Converted Monthly Premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
   normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
-  normalizedRow["Sum of Opp Count"] = formatNavigatorCount(soldCount);
-  normalizedRow["sum of opp count"] = formatNavigatorCount(soldCount);
+  normalizedRow["Sum of Opp Count"] = formatNavigatorCount(oppCount);
+  normalizedRow["sum of opp count"] = formatNavigatorCount(oppCount);
   normalizedRow["Sum of Sold"] = formatNavigatorCount(soldCount);
   normalizedRow["sum of sold"] = formatNavigatorCount(soldCount);
   normalizedRow["Sum of Converted"] = formatNavigatorCount(convertedCount);
@@ -10882,7 +10959,7 @@ function renderAnalysisComparisonReviewPanel() {
         ? "Loading..."
         : "-";
     const soldCountDisplay = row
-      ? formatWholeNumber(getRowMetricValue(row, "Sum of Opp Count"))
+      ? formatWholeNumber(getRowMetricValue(row, "Sum of Sold"))
       : isMetricLoading
         ? "Loading..."
         : "-";
@@ -13202,6 +13279,7 @@ async function undoAnalysisSetupEntry(setupId) {
 }
 
 async function loadAnalysisSetupView(options = {}) {
+  const startedAt = Date.now();
   setStatus("analysis-setup-status", "Loading analysis...");
   let normalizedSetups = [];
   try {
@@ -13214,7 +13292,17 @@ async function loadAnalysisSetupView(options = {}) {
     setStatus("analysis-comparison-status", `Unable to load available reports: ${error.message}`);
   }
 
-  const persistedSetupId = state.analysis.currentSetupId || readPersistedAnalysisSetupId();
+  let persistedSetupId = state.analysis.currentSetupId || readPersistedAnalysisSetupId();
+  const canonicalSetupIds = new Set(ensureArray(normalizedSetups).map((entry) => String(entry.id || "").trim()).filter(Boolean));
+  if (persistedSetupId && !canonicalSetupIds.has(String(persistedSetupId || "").trim())) {
+    const staleSetupId = persistedSetupId;
+    persistAnalysisSetupId("");
+    state.analysis.currentSetupId = "";
+    persistedSetupId = "";
+    if (window?.HPA_DEBUG) {
+      console.debug("[HPA_DEBUG] cleared stale selected analysis setup id", staleSetupId);
+    }
+  }
   const preferredSetup = choosePreferredAnalysisSetup(normalizedSetups, {
     preferredId: persistedSetupId,
     excludeCompleted: options.excludeCompleted !== false,
@@ -13232,6 +13320,14 @@ async function loadAnalysisSetupView(options = {}) {
     }
   } else if (!targetSetupId && !state.analysis.setupHydrated && !options.freshComparisonSetup) {
     restorePersistedAnalysisSetupDraft("");
+  }
+
+  if (window?.HPA_DEBUG) {
+    console.debug("[HPA_DEBUG] canonical list loaded", {
+      route: "analysis",
+      count: normalizedSetups.length,
+      durationMs: Date.now() - startedAt,
+    });
   }
 
   if (options.freshComparisonSetup === true) {
@@ -15643,6 +15739,7 @@ function initSalesforceStatus() {
 }
 
 async function init() {
+  logHpaDebugStartup();
   bindPrimaryNavigation();
   bindDashboardActions();
   setupAnalysisReviewSync();

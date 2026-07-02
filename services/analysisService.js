@@ -244,6 +244,48 @@ function shouldSupplementSavedSummaryRow(row = {}) {
   );
 }
 
+function shouldRefetchLiveScfMetrics(savedSummaryRow = {}, savedExportRows = []) {
+  if (!savedSummaryRow || typeof savedSummaryRow !== "object") {
+    return true;
+  }
+
+  if (shouldSupplementSavedSummaryRow(savedSummaryRow)) {
+    return true;
+  }
+
+  if (hasAnalysisDetailExportRows(savedExportRows)) {
+    return false;
+  }
+
+  const explicitConvertedCount = getAnalysisMetricNumber(savedSummaryRow, [
+    "Sum of Converted",
+    "Converted",
+  ]);
+  const convertedRate = getAnalysisMetricNumber(savedSummaryRow, ["Converted Rate"]);
+  const hiddenSalesforceConvertedRate = Number.isFinite(Number(savedSummaryRow?.salesforceConvertedRate))
+    ? Number(savedSummaryRow.salesforceConvertedRate)
+    : null;
+  const displayedSoldCount = getAnalysisMetricNumber(savedSummaryRow, ["Sum of Sold", "Sold"]);
+  const oppCount = getAnalysisMetricNumber(savedSummaryRow, [
+    "Sum of Opp Count",
+    "Opp Count",
+    "Applications Received",
+  ]);
+
+  if (
+    hiddenSalesforceConvertedRate !== null &&
+    Math.abs(hiddenSalesforceConvertedRate - convertedRate) > 0.0001
+  ) {
+    return true;
+  }
+
+  if (displayedSoldCount > 0 && oppCount > 0 && displayedSoldCount === oppCount && explicitConvertedCount <= 1) {
+    return true;
+  }
+
+  return false;
+}
+
 function mergeAnalysisMetricRowsPreferNonZero(baseRow = {}, candidateRow = {}) {
   const mergedRow = {
     ...(baseRow && typeof baseRow === "object" ? baseRow : {}),
@@ -1261,7 +1303,13 @@ function readAnalysisReports() {
       analysisReportsCache = readJson(ANALYSIS_REPORTS_FALLBACK_PATH, []);
       analysisReportsCacheMtimeMs = fs.statSync(ANALYSIS_REPORTS_FALLBACK_PATH).mtimeMs || 0;
     } else {
-      analysisReportsCache = buildAnalysisReportsFromRuns(readAnalysisRuns());
+      const rebuiltReports = buildAnalysisReportsFromRuns(readAnalysisRuns());
+      console.warn("[Analysis] readAnalysisReports used fallback rebuild", {
+        savedReportCount: 0,
+        rebuiltCount: rebuiltReports.length,
+        skippedDeletedCount: 0,
+      });
+      analysisReportsCache = rebuiltReports;
       writeAnalysisReports(analysisReportsCache);
     }
 
@@ -1410,6 +1458,15 @@ function writeReferenceLists(payload) {
     persistJsonFile(SCF_REFERENCE_LISTS_FALLBACK_PATH, referenceListsCache);
   }
   queueStateSync(SCF_REFERENCE_LISTS_SUPABASE_KEY, referenceListsCache);
+}
+
+async function flushAnalysisPersistence() {
+  await Promise.all([
+    flushStateObject(ANALYSIS_RUNS_SUPABASE_KEY, analysisRunsCache),
+    flushStateObject(ANALYSIS_SETUPS_SUPABASE_KEY, analysisSetupsCache),
+    flushStateObject(ANALYSIS_REPORTS_SUPABASE_KEY, analysisReportsCache),
+    flushStateObject(SCF_REFERENCE_LISTS_SUPABASE_KEY, referenceListsCache),
+  ]);
 }
 
 function normalizeCompletionReferenceEntries(entries = []) {
@@ -4039,7 +4096,7 @@ async function deleteAnalysisReport(reportId) {
   const nextReports = reports.filter((entry) => String(entry.id || "").trim() !== normalizedReportId);
   writeAnalysisReports(nextReports);
   removeDeletedReportsFromRuns([report]);
-  await flushStateObject(ANALYSIS_REPORTS_SUPABASE_KEY, analysisReportsCache);
+  await flushAnalysisPersistence();
 
   const setups = readAnalysisSetups();
   const deletedIdSet = new Set([normalizedReportId]);
@@ -4054,7 +4111,7 @@ async function deleteAnalysisReport(reportId) {
   });
   if (removedReferencesCount > 0 || nextSetups.length !== setups.length) {
     writeAnalysisSetups(nextSetups);
-    await flushStateObject(ANALYSIS_SETUPS_SUPABASE_KEY, analysisSetupsCache);
+    await flushAnalysisPersistence();
   }
 
   console.log("[Saved Reports] after delete count", nextReports.length);
@@ -4122,7 +4179,7 @@ async function deleteAnalysisReports(reportIds = []) {
   const nextReports = reports.filter((entry) => !deleteIdSet.has(String(entry.id || "").trim()));
   writeAnalysisReports(nextReports);
   removeDeletedReportsFromRuns(reportsToDelete);
-  await flushStateObject(ANALYSIS_REPORTS_SUPABASE_KEY, analysisReportsCache);
+  await flushAnalysisPersistence();
 
   const setups = readAnalysisSetups();
   let removedReferencesCount = 0;
@@ -4136,7 +4193,7 @@ async function deleteAnalysisReports(reportIds = []) {
   });
   if (removedReferencesCount > 0) {
     writeAnalysisSetups(nextSetups);
-    await flushStateObject(ANALYSIS_SETUPS_SUPABASE_KEY, analysisSetupsCache);
+    await flushAnalysisPersistence();
   }
 
   console.log("[Saved Reports] deleting report pull", {
@@ -4277,7 +4334,7 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
   const parameters = report.parameters || {};
   const savedSummaryRows = findAnalysisSummaryRow(report.rows, normalizedScf, normalizedKeys);
   const savedSummaryRow = savedSummaryRows[0] || null;
-  const shouldFetchLiveFallback = !savedSummaryRow || shouldSupplementSavedSummaryRow(savedSummaryRow);
+  const shouldFetchLiveFallback = !savedSummaryRow || shouldRefetchLiveScfMetrics(savedSummaryRow, savedExportRows);
 
   if (savedSummaryRow && !shouldFetchLiveFallback) {
     return {
@@ -5842,6 +5899,7 @@ module.exports = {
   choosePreferredAnalysisScfRow,
   mergeAnalysisMetricRowsPreferNonZero,
   buildPersistedComparisonSetups,
+  flushAnalysisPersistence,
   renameAnalysisReport,
   rebuildAnalysisReport,
   removeDnmStateGroup,

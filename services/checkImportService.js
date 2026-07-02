@@ -10,7 +10,7 @@ const {
   runSoqlQuery,
   salesforceRequest,
 } = require("./salesforceClient");
-const { loadStateObject, queueStateSync } = require("./supabasePersistence");
+const { flushStateObject, loadStateObject, queueStateSync } = require("./supabasePersistence");
 const {
   getCertificateLookupCache,
   refreshCertificateLookupCacheForCertificates,
@@ -1436,7 +1436,7 @@ function revalidateSession(sessionId) {
   return getCheckImportSession(sessionId);
 }
 
-function serializeSession(session, includeRows = false) {
+function serializeSession(session, includeRows = false, includePolicyLookup = includeRows) {
   const template = getCheckImportTemplate(session.import_template_key || IMPORT_TEMPLATE_KEY) || {};
   const rows = includeRows
     ? readRows()
@@ -1450,7 +1450,7 @@ function serializeSession(session, includeRows = false) {
     salesforce_object_api_name: template.salesforceObjectApiName || session.salesforce_object_api_name || "",
     operation_type: template.operationType || session.operation_type || "",
     template: clone(template),
-    policyLookup: clone(readPolicyCache()),
+    ...(includePolicyLookup ? { policyLookup: clone(readPolicyCache()) } : {}),
     rows,
   };
 }
@@ -1502,6 +1502,14 @@ function deleteCheckImportSession(sessionId) {
     deletedSessionId: normalizedSessionId,
     sessions: listCheckImportSessions(),
   };
+}
+
+async function flushCheckImportPersistence() {
+  await Promise.all([
+    flushStateObject(SESSION_SUPABASE_KEY, sessionCache),
+    flushStateObject(ROW_SUPABASE_KEY, rowCache),
+    flushStateObject(POLICY_CACHE_SUPABASE_KEY, policyCache),
+  ]);
 }
 
 async function createCheckImportSession({ fileName, base64Content, uploadedBy = DEFAULT_ACTOR, templateKey = IMPORT_TEMPLATE_KEY }) {
@@ -1561,7 +1569,9 @@ async function createCheckImportSession({ fileName, base64Content, uploadedBy = 
   writeSessions(allSessions);
   writeRows(allRows);
   await hydrateCheckImportSession(sessionId);
-  return revalidateSession(sessionId);
+  const sessionResult = revalidateSession(sessionId);
+  await flushCheckImportPersistence();
+  return sessionResult;
 }
 
 async function hydrateCheckImportSession(sessionId) {
@@ -1688,7 +1698,9 @@ async function refreshCheckImportPolicyLookupFromSalesforce(sessionId) {
   session.policy_lookup_refreshed_at = nextCache.refreshedAt;
   writeSessions(readSessions());
   await hydrateCheckImportSession(sessionId);
-  return revalidateSession(sessionId);
+  const sessionResult = revalidateSession(sessionId);
+  await flushCheckImportPersistence();
+  return sessionResult;
 }
 
 function applyCheckImportRowUpdates(row, updates = {}) {
@@ -1762,7 +1774,9 @@ async function updateCheckImportRows(sessionId, rowUpdates = [], defaultCorrecte
   writeRows(rows);
   await refreshManualCertificateLookup(changedCertificateNumbers);
   await hydrateCheckImportSession(sessionId);
-  return revalidateSession(sessionId);
+  const sessionResult = revalidateSession(sessionId);
+  await flushCheckImportPersistence();
+  return sessionResult;
 }
 
 async function updateCheckImportRow(sessionId, rowId, updates = {}) {
@@ -1809,8 +1823,9 @@ async function deleteCheckImportRows(sessionId, rowIds = []) {
     return !(entry.session_id === normalizedSessionId && normalizedRowIds.includes(entry.id));
   });
   writeRows(remainingRows);
-
-  return revalidateSession(normalizedSessionId);
+  const session = revalidateSession(normalizedSessionId);
+  await flushCheckImportPersistence();
+  return session;
 }
 
 function buildCheckSalesforceRecord(row, template) {
@@ -1907,7 +1922,9 @@ async function confirmCheckImport(sessionId, { confirmedBy = DEFAULT_ACTOR } = {
     session.import_confirmed_by = normalizeText(confirmedBy || DEFAULT_ACTOR);
     session.final_status = "validation_failed";
     writeSessions(readSessions());
-    return revalidateSession(sessionId);
+    const sessionResult = revalidateSession(sessionId);
+    await flushCheckImportPersistence();
+    return sessionResult;
   }
 
   const tokenRecord = await getConnectedSalesforceToken();
@@ -1949,7 +1966,9 @@ async function confirmCheckImport(sessionId, { confirmedBy = DEFAULT_ACTOR } = {
   session.final_status = failedRows > 0 ? "imported_with_errors" : "imported";
   session.updated_at = new Date().toISOString();
   writeSessions(readSessions());
-  return revalidateSession(sessionId);
+  const sessionResult = revalidateSession(sessionId);
+  await flushCheckImportPersistence();
+  return sessionResult;
 }
 
 function csvEscape(value) {
@@ -2018,6 +2037,7 @@ module.exports = {
   initializeCheckImportPersistence,
   listCheckImportSessions,
   listCheckImportTemplates,
+  flushCheckImportPersistence,
   refreshCheckImportPolicyLookupFromSalesforce,
   revalidateSession,
   updateCheckImportRow,
