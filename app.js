@@ -12575,6 +12575,8 @@ function bindAnalysisSubtabs() {
 
 let analysisReportsLoadPromise = null;
 let analysisSetupsLoadPromise = null;
+let analysisReportsLoadVersion = 0;
+let analysisSetupsLoadVersion = 0;
 
 function fetchAnalysisReportsPayload() {
   if (!analysisReportsLoadPromise) {
@@ -12589,10 +12591,14 @@ function fetchAnalysisReportsPayload() {
 }
 
 async function loadAnalysisReports(providedRows = null) {
+  const loadVersion = ++analysisReportsLoadVersion;
   const tbody = el("analysis-history-body");
   const rows = Array.isArray(providedRows)
     ? providedRows
     : await fetchAnalysisReportsPayload();
+  if (loadVersion !== analysisReportsLoadVersion) {
+    return rows;
+  }
   state.analysis.reportScfMetricCache = {};
   state.analysis.savedReports = rows;
   state.analysis.lastReportsLoadAt = Date.now();
@@ -12910,7 +12916,12 @@ function renderAnalysisSetups(normalizedSetups = []) {
 }
 
 async function loadAnalysisSetups() {
-  return renderAnalysisSetups(await fetchAnalysisSetupsPayload());
+  const loadVersion = ++analysisSetupsLoadVersion;
+  const normalizedSetups = await fetchAnalysisSetupsPayload();
+  if (loadVersion !== analysisSetupsLoadVersion) {
+    return normalizedSetups;
+  }
+  return renderAnalysisSetups(normalizedSetups);
 }
 
 async function deleteAnalysisSetupEntry(setupId) {
@@ -13130,7 +13141,7 @@ function bindAnalysisButtons() {
   addPullButton?.addEventListener("click", () => {
     const nextPull = createEmptyPull(state.analysis.reportPulls.length);
     state.analysis.reportPulls.push(nextPull);
-    setAnalysisPullCollapsed(nextPull.id, true);
+    setAnalysisPullCollapsed(nextPull.id, false);
     persistAnalysisSetupDraft();
     renderAnalysisWorkspace();
     setStatus("analysis-status-detail", "Report pull added.");
