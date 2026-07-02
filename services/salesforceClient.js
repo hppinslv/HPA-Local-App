@@ -1,4 +1,4 @@
-function buildConvertedCountByScfKey(detailRows = []) const fs = require("fs");
+const fs = require("fs");
 const path = require("path");
 const { getSalesforceConfig } = require("./config");
 const {
@@ -94,7 +94,7 @@ const ANALYSIS_METRIC_LABELS = {
   convertedCount: ["Sum of Converted", "Converted"],
   totalMonthlyPremium: ["Sum of Total Monthly Premium", "Sum of Total Sold", "Total Monthly Premium"],
   inForceMonthlyPremium: ["Sum of In Force Monthly Premium", "In Force Monthly Premium"],
-  totalConvertedMonthlyPremiums: ["Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium"],
+  totalConvertedMonthlyPremiums: ["Sum of Payment Received", "Payment Received", "Payments Minus Credits", "Payments_Minus_Credits__c", "Sum of Total Converted Monthly Premiums", "Sum of Total Converted Monthly Premium", "Total Converted Monthly Premiums", "Total Converted Monthly Premium", "Total Payments", "Sum of Total Payments"],
 };
 
 const CONVERTED_DIRECT_CANDIDATE_KEYS = [
@@ -3248,94 +3248,6 @@ function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows 
     rows: overrideSummaryRowsConvertedCount(safeDataset.rows, detailRows),
 
     // This only overwrites the top summary Sum of Converted value.
-    summaryValues: overrideSummaryValuesConvertedCount(safeDataset.summaryValues, detailRows),
-  };
-}
-
-  return (Array.isArray(summaryRows) ? summaryRows : []).map((row) => {
-    const nextRow = { ...(row || {}) };
-    const rowKey = getAnalysisSummaryRowKey(nextRow);
-    const calculatedConverted = convertedCountByScfKey.get(rowKey) || 0;
-
-    nextRow["Sum of Converted"] = calculatedConverted;
-    nextRow["SUM OF CONVERTED"] = calculatedConverted;
-    nextRow["sum of converted"] = calculatedConverted;
-    nextRow.sumConverted = calculatedConverted;
-    return nextRow;
-  });
-}
-
-function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = []) {
-  const convertedTotal = Array.from(buildConvertedCountByScfKey(detailRows).values())
-    .reduce((sum, value) => sum + value, 0);
-
-  return (Array.isArray(summaryValues) ? summaryValues : []).map((entry) => {
-    const key = String(entry?.key || "").trim();
-    const label = String(entry?.label || "").trim();
-    const normalizedKey = normalizeLabel(key);
-    const normalizedLabel = normalizeLabel(label);
-
-    if (normalizedKey !== "sum of converted" && normalizedLabel !== "sum of converted") {
-      return entry;
-    }
-
-    return {
-      ...entry,
-      value: Math.round(convertedTotal).toLocaleString("en-US"),
-    };
-  });
-}
-
-function ensureSumOfConvertedColumn(columns = []) {
-  const safeColumns = Array.isArray(columns) ? [...columns] : [];
-
-  const hasConvertedColumn = safeColumns.some((column) => {
-    const label = normalizeLabel(column?.label || column?.key || "");
-    return label === "sum of converted";
-  });
-
-  if (hasConvertedColumn) {
-    return safeColumns;
-  }
-
-  const convertedColumn = {
-    key: "Sum of Converted",
-    label: "Sum of Converted",
-    normalized: "sum of converted",
-    dataType: "double",
-  };
-
-  const inForceIndex = safeColumns.findIndex((column) =>
-    normalizeLabel(column?.label || column?.key || "") === "sum of in force"
-  );
-
-  if (inForceIndex >= 0) {
-    safeColumns.splice(inForceIndex + 1, 0, convertedColumn);
-    return safeColumns;
-  }
-
-  const totalSoldIndex = safeColumns.findIndex((column) =>
-    normalizeLabel(column?.label || column?.key || "") === "sum of total sold"
-  );
-
-  if (totalSoldIndex >= 0) {
-    safeColumns.splice(totalSoldIndex, 0, convertedColumn);
-    return safeColumns;
-  }
-
-  safeColumns.push(convertedColumn);
-  return safeColumns;
-}
-
-function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows = []) {
-  const safeDataset = summaryDataset && typeof summaryDataset === "object"
-    ? summaryDataset
-    : { columns: [], rows: [], summaryValues: [] };
-
-  return {
-    ...safeDataset,
-    columns: ensureSumOfConvertedColumn(safeDataset.columns),
-    rows: overrideSummaryRowsConvertedCount(safeDataset.rows, detailRows),
     summaryValues: overrideSummaryValuesConvertedCount(safeDataset.summaryValues, detailRows),
   };
 }
