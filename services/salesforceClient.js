@@ -116,6 +116,29 @@ const CONVERTED_PAYMENT_FALLBACK_KEYS = [
   "payment_received",
 ];
 
+const CONVERTED_PREMIUM_SOURCE_LABELS = [
+  "Sum of Payment Received",
+  "Payment Received",
+  "sum of payment received",
+  "payment received",
+  "Total Payments",
+  "Sum of Total Payments",
+  "total payments",
+  "sum of total payments",
+  "Payments Minus Credits",
+  "payments minus credits",
+  "Payments_Minus_Credits__c",
+  "payments_minus_credits__c",
+  "Total Converted Monthly Premiums",
+  "total converted monthly premiums",
+  "Sum of Total Converted Monthly Premiums",
+  "sum of total converted monthly premiums",
+  "Sum of Total Converted Monthly Premium",
+  "sum of total converted monthly premium",
+  "Converted Monthly Premium",
+  "converted monthly premium",
+];
+
 function getAnalysisMetricValue(row = {}, labels = []) {
   for (const label of labels) {
     const normalized = normalizeLabel(label);
@@ -154,6 +177,32 @@ function hasAnalysisMetricValue(row = {}, labels = []) {
   });
 }
 
+function getPreferredPositiveAnalysisMetricValue(row = {}, labels = []) {
+  let firstDefinedValue;
+
+  for (const label of labels) {
+    const normalized = normalizeLabel(label);
+    const directValue = Object.prototype.hasOwnProperty.call(row, label) ? row[label] : undefined;
+    const normalizedValue =
+      normalized && Object.prototype.hasOwnProperty.call(row, normalized) ? row[normalized] : undefined;
+    const candidateValue = directValue !== undefined ? directValue : normalizedValue;
+
+    if (candidateValue === undefined || candidateValue === null || String(candidateValue).trim() === "") {
+      continue;
+    }
+
+    if (firstDefinedValue === undefined) {
+      firstDefinedValue = candidateValue;
+    }
+
+    if (parseMoneyNumber(candidateValue) > 0) {
+      return candidateValue;
+    }
+  }
+
+  return firstDefinedValue;
+}
+
 function resolveAnalysisConvertedPremiumValue(row = {}, precomputedConvertedPremium = null) {
   return getConvertedPremiumAmount(row, precomputedConvertedPremium);
 }
@@ -163,9 +212,19 @@ function parseMoneyNumber(value) {
 }
 
 function getConvertedPremiumAmount(row = {}, precomputedConvertedPremium = null) {
-  return precomputedConvertedPremium === null
-    ? parseMoneyNumber(getAnalysisMetricValue(row, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ?? 0)
-    : parseMoneyNumber(precomputedConvertedPremium);
+  if (precomputedConvertedPremium !== null) {
+    return parseMoneyNumber(precomputedConvertedPremium);
+  }
+
+  for (const label of CONVERTED_PREMIUM_SOURCE_LABELS) {
+    const candidateValue = getAnalysisMetricValue(row, [label]) ?? getLikelyColumnValue(row, [label]);
+    const candidateNumber = parseMoneyNumber(candidateValue ?? 0);
+    if (candidateNumber > 0) {
+      return candidateNumber;
+    }
+  }
+
+  return 0;
 }
 
 function getConvertedCountForSourceRow(row = {}, precomputedConvertedPremium = null) {
@@ -275,7 +334,9 @@ function shouldPreferCandidateAnalysisMetric(currentValue, candidateValue) {
 function applyAnalysisMetricAliases(row = {}) {
   const metricGroups = Object.values(ANALYSIS_METRIC_LABELS);
   metricGroups.forEach((labels) => {
-    const value = getAnalysisMetricValue(row, labels);
+    const value = labels === ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums
+      ? getPreferredPositiveAnalysisMetricValue(row, labels)
+      : getAnalysisMetricValue(row, labels);
     if (value !== undefined) {
       setAnalysisMetricAliases(row, labels, value);
     }
@@ -3011,78 +3072,7 @@ function getConvertedPremiumForConvertedCount(detailRow = {}) {
   if (!detailRow || typeof detailRow !== "object") {
     return 0;
   }
-
-  // First use the app's known converted-premium aliases.
-  const aliasValue =
-    getAnalysisMetricValue(detailRow, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums) ??
-    getLikelyColumnValue(detailRow, ANALYSIS_METRIC_LABELS.totalConvertedMonthlyPremiums);
-
-  const aliasNumber = parseMoneyNumber(aliasValue ?? 0);
-  if (aliasNumber > 0) {
-    return aliasNumber;
-  }
-
-  // Then check the exact names we have seen from Salesforce / SOQL / normalized rows.
-  const exactCandidates = [
-    "Payments Minus Credits",
-    "payments minus credits",
-    "Payments_Minus_Credits__c",
-    "payments_minus_credits__c",
-    "Total Converted Monthly Premiums",
-    "total converted monthly premiums",
-    "Sum of Total Converted Monthly Premiums",
-    "sum of total converted monthly premiums",
-    "Sum of Total Converted Monthly Premium",
-    "sum of total converted monthly premium",
-    "Converted Monthly Premium",
-    "converted monthly premium",
-  ];
-
-  for (const fieldName of exactCandidates) {
-    if (!Object.prototype.hasOwnProperty.call(detailRow, fieldName)) {
-      continue;
-    }
-
-    const value = parseMoneyNumber(detailRow[fieldName]);
-    if (value > 0) {
-      return value;
-    }
-  }
-
-  // Last fallback: scan all keys for converted premium/payment-minus-credit fields.
-  // This protects against tiny label changes from Salesforce.
-  for (const [key, rawValue] of Object.entries(detailRow)) {
-    if (String(key).endsWith("__label") || String(key).endsWith(" label")) {
-      continue;
-    }
-
-    const normalizedKey = normalizeLabel(key);
-
-    const looksLikeConvertedPremium =
-      normalizedKey === "payments minus credits" ||
-      normalizedKey === "payments minus credits c" ||
-      normalizedKey === "payment minus credits" ||
-      normalizedKey === "total converted monthly premiums" ||
-      normalizedKey === "sum of total converted monthly premiums" ||
-      normalizedKey === "total converted monthly premium" ||
-      normalizedKey === "sum of total converted monthly premium" ||
-      normalizedKey === "converted monthly premium" ||
-      (
-        normalizedKey.includes("converted") &&
-        normalizedKey.includes("premium")
-      );
-
-    if (!looksLikeConvertedPremium) {
-      continue;
-    }
-
-    const value = parseMoneyNumber(rawValue);
-    if (value > 0) {
-      return value;
-    }
-  }
-
-  return 0;
+  return getConvertedPremiumAmount(detailRow, null);
 }
 
 function buildConvertedCountByScfKey(detailRows = []) {

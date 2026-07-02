@@ -283,6 +283,17 @@ test("converted count treats sum of payment received as a converted source for c
   );
 });
 
+test("converted count prefers positive payment received over a zero converted premium field", () => {
+  assert.equal(
+    resolveAnalysisConvertedCount({
+      "Sum of Total Converted Monthly Premiums": "$0.00",
+      "Sum of Payment Received": "$76.05",
+      "Sum of Converted": "",
+    }),
+    1
+  );
+});
+
 test("sold opportunity count falls back to converted certificate count when converted premium is positive", () => {
   const soldCount = resolveAnalysisSoldOpportunityCount(
     {
