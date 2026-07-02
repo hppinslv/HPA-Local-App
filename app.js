@@ -7499,6 +7499,7 @@ function buildSyntheticNavigatorRow({
   totalMonthlyPremium = 0,
   inForceMonthlyPremium = 0,
   totalConvertedMonthlyPremiums = 0,
+  premiumAmounts = [],
   soldRate = null,
   inForceRate = null,
   convertedRate = null,
@@ -7510,6 +7511,9 @@ function buildSyntheticNavigatorRow({
   const safeTotalMonthlyPremium = Number(totalMonthlyPremium || 0);
   const safeInForceMonthlyPremium = Number(inForceMonthlyPremium || 0);
   const safeTotalConvertedMonthlyPremiums = Number(totalConvertedMonthlyPremiums || 0);
+  const safePremiumAmounts = ensureArray(premiumAmounts)
+    .map((entry) => Number(entry || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
   const rateFallbacks = calculateNavigatorRates({
     mailed: safeMailed,
     soldCount: safeSoldCount,
@@ -7540,7 +7544,12 @@ function buildSyntheticNavigatorRow({
           inForceRate: resolvedSalesforceInForceRate,
           convertedRate: convertedRate,
           mailed: safeMailed,
-        });
+      });
+  const premiumAverage = safePremiumAmounts.length
+    ? safePremiumAmounts.reduce((sum, value) => sum + value, 0) / safePremiumAmounts.length
+    : null;
+  const premiumHigh = safePremiumAmounts.length ? Math.max(...safePremiumAmounts) : null;
+  const premiumLow = safePremiumAmounts.length ? Math.min(...safePremiumAmounts) : null;
 
   return {
     "SCF Grouping": scf,
@@ -7563,6 +7572,12 @@ function buildSyntheticNavigatorRow({
     "sum of in force monthly premium": formatAnalysisCurrency(safeInForceMonthlyPremium),
     "Sum of Total Converted Monthly Premiums": formatAnalysisCurrency(safeTotalConvertedMonthlyPremiums),
     "sum of total converted monthly premiums": formatAnalysisCurrency(safeTotalConvertedMonthlyPremiums),
+    "Average Premium": premiumAverage !== null ? formatAnalysisCurrency(premiumAverage) : "",
+    "average premium": premiumAverage !== null ? formatAnalysisCurrency(premiumAverage) : "",
+    "High Premium": premiumHigh !== null ? formatAnalysisCurrency(premiumHigh) : "",
+    "high premium": premiumHigh !== null ? formatAnalysisCurrency(premiumHigh) : "",
+    "Low Premium": premiumLow !== null ? formatAnalysisCurrency(premiumLow) : "",
+    "low premium": premiumLow !== null ? formatAnalysisCurrency(premiumLow) : "",
     salesforceSoldRate: resolvedSalesforceSoldRate,
     salesforceInForceRate: resolvedSalesforceInForceRate,
     salesforceConvertedRate: Number.isFinite(Number(salesforceConvertedRate)) ? Number(salesforceConvertedRate) : null,
@@ -7646,6 +7661,7 @@ function buildExportScfAggregateMap(report) {
       totalMonthlyPremium: 0,
       inForceMonthlyPremium: 0,
       totalConvertedMonthlyPremiums: 0,
+      premiumAmounts: [],
     };
 
     const rowConvertedPremium = getRowMetricNumber(row, "Total Converted Monthly Premiums");
@@ -7673,6 +7689,12 @@ function buildExportScfAggregateMap(report) {
     current.totalMonthlyPremium += getRowMetricNumber(row, "Total Monthly Premium");
     current.inForceMonthlyPremium += getRowMetricNumber(row, "In Force Monthly Premium");
     current.totalConvertedMonthlyPremiums += rowConvertedPremium;
+    if (!isNavigatorAggregateExportRow(row)) {
+      const rowPremiumAmount = getRowMetricNumber(row, "Total Monthly Premium");
+      if (rowPremiumAmount > 0) {
+        current.premiumAmounts.push(rowPremiumAmount);
+      }
+    }
     current.appConvertedRate = calculateNavigatorConvertedRate({
       convertedCount: current.convertedCount,
       soldCount: current.soldCount,
@@ -7733,6 +7755,7 @@ function getUnifiedReportScfEntries(report) {
           totalMonthlyPremium: aggregateEntry.totalMonthlyPremium,
           inForceMonthlyPremium: aggregateEntry.inForceMonthlyPremium,
           totalConvertedMonthlyPremiums: aggregateEntry.totalConvertedMonthlyPremiums,
+          premiumAmounts: aggregateEntry.premiumAmounts,
           appConvertedRate: aggregateEntry.appConvertedRate,
           salesforceSoldRate: Number.isFinite(Number(summarySoldRate)) ? Number(summarySoldRate) : aggregateEntry.salesforceSoldRate,
           salesforceInForceRate: Number.isFinite(Number(summaryInForceRate)) ? Number(summaryInForceRate) : aggregateEntry.salesforceInForceRate,
@@ -7834,6 +7857,9 @@ function getMetricLabelAliases(metricLabel) {
     "in force": ["Inforce (policy currently in effect)", "Sum of In Force"],
     "sum of in force": ["Inforce (policy currently in effect)", "In Force"],
     "inforce policy currently in effect": ["Sum of In Force", "In Force"],
+    "average premium": ["Average Premium"],
+    "high premium": ["High Premium"],
+    "low premium": ["Low Premium"],
     "total monthly premium": ["Sum of Total Sold", "Sum of Total Monthly Premium"],
     "sum of total monthly premium": ["Sum of Total Sold", "Total Monthly Premium"],
     "sum of total sold": ["Sum of Total Monthly Premium", "Total Monthly Premium"],
@@ -10787,6 +10813,23 @@ function renderAnalysisComparisonReviewPanel() {
   const activeNavigatorScfFilterSet = new Set(
     ensureArray(state.analysis.activeNavigatorScfFilter).map((entry) => normalizeScf(entry)).filter(Boolean)
   );
+  const selectedSoldCount = selectedNavigatorEntry
+    ? formatWholeNumber(getRowMetricNumber(selectedNavigatorEntry.row, "Sum of Sold"))
+    : "-";
+  const selectedInForceCount = selectedNavigatorEntry
+    ? formatWholeNumber(getRowMetricNumber(selectedNavigatorEntry.row, "Sum of In Force"))
+    : "-";
+  const selectedConvertedCount = selectedNavigatorEntry
+    ? formatWholeNumber(
+        Number.isFinite(Number(selectedNavigatorEntry.row?.appConvertedCount))
+          ? Number(selectedNavigatorEntry.row.appConvertedCount)
+          : Math.max(
+              getRowMetricNumber(selectedNavigatorEntry.row, "Sum of Converted"),
+              getRowMetricNumber(selectedNavigatorEntry.row, "Converted"),
+              getRowMetricNumber(selectedNavigatorEntry.row, "Sum of Sold")
+            )
+      )
+    : "-";
   const hasMetricFilters = Boolean(
     soldRateMinValue
     || inForceRateValue
@@ -10858,19 +10901,21 @@ function renderAnalysisComparisonReviewPanel() {
       : isMetricLoading
         ? "Loading..."
         : "-";
-    const rateValues = [
-      getRowMetricNumber(row, "Sold Rate"),
-      getRowMetricNumber(row, "Converted Rate"),
-      getRowMetricNumber(row, "In Force Rate"),
-    ].filter((value) => Number.isFinite(value));
-    const premiumRateAverage = rateValues.length
-      ? rateValues.reduce((sum, value) => sum + value, 0) / rateValues.length
-      : null;
-    const premiumRateHigh = rateValues.length ? Math.max(...rateValues) : null;
-    const premiumRateLow = rateValues.length ? Math.min(...rateValues) : null;
-    const premiumRateAverageDisplay = premiumRateAverage !== null ? premiumRateAverage.toFixed(10) : (isMetricLoading ? "Loading..." : "-");
-    const premiumRateHighDisplay = premiumRateHigh !== null ? premiumRateHigh.toFixed(10) : (isMetricLoading ? "Loading..." : "-");
-    const premiumRateLowDisplay = premiumRateLow !== null ? premiumRateLow.toFixed(10) : (isMetricLoading ? "Loading..." : "-");
+    const averagePremiumDisplay = row
+      ? getRowMetricDisplayValue(row, "Average Premium")
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
+    const highPremiumDisplay = row
+      ? getRowMetricDisplayValue(row, "High Premium")
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
+    const lowPremiumDisplay = row
+      ? getRowMetricDisplayValue(row, "Low Premium")
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
     const convertedCountDisplay = row
       ? formatWholeNumber(
           Number.isFinite(Number(row?.appConvertedCount))
@@ -10881,21 +10926,6 @@ function renderAnalysisComparisonReviewPanel() {
                 getRowMetricNumber(row, "Sum of Sold")
               )
         )
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
-    const totalMonthlyPremiumDisplay = row
-      ? getRowMetricDisplayValue(row, "Sum of Total Monthly Premium")
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
-    const inForceMonthlyPremiumDisplay = row
-      ? getRowMetricDisplayValue(row, "Sum of In Force Monthly Premium")
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
-    const totalConvertedMonthlyPremiumsDisplay = row
-      ? getRowMetricDisplayValue(row, "Sum of Total Converted Monthly Premiums")
       : isMetricLoading
         ? "Loading..."
         : "-";
@@ -10928,16 +10958,16 @@ function renderAnalysisComparisonReviewPanel() {
             <strong>${esc(inForceRateDisplay)}</strong>
           </div>
           <div>
-            <span class="field-label">Average Premium Rate</span>
-            <strong>${esc(premiumRateAverageDisplay)}</strong>
+            <span class="field-label">Average Premium</span>
+            <strong>${esc(averagePremiumDisplay)}</strong>
           </div>
           <div>
-            <span class="field-label">High Premium Rate</span>
-            <strong>${esc(premiumRateHighDisplay)}</strong>
+            <span class="field-label">High Premium</span>
+            <strong>${esc(highPremiumDisplay)}</strong>
           </div>
           <div>
-            <span class="field-label">Low Premium Rate</span>
-            <strong>${esc(premiumRateLowDisplay)}</strong>
+            <span class="field-label">Low Premium</span>
+            <strong>${esc(lowPremiumDisplay)}</strong>
           </div>
         </div>
         <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
@@ -10956,20 +10986,6 @@ function renderAnalysisComparisonReviewPanel() {
           <div>
             <span class="field-label">Total Mailed</span>
             <strong>${esc(displayedTotalMailed)}</strong>
-          </div>
-        </div>
-        <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
-          <div>
-            <span class="field-label">Sum of Total Monthly Premium</span>
-            <strong>${esc(totalMonthlyPremiumDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">Sum of In Force Monthly Premium</span>
-            <strong>${esc(inForceMonthlyPremiumDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">Sum of Total Converted Monthly Premiums</span>
-            <strong>${esc(totalConvertedMonthlyPremiumsDisplay)}</strong>
           </div>
         </div>
       </article>
@@ -11158,7 +11174,7 @@ function renderAnalysisComparisonReviewPanel() {
       <article class="panel analysis-review-metrics-panel">
         <div class="panel-heading">
           <h3>Comparison Metrics${comparison?.comparisonName ? ` - ${esc(comparison.comparisonName)}` : ""}</h3>
-          <p>Rates for SCF <strong>${esc(effectiveSelectedScf || "Not selected")}</strong> across every report in this comparison.</p>
+          <p>Rates and premium amounts for SCF <strong>${esc(effectiveSelectedScf || "Not selected")}</strong> across every report in this comparison.</p>
         </div>
         <div class="analysis-review-metrics-grid">
           ${reportMetricsMarkup}
@@ -11275,6 +11291,9 @@ function renderAnalysisComparisonReviewPanel() {
           <span>Selected SCFs: ${selectedNavigatorScfSet.size}</span>
           <span>Selected filter: ${activeNavigatorScfFilterSet.size ? `${activeNavigatorScfFilterSet.size} SCF(s)` : "Off"}</span>
           <span>Current mailed pieces: ${selectedNavigatorEntry ? selectedNavigatorEntry.mailed.toLocaleString("en-US") : "-"}</span>
+          <span>Sum of Sold: ${selectedSoldCount}</span>
+          <span>Sum of In Force: ${selectedInForceCount}</span>
+          <span>Sum of Converted: ${selectedConvertedCount}</span>
         </div>
         <div class="table-wrap analysis-review-primary-table">
           <table>
