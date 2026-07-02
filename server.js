@@ -357,6 +357,44 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/debug/reports" && request.method === "GET") {
+    const reports = listAnalysisReports().map((report) => ({
+      id: String(report.id || "").trim(),
+      name: String(report.report_name || report.reportName || "").trim(),
+      type: String(report.report_type || report.reportType || "").trim(),
+      createdAt: report.created_at || report.createdAt || null,
+      updatedAt: report.updated_at || report.updatedAt || null,
+      deleted: false,
+      source: "saved_reports",
+      includedInNormalList: true,
+      runId: String(report.runId || "").trim(),
+      setupId: String(report.setupId || "").trim(),
+    }));
+    sendJson(response, 200, { ok: true, source: "saved_reports", count: reports.length, reports });
+    logRouteTiming("/api/debug/reports", request.method, requestStartedAt, 200, { count: reports.length });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/debug/check-imports" && request.method === "GET") {
+    const sessions = listCheckImportSessions().map((session) => ({
+      id: String(session.id || "").trim(),
+      filename: String(session.original_filename || "").trim(),
+      createdAt: session.uploaded_at || session.created_at || null,
+      updatedAt: session.updated_at || null,
+      status: String(session.final_status || session.status || "").trim(),
+      rowCount: Number(session.row_count || 0),
+      errorCount: Number(session.error_count || 0),
+      duplicateCount: Number(session.duplicate_count || 0),
+      importedCount: Number(session.imported_row_count || 0),
+      totalAmount: Number(session.total_amount || 0),
+      detailExists: Array.isArray(session.rows),
+      approxSerializedSize: JSON.stringify(session).length,
+    }));
+    sendJson(response, 200, { ok: true, count: sessions.length, sessions });
+    logRouteTiming("/api/debug/check-imports", request.method, requestStartedAt, 200, { count: sessions.length });
+    return;
+  }
+
   if (requestUrl.pathname === "/api/monthly-reports" && request.method === "GET") {
     if (!isPersistenceModuleReady("monthlyReports")) {
       sendPersistenceNotReady(response, "monthlyReports");
@@ -2005,14 +2043,14 @@ async function initializeAppPersistence() {
 
   console.log("[Startup] persistence readiness", persistenceReadiness);
 
+  server.listen(port, () => {
+    console.log(`HPA Automations is running at http://localhost:${port}`);
+  });
+
   await maybeRunStartupScoreDashboardSnapshot(console);
   await maybeRunStartupCertificateLookupRefresh(console);
   scheduleNextScoreDashboardSnapshot(console);
   scheduleNextCertificateLookupRefresh(console);
-
-  server.listen(port, () => {
-    console.log(`HPA Automations is running at http://localhost:${port}`);
-  });
 }
 
 initializeAppPersistence().catch((error) => {
