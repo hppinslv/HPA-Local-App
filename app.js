@@ -2190,9 +2190,37 @@ function choosePreferredAnalysisSetup(setups = [], options = {}) {
 async function openAnalysisLanding() {
   setAnalysisLeftSubmenuExpanded(true);
   setRoute("analysis");
+  const preferredSetupId = String(state.analysis.currentSetupId || readPersistedAnalysisSetupId() || "").trim();
+  if (preferredSetupId) {
+    try {
+      const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(preferredSetupId)}`);
+      const fullSetup = response.setup || {};
+      loadSetupIntoWorkspace(fullSetup);
+
+      const landing = resolveAnalysisLandingFromEntry(fullSetup);
+      state.analysis.reviewSummaryMode = landing.summaryMode;
+
+      if (landing.panel === "compare-review") {
+        showAnalysisPanel("compare-review");
+        return;
+      }
+
+      if (landing.panel === "home") {
+        showAnalysisPanel("home");
+        return;
+      }
+
+      showAnalysisPanel("previous");
+      await loadAnalysisSetups();
+      return;
+    } catch {
+      persistAnalysisSetupId("");
+    }
+  }
+
   const setupsPayload = await apiRequest("/api/analysis/setups");
   const setup = choosePreferredAnalysisSetup(setupsPayload.setups || [], {
-    preferredId: state.analysis.currentSetupId || readPersistedAnalysisSetupId(),
+    excludeCompleted: false,
   });
 
   if (!setup) {
@@ -7342,18 +7370,21 @@ function normalizeAnalysisMetricRow(row = {}) {
   });
   const soldRate = resolveNavigatorExplicitRate(row, "Sold Rate");
   const inForceRate = resolveNavigatorExplicitRate(row, "In Force Rate");
-  const convertedRate = Number.isFinite(Number(row.appConvertedRate))
+  const explicitConvertedRate = resolveNavigatorExplicitRate(row, "Converted Rate");
+  const convertedRate = Number.isFinite(Number(row.salesforceConvertedRate))
+    ? Number(row.salesforceConvertedRate)
+    : Number.isFinite(Number(row.appConvertedRate))
       ? Number(row.appConvertedRate)
       : calculateNavigatorConvertedRate({
-        convertedCount,
-        soldCount,
-        inForceCount,
-        soldRate,
-        inForceRate,
-        convertedRate: resolveNavigatorExplicitRate(row, "Converted Rate"),
-        totalConvertedMonthlyPremiums,
-        mailed,
-      });
+          convertedCount,
+          soldCount,
+          inForceCount,
+          soldRate,
+          inForceRate,
+          convertedRate: explicitConvertedRate,
+          totalConvertedMonthlyPremiums,
+          mailed,
+        });
   const safeSoldRate = Number.isFinite(Number(soldRate)) ? Number(soldRate) : fallbackRates.soldRate;
   const safeInForceRate = Number.isFinite(Number(inForceRate)) ? Number(inForceRate) : fallbackRates.inForceRate;
 
@@ -7483,17 +7514,19 @@ function buildSyntheticNavigatorRow({
       : null;
   const safeSoldRate = Number.isFinite(Number(resolvedSalesforceSoldRate)) ? Number(resolvedSalesforceSoldRate) : rateFallbacks.soldRate;
   const safeInForceRate = Number.isFinite(Number(resolvedSalesforceInForceRate)) ? Number(resolvedSalesforceInForceRate) : rateFallbacks.inForceRate;
-  const safeConvertedRate = Number.isFinite(Number(appConvertedRate))
-    ? Number(appConvertedRate)
-    : calculateNavigatorConvertedRate({
-        convertedCount: safeConvertedCount,
-        soldCount: safeSoldCount,
-        inForceCount: safeInForce,
-        soldRate: resolvedSalesforceSoldRate,
-        inForceRate: resolvedSalesforceInForceRate,
-        convertedRate: salesforceConvertedRate ?? convertedRate,
-        mailed: safeMailed,
-      });
+  const safeConvertedRate = Number.isFinite(Number(salesforceConvertedRate))
+    ? Number(salesforceConvertedRate)
+    : Number.isFinite(Number(appConvertedRate))
+      ? Number(appConvertedRate)
+      : calculateNavigatorConvertedRate({
+          convertedCount: safeConvertedCount,
+          soldCount: safeSoldCount,
+          inForceCount: safeInForce,
+          soldRate: resolvedSalesforceSoldRate,
+          inForceRate: resolvedSalesforceInForceRate,
+          convertedRate: convertedRate,
+          mailed: safeMailed,
+        });
 
   return {
     "SCF Grouping": scf,
@@ -15588,7 +15621,7 @@ async function init() {
     const requestedAnalysisPanel = state.analysis.panel || "home";
     if (["home", "compare", "compare-review"].includes(requestedAnalysisPanel) || launchState?.analysis?.setupId) {
       try {
-        await loadAnalysisSetupView({ excludeCompleted: Boolean(launchState?.analysis?.setupId) });
+        await loadAnalysisSetupView({ excludeCompleted: false });
         if (launchState?.analysis?.comparisonId) {
           state.analysis.selectedComparisonId = launchState.analysis.comparisonId;
           state.analysis.lastEditedComparisonId = launchState.analysis.comparisonId;

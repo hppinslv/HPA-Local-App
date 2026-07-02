@@ -305,13 +305,20 @@ function calculateAnalysisConvertedRate({
   totalConvertedMonthlyPremiums = 0,
   mailed = 0,
 } = {}) {
+  const hasExplicitConvertedRate =
+    convertedRate !== null &&
+    convertedRate !== undefined &&
+    String(convertedRate).trim() !== "";
+  if (hasExplicitConvertedRate) {
+    return parseNumber(convertedRate);
+  }
+
   const safeConvertedCount = parseNumber(convertedCount);
   const safeMailed = parseNumber(mailed);
   if (!(safeConvertedCount > 0) || !(safeMailed > 0)) {
     return 0;
   }
 
-  // Do not trust Salesforce converted rate. Converted rate is app-calculated only.
   return safeConvertedCount / safeMailed;
 }
 

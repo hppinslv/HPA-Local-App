@@ -200,7 +200,7 @@ test("in-force rate displays the Salesforce in-force rate column exactly", () =>
   assert.equal(row["In Force Rate"], "4.1250000000");
 });
 
-test("converted rate is app-calculated from converted count and mailed", () => {
+test("converted rate is pulled exactly from the Salesforce rate column", () => {
   const dataset = buildFlatRowsFromDetailExport([
     {
       "SCF Grouping": "999",
@@ -213,12 +213,13 @@ test("converted rate is app-calculated from converted count and mailed", () => {
       "Sold Rate": 6.165982908,
       "In Force Rate": 3.082991454,
       "Total Converted Monthly Premiums": 100,
+      "Converted Rate": 0.4998427293,
     },
   ]);
 
   const row = getAggregateRow(dataset, "999");
   assert.equal(row["Sum of Converted"], "1");
-  assert.equal(row["Converted Rate"], "0.0060240964");
+  assert.equal(row["Converted Rate"], "0.4998427293");
 });
 
 test("total converted monthly premiums uses the Salesforce total converted monthly premiums column directly", () => {
@@ -562,7 +563,7 @@ test("aggregate-shaped saved rows are not mistaken for detail export rows", () =
   );
 });
 
-test("summary-shaped export rows keep Salesforce sold and in-force rates and preserve explicit converted count", () => {
+test("summary-shaped export rows keep Salesforce sold, in-force, and converted rates", () => {
   const dataset = summarizeAnalysisExportRows(
     [
       {
@@ -590,7 +591,7 @@ test("summary-shaped export rows keep Salesforce sold and in-force rates and pre
   const row = getAggregateRow(dataset, "893");
   assert.equal(row["Sold Rate"], "3.0829914540");
   assert.equal(row["In Force Rate"], "3.0829914540");
-  assert.equal(row["Converted Rate"], "0.0060240964");
+  assert.equal(row["Converted Rate"], "3.0829914540");
 });
 
 test("detail-derived sum of converted backfills grouped rows that still show zero", () => {
@@ -754,7 +755,7 @@ test("saved summary rows count converted certificates from total converted premi
   const row = getAggregateRow(dataset, "770");
   assert.equal(row["Sum of Sold"], "4");
   assert.equal(row["Sum of Converted"], "1");
-  assert.equal(row["Converted Rate"], "0.0000547915");
+  assert.equal(row["Converted Rate"], "99.9999999999");
 });
 
 test("detail summary rows calculate converted count and premium totals for SCF 770 exact scenario", () => {
