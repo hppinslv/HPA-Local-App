@@ -4070,12 +4070,24 @@ function updateCheckImportSelectionUi() {
   const selectedIds = getCheckImportSelectedRowIds();
   const filteredRows = getCheckImportSelectableFilteredRows();
   const selectedVisibleCount = filteredRows.filter((row) => selectedIds.includes(row.id)).length;
+  const pendingEditCount = session && !isCheckImportImportedSession(session) ? collectCheckImportRowEdits(session).length : 0;
+  const saveButtons = [
+    el("check-import-save-all-button"),
+    el("check-import-save-all-toolbar-button"),
+  ].filter(Boolean);
   const selectAll = el("check-import-select-all");
   const selectVisibleButton = el("check-import-select-visible-button");
   const clearSelectionButton = el("check-import-clear-selection-button");
   const deleteSelectedButton = el("check-import-delete-selected-button");
   const selectionStatus = el("check-import-selection-status");
   const importedSession = isCheckImportImportedSession(session);
+
+  saveButtons.forEach((button) => {
+    button.disabled = !session || importedSession || pendingEditCount <= 0;
+    button.textContent = pendingEditCount > 0
+      ? `Save All Corrections (${pendingEditCount})`
+      : "Save All Corrections";
+  });
 
   if (selectAll instanceof HTMLInputElement) {
     selectAll.checked = Boolean(filteredRows.length) && selectedVisibleCount === filteredRows.length;
@@ -4275,6 +4287,33 @@ async function loadCheckImportSessions(preferredSessionId = "") {
   renderCheckImportPage();
 }
 
+async function saveCheckImportCorrections() {
+  const session = getCurrentCheckImportSession();
+  if (!session?.id) return;
+  const rowEdits = collectCheckImportRowEdits(session);
+  if (!rowEdits.length) {
+    setStatus("check-import-status", "There are no unsaved certificate or months changes.");
+    return;
+  }
+
+  setStatus("check-import-status", `Saving ${rowEdits.length} row correction(s)...`);
+  try {
+    const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(session.id)}/rows/bulk`, {
+      method: "PATCH",
+      body: {
+        rows: rowEdits,
+        corrected_by: "Local User",
+      },
+    });
+    state.checkImports.currentSession = payload.session || null;
+    state.checkImports.currentSessionId = payload.session?.id || session.id;
+    renderCheckImportPage();
+    setStatus("check-import-status", `Saved ${rowEdits.length} row correction(s).`);
+  } catch (error) {
+    setStatus("check-import-status", `Unable to save corrections: ${error.message}`);
+  }
+}
+
 async function deleteCheckImportSessionById(sessionId) {
   const normalizedId = String(sessionId || "").trim();
   if (!normalizedId) {
@@ -4429,30 +4468,12 @@ function bindCheckImportEvents() {
     }
   });
 
-  el("check-import-save-all-button")?.addEventListener("click", async () => {
-    const session = getCurrentCheckImportSession();
-    if (!session?.id) return;
-    const rowEdits = collectCheckImportRowEdits(session);
-    if (!rowEdits.length) {
-      setStatus("check-import-status", "There are no unsaved certificate or months changes.");
-      return;
-    }
-    setStatus("check-import-status", `Saving ${rowEdits.length} row correction(s)...`);
-    try {
-      const payload = await apiRequest(`/api/check-imports/${encodeURIComponent(session.id)}/rows/bulk`, {
-        method: "PATCH",
-        body: {
-          rows: rowEdits,
-          corrected_by: "Local User",
-        },
-      });
-      state.checkImports.currentSession = payload.session || null;
-      state.checkImports.currentSessionId = payload.session?.id || session.id;
-      renderCheckImportPage();
-      setStatus("check-import-status", `Saved ${rowEdits.length} row correction(s).`);
-    } catch (error) {
-      setStatus("check-import-status", `Unable to save corrections: ${error.message}`);
-    }
+  el("check-import-save-all-button")?.addEventListener("click", () => {
+    void saveCheckImportCorrections();
+  });
+
+  el("check-import-save-all-toolbar-button")?.addEventListener("click", () => {
+    void saveCheckImportCorrections();
   });
 
   el("check-import-confirm-button")?.addEventListener("click", async () => {
