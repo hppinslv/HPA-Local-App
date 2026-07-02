@@ -3166,21 +3166,33 @@ function overrideSummaryRowsConvertedCount(summaryRows = [], detailRows = []) {
   return (Array.isArray(summaryRows) ? summaryRows : []).map((row) => {
     const nextRow = { ...(row || {}) };
     const rowKey = getAnalysisSummaryRowKey(nextRow);
+    const paymentReceivedValue =
+      getAnalysisMetricValue(nextRow, ["Sum of Payment Received", "Payment Received"]) ??
+      getLikelyColumnValue(nextRow, ["Sum of Payment Received", "Payment Received"]);
     const calculatedConverted = convertedCountByScfKey.get(rowKey) || 0;
+    const hasPaymentReceivedValue =
+      paymentReceivedValue !== undefined &&
+      paymentReceivedValue !== null &&
+      String(paymentReceivedValue).trim() !== "";
+    const nextConverted = hasPaymentReceivedValue
+      ? parseNumber(paymentReceivedValue)
+      : calculatedConverted;
 
     // This is the ONLY report row value this override should change.
-    nextRow["Sum of Converted"] = calculatedConverted;
-    nextRow["SUM OF CONVERTED"] = calculatedConverted;
-    nextRow["sum of converted"] = calculatedConverted;
-    nextRow.sumConverted = calculatedConverted;
+    nextRow["Sum of Converted"] = nextConverted;
+    nextRow["SUM OF CONVERTED"] = nextConverted;
+    nextRow["sum of converted"] = nextConverted;
+    nextRow.sumConverted = nextConverted;
 
     return nextRow;
   });
 }
 
-function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = []) {
-  const convertedTotal = Array.from(buildConvertedCountByScfKey(detailRows).values())
-    .reduce((sum, value) => sum + Number(value || 0), 0);
+function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = [], summaryRows = []) {
+  const convertedTotal = Array.isArray(summaryRows) && summaryRows.length
+    ? summaryRows.reduce((sum, row) => sum + parseNumber(getAnalysisMetricValue(row, ["Sum of Converted"]) ?? getLikelyColumnValue(row, ["Sum of Converted"]) ?? 0), 0)
+    : Array.from(buildConvertedCountByScfKey(detailRows).values())
+      .reduce((sum, value) => sum + Number(value || 0), 0);
 
   return (Array.isArray(summaryValues) ? summaryValues : []).map((entry) => {
     const key = String(entry?.key || "").trim();
@@ -3197,6 +3209,21 @@ function overrideSummaryValuesConvertedCount(summaryValues = [], detailRows = []
       value: Math.round(convertedTotal).toLocaleString("en-US"),
     };
   });
+}
+
+function mergePaymentReceivedIntoConvertedColumn(columns = []) {
+  const safeColumns = Array.isArray(columns) ? [...columns] : [];
+  const paymentReceivedIndex = safeColumns.findIndex((column) => {
+    const label = normalizeLabel(column?.label || column?.key || "");
+    return label === "sum of payment received" || label === "payment received";
+  });
+
+  if (paymentReceivedIndex < 0) {
+    return ensureSumOfConvertedColumn(safeColumns);
+  }
+
+  safeColumns.splice(paymentReceivedIndex, 1);
+  return ensureSumOfConvertedColumn(safeColumns);
 }
 
 function ensureSumOfConvertedColumn(columns = []) {
@@ -3244,53 +3271,20 @@ function overrideSummaryDatasetConvertedCount(summaryDataset = null, detailRows 
   const safeDataset = summaryDataset && typeof summaryDataset === "object"
     ? summaryDataset
     : { columns: [], rows: [], summaryValues: [] };
+  const rows = overrideSummaryRowsConvertedCount(safeDataset.rows, detailRows);
 
   return {
     ...safeDataset,
 
     // This only makes the already-calculated field visible in the report table.
-    columns: ensureSumOfConvertedColumn(safeDataset.columns),
+    columns: mergePaymentReceivedIntoConvertedColumn(safeDataset.columns),
 
     // This only overwrites Sum of Converted.
-    rows: overrideSummaryRowsConvertedCount(safeDataset.rows, detailRows),
+    rows,
 
     // This only overwrites the top summary Sum of Converted value.
-    summaryValues: overrideSummaryValuesConvertedCount(safeDataset.summaryValues, detailRows),
+    summaryValues: overrideSummaryValuesConvertedCount(safeDataset.summaryValues, detailRows, rows),
   };
-}
-
-function aliasPaymentReceivedAsConverted(row = {}) {
-  const paymentReceived =
-    row["Sum of Payment Received"] ??
-    row["sum of payment received"] ??
-    row["Payment Received"] ??
-    row["payment received"];
-
-  if (paymentReceived !== undefined && paymentReceived !== null && String(paymentReceived).trim() !== "") {
-    row["Sum of Converted"] = paymentReceived;
-    row["SUM OF CONVERTED"] = paymentReceived;
-    row["sum of converted"] = paymentReceived;
-    row.sumConverted = paymentReceived;
-  }
-
-  return row;
-}
-
-function renamePaymentReceivedColumnToConverted(columns = []) {
-  return (Array.isArray(columns) ? columns : []).map((column) => {
-    const label = normalizeLabel(column?.label || column?.key || "");
-
-    if (label === "sum of payment received" || label === "payment received") {
-      return {
-        ...column,
-        key: "Sum of Converted",
-        label: "Sum of Converted",
-        normalized: "sum of converted",
-      };
-    }
-
-    return column;
-  });
 }
 
 function getAnalysisCurrencyMetricNumber(row = {}, labels = []) {
@@ -4872,7 +4866,6 @@ module.exports = {
   fetchMonthlySalesforceReportData,
   fetchRawSalesforceReportRows,
   fetchReportDescribe,
-  aliasPaymentReceivedAsConverted,
   ensureSumOfConvertedColumn,
   getAnalysisDebugFilePath,
   getConnectedSalesforceToken,
@@ -4885,7 +4878,6 @@ module.exports = {
   parseConvertedNumber,
   parseDateValue,
   parseNumber,
-  renamePaymentReceivedColumnToConverted,
   overrideSummaryDatasetConvertedCount,
   overrideOnlySumOfConverted: overrideSummaryDatasetConvertedCount,
   resolveConvertedValue,

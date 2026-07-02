@@ -843,6 +843,7 @@ test("overrideOnlySumOfConverted changes only sum of converted from detail rows"
       { key: "Sum of Total Sold", label: "Sum of Total Sold" },
       { key: "Sum of In Force Monthly Premium", label: "Sum of In Force Monthly Premium" },
       { key: "Sum of Total Converted Monthly Premiums", label: "Sum of Total Converted Monthly Premiums" },
+      { key: "Sum of Payment Received", label: "Sum of Payment Received" },
       { key: "Sold Rate", label: "Sold Rate" },
       { key: "In Force Rate", label: "In Force Rate" },
       { key: "Converted Rate", label: "Converted Rate" },
@@ -870,6 +871,7 @@ test("overrideOnlySumOfConverted changes only sum of converted from detail rows"
         "Sum of Total Sold": "$490.72",
         "Sum of In Force Monthly Premium": "$228.62",
         "Sum of Total Converted Monthly Premiums": "$325.44",
+        "Sum of Payment Received": "2",
         "Sold Rate": "0.1809373745",
         "In Force Rate": "0.0842963453",
         "Converted Rate": "0.1199956373",
@@ -880,6 +882,24 @@ test("overrideOnlySumOfConverted changes only sum of converted from detail rows"
   const dataset = overrideOnlySumOfConverted(summaryDataset, detailRows);
   const row = getAggregateRow(dataset, "770");
 
+  assert.deepEqual(
+    dataset.columns.map((column) => column.label),
+    [
+      "SCF Grouping",
+      "Key",
+      "Sum of Mailed",
+      "Sum of Sold",
+      "Sum of In Force",
+      "Sum of Converted",
+      "Sum of Total Sold",
+      "Sum of In Force Monthly Premium",
+      "Sum of Total Converted Monthly Premiums",
+      "Sold Rate",
+      "In Force Rate",
+      "Converted Rate",
+    ]
+  );
+  assert.equal(dataset.columns.some((column) => column.label === "Sum of Payment Received"), false);
   assert.equal(row["Sum of Mailed"], "18,251");
   assert.equal(row["Sum of Sold"], "5");
   assert.equal(row["Sum of In Force"], "2");
