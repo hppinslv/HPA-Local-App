@@ -12797,6 +12797,7 @@ async function deleteSelectedAnalysisReports() {
       state.analysis.currentReportId = "";
       renderAnalysisResults(null);
     }
+    analysisReportsLoadPromise = null;
     await loadAnalysisReports(nextReports);
     renderAnalysisComparePanel();
     setStatus("analysis-status-detail", `Deleted ${deletedIds.length} analysis report${deletedIds.length === 1 ? "" : "s"}.`);
@@ -12981,6 +12982,7 @@ async function deleteAnalysisSetupEntry(setupId) {
   if (Array.isArray(result.setups)) {
     renderAnalysisSetups(result.setups);
   } else {
+    analysisSetupsLoadPromise = null;
     await loadAnalysisSetups();
   }
   setStatus(
@@ -13344,7 +13346,9 @@ function bindAnalysisButtons() {
       });
       setStatus("analysis-status-text", run.status || "Running");
       setStatus("analysis-status-detail", `Analysis queued: ${run.id || "run created"}.`);
-      await loadAnalysisReports();
+      state.analysis.subtab = "runs";
+      renderAnalysisResults(run);
+      el("analysis-results-container")?.scrollIntoView({ behavior: "auto", block: "start" });
       if (run.id) {
         stopAnalysisRunPolling();
         pollAnalysisRun(run.id);
