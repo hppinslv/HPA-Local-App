@@ -138,6 +138,10 @@ function parseCurrencyNumber(value) {
   return isNegative ? -parsed : parsed;
 }
 
+function formatAnalysisCurrency(value) {
+  return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
 function getMedian(values = []) {
   const sorted = values
     .map((value) => Number(value))
@@ -261,23 +265,42 @@ function applyPremiumStatsFromDetailRows(row = {}, premiumStats = {}) {
     return row;
   }
 
+  const nextRow = { ...(row || {}) };
+  const premiumKeys = [
+    "Average Premium",
+    "average premium",
+    "High Premium",
+    "high premium",
+    "Low Premium",
+    "low premium",
+    "Median Premium",
+    "median premium",
+  ];
+
   if (premiumStats.premiumCount <= 0) {
-    return {
-      ...row,
-      averageMonthlyPremium: null,
-      highPremium: null,
-      lowPremium: null,
-      medianPremium: null,
-    };
+    premiumKeys.forEach((key) => {
+      delete nextRow[key];
+    });
+    nextRow.averageMonthlyPremium = null;
+    nextRow.highPremium = null;
+    nextRow.lowPremium = null;
+    nextRow.medianPremium = null;
+    return nextRow;
   }
 
-  return {
-    ...row,
-    averageMonthlyPremium: premiumStats.averagePremium,
-    highPremium: premiumStats.highPremium,
-    lowPremium: premiumStats.lowPremium,
-    medianPremium: premiumStats.medianPremium,
-  };
+  nextRow.averageMonthlyPremium = premiumStats.averagePremium;
+  nextRow.highPremium = premiumStats.highPremium;
+  nextRow.lowPremium = premiumStats.lowPremium;
+  nextRow.medianPremium = premiumStats.medianPremium;
+  nextRow["Average Premium"] = formatAnalysisCurrency(premiumStats.averagePremium);
+  nextRow["average premium"] = formatAnalysisCurrency(premiumStats.averagePremium);
+  nextRow["High Premium"] = formatAnalysisCurrency(premiumStats.highPremium);
+  nextRow["high premium"] = formatAnalysisCurrency(premiumStats.highPremium);
+  nextRow["Low Premium"] = formatAnalysisCurrency(premiumStats.lowPremium);
+  nextRow["low premium"] = formatAnalysisCurrency(premiumStats.lowPremium);
+  nextRow["Median Premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
+  nextRow["median premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
+  return nextRow;
 }
 
 function getAnalysisRateFieldCandidates(rows = []) {

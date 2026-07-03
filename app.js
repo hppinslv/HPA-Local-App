@@ -7469,6 +7469,45 @@ function buildPremiumStatsFromDetailRowsForReview(detailRows = [], scf = "", key
   };
 }
 
+function applyPremiumStatsToReviewRow(row = {}, premiumStats = {}) {
+  const nextRow = { ...(row || {}) };
+  const premiumKeys = [
+    "Average Premium",
+    "average premium",
+    "High Premium",
+    "high premium",
+    "Low Premium",
+    "low premium",
+    "Median Premium",
+    "median premium",
+  ];
+
+  if (!Number.isFinite(premiumStats?.premiumCount) || premiumStats.premiumCount <= 0) {
+    premiumKeys.forEach((key) => {
+      delete nextRow[key];
+    });
+    nextRow.averageMonthlyPremium = null;
+    nextRow.highPremium = null;
+    nextRow.lowPremium = null;
+    nextRow.medianPremium = null;
+    return nextRow;
+  }
+
+  nextRow.averageMonthlyPremium = premiumStats.averagePremium;
+  nextRow.highPremium = premiumStats.highPremium;
+  nextRow.lowPremium = premiumStats.lowPremium;
+  nextRow.medianPremium = premiumStats.medianPremium;
+  nextRow["Average Premium"] = formatAnalysisCurrency(premiumStats.averagePremium);
+  nextRow["average premium"] = formatAnalysisCurrency(premiumStats.averagePremium);
+  nextRow["High Premium"] = formatAnalysisCurrency(premiumStats.highPremium);
+  nextRow["high premium"] = formatAnalysisCurrency(premiumStats.highPremium);
+  nextRow["Low Premium"] = formatAnalysisCurrency(premiumStats.lowPremium);
+  nextRow["low premium"] = formatAnalysisCurrency(premiumStats.lowPremium);
+  nextRow["Median Premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
+  nextRow["median premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
+  return nextRow;
+}
+
 function resolveNavigatorSoldCount(row = {}, options = {}) {
   const convertedCountFallback = Number(options?.convertedCountFallback || 0);
   const oppCount = getRowMetricNumber(row, "Opp Count");
@@ -11133,18 +11172,7 @@ function renderAnalysisComparisonReviewPanel() {
       selectedScfForPremiumStats,
       expectedKeyCode
     );
-    const metricsSourceRow = { ...(exactRow || fallbackRow || {}) };
-    if (premiumStats?.premiumCount > 0) {
-      metricsSourceRow.averageMonthlyPremium = premiumStats.averagePremium;
-      metricsSourceRow.highPremium = premiumStats.highPremium;
-      metricsSourceRow.lowPremium = premiumStats.lowPremium;
-      metricsSourceRow.medianPremium = premiumStats.medianPremium;
-    } else {
-      metricsSourceRow.averageMonthlyPremium = null;
-      metricsSourceRow.highPremium = null;
-      metricsSourceRow.lowPremium = null;
-      metricsSourceRow.medianPremium = null;
-    }
+    const metricsSourceRow = applyPremiumStatsToReviewRow(exactRow || fallbackRow || {}, premiumStats);
     const matchingRows = Array.isArray(detailRows)
       ? detailRows.filter((row) => {
         const rowScf = getReviewMetricScf(row);
