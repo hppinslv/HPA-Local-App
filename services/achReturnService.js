@@ -285,13 +285,16 @@ function normalizeComparableText(value) {
 }
 
 function buildAchReturnCommentKeyParts(row = {}) {
+  const creditDateIso = normalizeDateText(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded);
+  const creditDateDisplay = formatDateMmDdYyyy(creditDateIso || row.creditDate || row.parsed_details?.batchDate || row.dateRefunded);
   return [
     normalizeComparableText(row.certificateNumber),
     normalizeComparableText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber),
     normalizeComparableText(normalizeAmount(row.creditAmount)),
     normalizeComparableText(row.returnCode || row.reasonCode),
     normalizeComparableText(row.returnReason),
-    normalizeComparableText(normalizeDateText(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded)),
+    normalizeComparableText(creditDateIso),
+    normalizeComparableText(creditDateDisplay),
   ].filter(Boolean);
 }
 
@@ -412,10 +415,10 @@ function findDescribeField(describePayload, candidates = [], fallbackPredicate =
 function buildReturnedCheckCommentTypeCandidates(row = {}) {
   const returnCode = normalizeText(row.returnCode || row.reasonCode).toUpperCase();
   return [
+    "Admin",
     "Returned Check",
     returnCode === "ISF" || returnCode === "NSF" ? "Payment Issue" : "",
     "Billing",
-    "Admin",
   ].filter(Boolean);
 }
 
@@ -423,12 +426,12 @@ function buildReturnedCheckCommentReasonCandidates(row = {}) {
   const returnCode = normalizeText(row.returnCode || row.reasonCode).toUpperCase();
   const returnReason = normalizeText(row.returnReason);
   return [
+    "Processed refund",
     returnCode,
     returnReason,
     `${returnCode} ${returnReason}`.trim(),
     "Returned Check",
     "Payment Issue",
-    "Processed refund",
     "Billing",
   ].filter(Boolean);
 }
@@ -524,7 +527,12 @@ function buildReturnedCheckTaskPayload(row = {}, fieldConfig, processedAt = new 
 function isEquivalentReturnedCheckTask(record = {}, row = {}) {
   const combinedText = normalizeComparableText([record.Subject, record.Description].filter(Boolean).join(" "));
   if (!combinedText) return false;
-  if (!combinedText.includes("returned check") && !combinedText.includes("processed returned check")) {
+  if (
+    !combinedText.includes("returned check") &&
+    !combinedText.includes("processed returned check") &&
+    !combinedText.includes("admin") &&
+    !combinedText.includes("processed refund")
+  ) {
     return false;
   }
 
@@ -534,7 +542,7 @@ function isEquivalentReturnedCheckTask(record = {}, row = {}) {
     return false;
   }
 
-  const requiredThreshold = Math.min(3, keyParts.length || 0);
+  const requiredThreshold = Math.min(4, keyParts.length || 0);
   return matchedParts.length >= requiredThreshold;
 }
 

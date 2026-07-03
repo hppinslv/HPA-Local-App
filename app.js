@@ -13643,12 +13643,18 @@ async function loadAnalysisSetupView(options = {}) {
     excludeCompleted: options.excludeCompleted !== false,
   });
   const targetSetupId = String(preferredSetup?.id || persistedSetupId || "").trim();
+  let restoredComparisonDraft = false;
   if (targetSetupId && (!state.analysis.setupHydrated || state.analysis.currentSetupId !== targetSetupId)) {
     try {
       const response = await apiRequest(`/api/analysis/setups/${encodeURIComponent(targetSetupId)}`);
       loadSetupIntoWorkspace(response.setup || {});
       state.analysis.currentSetupId = targetSetupId;
       persistAnalysisSetupId(targetSetupId);
+      restoredComparisonDraft = restorePersistedAnalysisSetupDraft(targetSetupId);
+      if (restoredComparisonDraft) {
+        hydrateAnalysisWorkspaceFromSavedReports();
+        recoverComparisonSetupFromWorkspace();
+      }
     } catch (error) {
       persistAnalysisSetupId("");
       const message = getAnalysisComparisonsLoadErrorMessage();
@@ -13682,7 +13688,7 @@ async function loadAnalysisSetupView(options = {}) {
     });
   }
 
-  if (options.freshComparisonSetup === true) {
+  if (options.freshComparisonSetup === true && !restoredComparisonDraft) {
     resetComparisonWorkspace();
     persistAnalysisSetupDraft();
   }

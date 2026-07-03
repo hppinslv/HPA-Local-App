@@ -40,7 +40,7 @@ test("buildReturnedCheckTaskPayload maps the Certificate as Related To and sets 
       activityDateField: { name: "ActivityDate", nillable: true },
       commentTypeField: {
         name: "Type",
-        picklistValues: [{ value: "Returned Check", active: true }],
+        picklistValues: [{ value: "Admin", active: true }],
       },
       commentReasonField: {
         name: "Comment_Reason__c",
@@ -53,9 +53,9 @@ test("buildReturnedCheckTaskPayload maps the Certificate as Related To and sets 
   assert.equal(payload.payload.WhatId, "001ABC123");
   assert.equal(payload.payload.TaskSubtype, "Call");
   assert.equal(payload.payload.Status, "Completed");
-  assert.equal(payload.payload.Type, "Returned Check");
+  assert.equal(payload.payload.Type, "Admin");
   assert.equal(payload.payload.Comment_Reason__c, "Processed refund");
-  assert.equal(payload.payload.Subject, "Returned Check - Processed refund");
+  assert.equal(payload.payload.Subject, "Admin - Processed refund");
   assert.match(payload.payload.Description, /Rcvd notice from the bank of NSF\./);
 });
 
@@ -70,7 +70,7 @@ test("isEquivalentReturnedCheckTask matches generated returned check activities 
   };
 
   const existingTask = {
-    Subject: "Returned Check",
+    Subject: "Admin - Processed refund",
     Description:
       "Rcvd notice from the bank of ISF. Processed returned check reversal/credit of $71.41. Check #5551. Return date 07/01/2026. Processed on 07/03/2026.",
   };
