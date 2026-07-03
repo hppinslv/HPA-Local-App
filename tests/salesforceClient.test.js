@@ -243,6 +243,52 @@ test("total converted monthly premiums uses the Salesforce total converted month
   assert.equal(row["sum of total converted monthly premiums"], "$76.05");
 });
 
+test("average high and low premium use detail total monthly premium rows for the scf", () => {
+  const dataset = buildFlatRowsFromDetailExport([
+    {
+      "SCF Grouping": "199",
+      Key: "N",
+      Mailed: 1411,
+      "Opp Count": 0,
+      "In Force": 0,
+      "Sum of Sold": 0,
+      "Total Monthly Premium": "$134.46",
+    },
+    {
+      "SCF Grouping": "199",
+      Key: "N",
+      Mailed: 0,
+      "Opp Count": 0,
+      "In Force": 1,
+      "Sum of Sold": 0,
+      "Total Monthly Premium": "$125.86",
+    },
+    {
+      "SCF Grouping": "199",
+      Key: "N",
+      Mailed: 0,
+      "Opp Count": 1,
+      "In Force": 0,
+      "Sum of Sold": 1,
+      "Total Monthly Premium": "$77.59",
+    },
+    {
+      "SCF Grouping": "199",
+      Key: "N",
+      Mailed: 0,
+      "Opp Count": 0,
+      "In Force": 0,
+      "Sum of Sold": 0,
+      "Total Monthly Premium": "$54.25",
+    },
+  ]);
+
+  const row = getAggregateRow(dataset, "199");
+  assert.equal(Number(row.averageMonthlyPremium.toFixed(2)), 98.04);
+  assert.equal(row.highPremium, 134.46);
+  assert.equal(row.lowPremium, 54.25);
+});
+
 test("converted count uses one certificate per positive converted premium row instead of sold count", () => {
   const convertedCount = resolveAnalysisConvertedCount(
     {

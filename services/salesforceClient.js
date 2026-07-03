@@ -2847,13 +2847,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     const rowSalesforceSoldRate = resolveAnalysisExplicitRate(row, ["Sold Rate"]);
     const rowSalesforceInForceRate = resolveAnalysisExplicitRate(row, ["In Force Rate"]);
     const rowSalesforceConvertedRate = resolveAnalysisExplicitRate(row, ["Converted Rate"]);
-    const rowApplicationPremium = rowTotalMonthlyPremium > 0
-      ? rowTotalMonthlyPremium
-      : rowConvertedPremium > 0
-        ? rowConvertedPremium
-        : rowInForceMonthlyPremium > 0
-          ? rowInForceMonthlyPremium
-          : 0;
+    const rowApplicationPremium = rowTotalMonthlyPremium > 0 ? rowTotalMonthlyPremium : 0;
     const current = aggregateMap.get(aggregateKey) || {
       scf,
       keyCode,
@@ -2866,6 +2860,7 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
       inForceMonthlyPremium: 0,
       totalConvertedMonthlyPremiums: 0,
       applicationPremiumTotal: 0,
+      applicationPremiumCount: 0,
       highPremium: null,
       lowPremium: null,
       salesforceSoldRate: null,
@@ -2905,8 +2900,9 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
     if ((current.salesforceConvertedRate === null || current.salesforceConvertedRate === 0) && Number.isFinite(rowSalesforceConvertedRate) && rowSalesforceConvertedRate !== 0) {
       current.salesforceConvertedRate = rowSalesforceConvertedRate;
     }
-    if (rowSoldCount > 0 && rowApplicationPremium > 0) {
+    if (rowApplicationPremium > 0) {
       current.applicationPremiumTotal += rowApplicationPremium;
+      current.applicationPremiumCount += 1;
       current.highPremium = current.highPremium === null
         ? rowApplicationPremium
         : Math.max(current.highPremium, rowApplicationPremium);
@@ -2962,7 +2958,9 @@ function buildFlatRowsFromDetailExport(exportRows = []) {
         totalConvertedMonthlyPremiums: entry.totalConvertedMonthlyPremiums,
         mailed: entry.mailed,
       });
-      const averageSoldPremium = entry.soldCount > 0 ? entry.applicationPremiumTotal / entry.soldCount : 0;
+      const averageSoldPremium = entry.applicationPremiumCount > 0
+        ? entry.applicationPremiumTotal / entry.applicationPremiumCount
+        : 0;
 
       const summaryRow = {
         "SCF Grouping": entry.scf,

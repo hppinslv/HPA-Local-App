@@ -7530,6 +7530,27 @@ function normalizeAnalysisMetricRow(row = {}) {
   normalizedRow["sum of in force monthly premium"] = formatAnalysisCurrency(inForceMonthlyPremium);
   normalizedRow["Sum of Total Converted Monthly Premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
   normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
+  const averagePremium = Number.isFinite(Number(row.averageMonthlyPremium))
+    ? Number(row.averageMonthlyPremium)
+    : null;
+  const highPremium = Number.isFinite(Number(row.highPremium))
+    ? Number(row.highPremium)
+    : null;
+  const lowPremium = Number.isFinite(Number(row.lowPremium))
+    ? Number(row.lowPremium)
+    : null;
+  if (averagePremium !== null) {
+    normalizedRow["Average Premium"] = formatAnalysisCurrency(averagePremium);
+    normalizedRow["average premium"] = formatAnalysisCurrency(averagePremium);
+  }
+  if (highPremium !== null) {
+    normalizedRow["High Premium"] = formatAnalysisCurrency(highPremium);
+    normalizedRow["high premium"] = formatAnalysisCurrency(highPremium);
+  }
+  if (lowPremium !== null) {
+    normalizedRow["Low Premium"] = formatAnalysisCurrency(lowPremium);
+    normalizedRow["low premium"] = formatAnalysisCurrency(lowPremium);
+  }
   normalizedRow["Sum of Opp Count"] = formatNavigatorCount(oppCount);
   normalizedRow["sum of opp count"] = formatNavigatorCount(oppCount);
   normalizedRow["Sum of Sold"] = formatNavigatorCount(soldCount);
