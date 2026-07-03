@@ -4178,9 +4178,14 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     )
   ).sort();
   const filteredSummaryRows = filterAnalysisRows(finalizedFlattened.rows, filters);
-  const filteredExportRows = hasAnalysisDetailExportRows(preferredExport.rows)
-    ? filterAnalysisRows(preferredExport.rows, filters)
-    : [];
+  const filteredExportRows = filterAnalysisRows(preferredExport.rows || [], filters);
+  const fallbackToUnfilteredExportRows = (
+    !Array.isArray(filteredExportRows) ||
+    filteredExportRows.length === 0
+  ) && hasAnalysisDetailExportRows(preferredExport.rows || []);
+  const persistedExportRows = fallbackToUnfilteredExportRows
+    ? ensureArray(preferredExport.rows).filter((row) => !isAnalysisAggregateRow(row))
+    : ensureArray(filteredExportRows);
 
   return {
     reportId,
@@ -4191,10 +4196,12 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
     columns: finalizedFlattened.columns,
     summaryValues: finalizedFlattened.summaryValues || [],
     rows: filteredSummaryRows,
-    exportColumns: filteredExportRows.length ? preferredExport.columns : [],
-    exportRows: filteredExportRows,
+    exportColumns: persistedExportRows.length ? preferredExport.columns : [],
+    exportRows: persistedExportRows,
+    detailRows: persistedExportRows,
+    detail_rows: persistedExportRows,
     unfilteredRowCount: finalizedFlattened.rows.length,
-    exportRowCount: filteredExportRows.length,
+    exportRowCount: persistedExportRows.length,
     availableKeyValues,
     diagnostics,
   };

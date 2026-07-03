@@ -7349,6 +7349,126 @@ function parseAnalysisMetricNumber(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function parseCurrencyNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const raw = String(value).trim();
+  const isNegative = raw.startsWith("(") && raw.endsWith(")");
+  const cleaned = raw.replace(/[$,%(),\s]/g, "");
+  const parsed = Number(cleaned);
+
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+
+  return isNegative ? -parsed : parsed;
+}
+
+function getMedian(values = []) {
+  const sorted = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+
+  if (!sorted.length) {
+    return 0;
+  }
+
+  const middle = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2) {
+    return sorted[middle];
+  }
+
+  return (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function getReviewMetricScf(row = {}) {
+  return normalizeScf(
+    row["SCF Grouping"] ??
+    row["scf grouping"] ??
+    row.scfGrouping ??
+    row["SCF"] ??
+    row.scf ??
+    ""
+  );
+}
+
+function getReviewMetricRowKey(row = {}) {
+  return String(row["Key"] ?? row.key ?? row["Report Key"] ?? row["report key"] ?? "").trim().toUpperCase();
+}
+
+function getReviewMetricTotalMonthlyPremium(row = {}) {
+  return parseCurrencyNumber(
+    row["Total Monthly Premium"] ??
+    row["total monthly premium"] ??
+    row["Sum of Total Monthly Premium"] ??
+    row["sum of total monthly premium"] ??
+    row["Sum of Total Sold"] ??
+    row["sum of total sold"] ??
+    row.totalMonthlyPremium ??
+    row.sumTotalMonthlyPremium ??
+    0
+  );
+}
+
+function getReviewExpectedKeyCode(report = {}) {
+  const normalized = ensureArray(report?.parameters?.key_codes)
+    .map((value) => String(value || "").trim().toUpperCase())
+    .map((value) => (value === "NHCL" ? "N" : value))
+    .filter(Boolean);
+
+  if (normalized.includes("RFC")) {
+    return "RFC";
+  }
+  if (normalized.includes("N")) {
+    return "N";
+  }
+  return normalized[0] || "";
+}
+
+function buildPremiumStatsFromDetailRowsForReview(detailRows = [], scf = "", keyCode = "") {
+  const normalizedScf = normalizeScf(scf);
+  const normalizedKey = String(keyCode || "").trim().toUpperCase();
+
+  const premiums = ensureArray(detailRows)
+    .filter((row) => {
+      if (getReviewMetricScf(row) !== normalizedScf) {
+        return false;
+      }
+      if (!normalizedKey) {
+        return true;
+      }
+      return getReviewMetricRowKey(row) === normalizedKey;
+    })
+    .map((row) => getReviewMetricTotalMonthlyPremium(row))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (!premiums.length) {
+    return {
+      averagePremium: 0,
+      highPremium: null,
+      lowPremium: null,
+      medianPremium: null,
+      premiumCount: 0,
+    };
+  }
+
+  return {
+    averagePremium: premiums.reduce((sum, value) => sum + value, 0) / premiums.length,
+    highPremium: Math.max(...premiums),
+    lowPremium: Math.min(...premiums),
+    medianPremium: getMedian(premiums),
+    premiumCount: premiums.length,
+  };
+}
+
 function resolveNavigatorSoldCount(row = {}, options = {}) {
   const convertedCountFallback = Number(options?.convertedCountFallback || 0);
   const oppCount = getRowMetricNumber(row, "Opp Count");
@@ -7539,6 +7659,9 @@ function normalizeAnalysisMetricRow(row = {}) {
   const lowPremium = Number.isFinite(Number(row.lowPremium))
     ? Number(row.lowPremium)
     : null;
+  const medianPremium = Number.isFinite(Number(row.medianPremium))
+    ? Number(row.medianPremium)
+    : null;
   if (averagePremium !== null) {
     normalizedRow["Average Premium"] = formatAnalysisCurrency(averagePremium);
     normalizedRow["average premium"] = formatAnalysisCurrency(averagePremium);
@@ -7550,6 +7673,10 @@ function normalizeAnalysisMetricRow(row = {}) {
   if (lowPremium !== null) {
     normalizedRow["Low Premium"] = formatAnalysisCurrency(lowPremium);
     normalizedRow["low premium"] = formatAnalysisCurrency(lowPremium);
+  }
+  if (medianPremium !== null) {
+    normalizedRow["Median Premium"] = formatAnalysisCurrency(medianPremium);
+    normalizedRow["median premium"] = formatAnalysisCurrency(medianPremium);
   }
   normalizedRow["Sum of Opp Count"] = formatNavigatorCount(oppCount);
   normalizedRow["sum of opp count"] = formatNavigatorCount(oppCount);
@@ -8002,6 +8129,7 @@ function getMetricLabelAliases(metricLabel) {
     "average premium": ["Average Premium"],
     "high premium": ["High Premium"],
     "low premium": ["Low Premium"],
+    "median premium": ["Median Premium"],
     "total monthly premium": ["Sum of Total Sold", "Sum of Total Monthly Premium"],
     "sum of total monthly premium": ["Sum of Total Sold", "Total Monthly Premium"],
     "sum of total sold": ["Sum of Total Monthly Premium", "Total Monthly Premium"],
@@ -10992,7 +11120,59 @@ function renderAnalysisComparisonReviewPanel() {
     }
     const hasExactMetrics = cachedMetrics?.status === "ready";
     const exactRow = hasExactMetrics ? cachedMetrics.row : null;
-    const row = normalizeAnalysisMetricRow(exactRow || fallbackRow);
+    const selectedScfForPremiumStats = normalizeScf(effectiveSelectedScf);
+    const detailRows =
+      report?.exportRows ||
+      report?.export_rows ||
+      report?.detailRows ||
+      report?.detail_rows ||
+      [];
+    const expectedKeyCode = getReviewExpectedKeyCode(report);
+    const premiumStats = buildPremiumStatsFromDetailRowsForReview(
+      Array.isArray(detailRows) ? detailRows : [],
+      selectedScfForPremiumStats,
+      expectedKeyCode
+    );
+    const metricsSourceRow = { ...(exactRow || fallbackRow || {}) };
+    if (premiumStats?.premiumCount > 0) {
+      metricsSourceRow.averageMonthlyPremium = premiumStats.averagePremium;
+      metricsSourceRow.highPremium = premiumStats.highPremium;
+      metricsSourceRow.lowPremium = premiumStats.lowPremium;
+      metricsSourceRow.medianPremium = premiumStats.medianPremium;
+    } else {
+      metricsSourceRow.averageMonthlyPremium = null;
+      metricsSourceRow.highPremium = null;
+      metricsSourceRow.lowPremium = null;
+      metricsSourceRow.medianPremium = null;
+    }
+    const matchingRows = Array.isArray(detailRows)
+      ? detailRows.filter((row) => {
+        const rowScf = getReviewMetricScf(row);
+        const rowKey = getReviewMetricRowKey(row);
+        const hasKeyFilter = String(expectedKeyCode || "").trim() !== "";
+        return rowScf === selectedScfForPremiumStats && (!hasKeyFilter || rowKey === String(expectedKeyCode).trim().toUpperCase());
+      })
+      : [];
+    if (selectedScfForPremiumStats === "199") {
+      console.log("[SCF Premium Stats Debug]", {
+        reportId: report.id,
+        reportName: report.report_name || report.reportName || report.name,
+        selectedScf: selectedScfForPremiumStats,
+        expectedKeyCode,
+        detailRowCount: Array.isArray(detailRows) ? detailRows.length : 0,
+        matchingRows: matchingRows.length,
+        sampleMatchingRows: matchingRows
+          .slice(0, 10)
+          .map((row) => ({
+            scf: getReviewMetricScf(row),
+            key: getReviewMetricRowKey(row),
+            totalMonthlyPremium: row["Total Monthly Premium"] ?? row["total monthly premium"],
+            parsedPremium: getReviewMetricTotalMonthlyPremium(row),
+          })),
+        premiumStats,
+      });
+    }
+    const row = normalizeAnalysisMetricRow(metricsSourceRow);
     const isMetricLoading = needsExactMetrics && cachedMetrics?.status === "loading";
     const hasMetricError = cachedMetrics?.status === "error";
     const totalMailed = row ? getTotalMailedFromRow(row) : "";
@@ -11041,6 +11221,11 @@ function renderAnalysisComparisonReviewPanel() {
         : "-";
     const lowPremiumDisplay = row
       ? getRowMetricDisplayValue(row, "Low Premium")
+      : isMetricLoading
+        ? "Loading..."
+        : "-";
+    const medianPremiumDisplay = row
+      ? getRowMetricDisplayValue(row, "Median Premium")
       : isMetricLoading
         ? "Loading..."
         : "-";
@@ -11098,6 +11283,10 @@ function renderAnalysisComparisonReviewPanel() {
           <div>
             <span class="field-label">Low Premium</span>
             <strong>${esc(lowPremiumDisplay)}</strong>
+          </div>
+          <div>
+            <span class="field-label">Median Premium</span>
+            <strong>${esc(medianPremiumDisplay)}</strong>
           </div>
         </div>
         <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">

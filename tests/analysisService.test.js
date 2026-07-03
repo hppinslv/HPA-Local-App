@@ -10,6 +10,7 @@ const {
   buildAnalysisReportName,
   buildPersistedComparisonSetups,
   choosePreferredAnalysisScfRow,
+  buildPremiumStatsFromDetailRows,
   mergeAnalysisMetricRowsPreferNonZero,
 } = require("../services/analysisService");
 
@@ -196,6 +197,36 @@ test("live fallback preserves saved premium metrics when the live row omits them
   assert.equal(merged.lowPremium, 54.25);
 });
 
+test("buildPremiumStatsFromDetailRows handles SCF 199 N detail rows", () => {
+  const rows = [
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$134.46" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$125.86" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$146.01" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$77.59" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$54.25" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$106.74" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$114.31" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$68.35" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$155.91" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$117.94" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$126.19" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$70.75" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$129.73" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$103.33" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$54.25" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$102.89" },
+    { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$101.77" },
+  ];
+
+  const stats = buildPremiumStatsFromDetailRows(rows, "199", "N");
+
+  assert.equal(stats.premiumCount, 17);
+  assert.equal(stats.highPremium, 155.91);
+  assert.equal(stats.lowPremium, 54.25);
+  assert.equal(stats.medianPremium, 106.74);
+  assert.ok(stats.averagePremium > 0);
+});
+
 test("saved summary rows missing high and low premium values trigger live scf metric supplementation", async () => {
   const tempDir = createTempAnalysisDir();
   const salesforceClientPath = require.resolve("../services/salesforceClient");
@@ -246,18 +277,23 @@ test("saved summary rows missing high and low premium values trigger live scf me
           },
         ],
         exportRows: [
-          {
-            "SCF Grouping": "199",
-            "Key": "N",
-            "Sum of Mailed": "20,757",
-            "Sum of Opp Count": "36",
-            "Sum of In Force": "7",
-            "Sum of Converted": "15",
-            "Sold Rate": "0.9760575670",
-            "In Force Rate": "0.2239105833",
-            "Converted Rate": "0.4998427293",
-            averageMonthlyPremium: 83.6288888889,
-          },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$134.46" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$125.86" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$146.01" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$77.59" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$54.25" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$106.74" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$114.31" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$68.35" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$155.91" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$117.94" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$126.19" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$70.75" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$129.73" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$103.33" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$54.25" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$102.89" },
+          { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$101.77" },
         ],
       },
     ], null, 2)
@@ -285,11 +321,12 @@ test("saved summary rows missing high and low premium values trigger live scf me
     const reports = service.listAnalysisReports();
     assert.ok(reports.some((report) => report.id === "report_199"));
     const result = await service.getAnalysisReportScfMetrics("report_199", "199");
-    assert.equal(stubCallCount, 1);
-    assert.equal(result.source, "saved-summary-with-live-supplement");
-    assert.equal(Number(result.row.averageMonthlyPremium.toFixed(2)), 83.63);
-    assert.equal(result.row.highPremium, 134.46);
+    assert.equal(stubCallCount, 0);
+    assert.equal(result.source, "saved-detail-export-aggregate");
+    assert.equal(Number(result.row.averageMonthlyPremium.toFixed(2)), 105.31);
+    assert.equal(result.row.highPremium, 155.91);
     assert.equal(result.row.lowPremium, 54.25);
+    assert.equal(result.row.medianPremium, 106.74);
   } finally {
     salesforceClient.fetchAnalysisReportScfMetrics = originalFetchAnalysisReportScfMetrics;
     delete require.cache[analysisServicePath];

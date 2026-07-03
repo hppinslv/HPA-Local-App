@@ -117,6 +117,169 @@ function normalizeAnalysisStoredKeyCode(value) {
   return normalized;
 }
 
+function parseCurrencyNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const raw = String(value).trim();
+  const isNegative = raw.startsWith("(") && raw.endsWith(")");
+  const cleaned = raw.replace(/[$,%(),\s]/g, "");
+  const parsed = Number(cleaned);
+
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+
+  return isNegative ? -parsed : parsed;
+}
+
+function getMedian(values = []) {
+  const sorted = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+
+  if (!sorted.length) {
+    return 0;
+  }
+
+  const middle = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2) {
+    return sorted[middle];
+  }
+
+  return (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function getScfFromRow(row = {}) {
+  return normalizeScf(
+    row["SCF Grouping"] ??
+    row["scf grouping"] ??
+    row.scfGrouping ??
+    row["SCF"] ??
+    row.scf ??
+    row["scf"] ??
+    ""
+  );
+}
+
+function getKeyFromRow(row = {}) {
+  return String(row["Key"] ?? row.key ?? row["Report Key"] ?? row["report key"] ?? "").trim().toUpperCase();
+}
+
+function isAnalysisAggregateRow(row = {}) {
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+
+  return Object.keys(row).some((key) => {
+    const normalized = normalizeLabel(key);
+    return (
+      normalized === "sum of mailed" ||
+      normalized === "sum of opp count" ||
+      normalized === "sum of in force" ||
+      normalized === "sum of sold" ||
+      normalized === "sold rate" ||
+      normalized === "in force rate" ||
+      normalized === "converted rate"
+    );
+  });
+}
+
+function getTotalMonthlyPremiumFromRow(row = {}) {
+  return parseCurrencyNumber(
+    row["Total Monthly Premium"] ??
+      row["total monthly premium"] ??
+      row["Sum of Total Monthly Premium"] ??
+      row["sum of total monthly premium"] ??
+      row["Sum of Total Sold"] ??
+      row["sum of total sold"] ??
+      row.totalMonthlyPremium ??
+      row.sumTotalMonthlyPremium ??
+      0
+  );
+}
+
+function getExpectedReviewKeyCode(normalizedKeys = []) {
+  const normalized = ensureArray(normalizedKeys)
+    .map((value) => normalizeAnalysisStoredKeyCode(value))
+    .filter(Boolean);
+
+  if (normalized.includes("RFC")) {
+    return "RFC";
+  }
+  if (normalized.includes("N")) {
+    return "N";
+  }
+  return normalized[0] || "";
+}
+
+function buildPremiumStatsFromDetailRows(detailRows = [], scf = "", keyCode = "") {
+  const normalizedScf = normalizeScf(scf);
+  const normalizedKey = String(keyCode || "").trim().toUpperCase();
+
+  const premiums = ensureArray(detailRows)
+    .filter((row) => {
+      if (getScfFromRow(row) !== normalizedScf) {
+        return false;
+      }
+      if (!normalizedKey) {
+        return true;
+      }
+      return getKeyFromRow(row) === normalizedKey;
+    })
+    .map((row) => getTotalMonthlyPremiumFromRow(row))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (!premiums.length) {
+    return {
+      averagePremium: 0,
+      highPremium: null,
+      lowPremium: null,
+      medianPremium: null,
+      premiumCount: 0,
+    };
+  }
+
+  return {
+    averagePremium: premiums.reduce((sum, value) => sum + value, 0) / premiums.length,
+    highPremium: Math.max(...premiums),
+    lowPremium: Math.min(...premiums),
+    medianPremium: getMedian(premiums),
+    premiumCount: premiums.length,
+  };
+}
+
+function applyPremiumStatsFromDetailRows(row = {}, premiumStats = {}) {
+  if (!row || !Number.isFinite(premiumStats?.premiumCount)) {
+    return row;
+  }
+
+  if (premiumStats.premiumCount <= 0) {
+    return {
+      ...row,
+      averageMonthlyPremium: null,
+      highPremium: null,
+      lowPremium: null,
+      medianPremium: null,
+    };
+  }
+
+  return {
+    ...row,
+    averageMonthlyPremium: premiumStats.averagePremium,
+    highPremium: premiumStats.highPremium,
+    lowPremium: premiumStats.lowPremium,
+    medianPremium: premiumStats.medianPremium,
+  };
+}
+
 function getAnalysisRateFieldCandidates(rows = []) {
   const candidates = {
     mailed: new Set(),
@@ -1201,10 +1364,12 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
   const rawRows = ensureArray(options.rows);
   const rawExportColumns = ensureArray(options.exportColumns || rawColumns);
   const rawExportRows = ensureArray(options.exportRows || rawRows);
+  const rawDetailRows = ensureArray(options.detailRows || rawExportRows);
   const columns = relabelAnalysisColumns(rawColumns);
   const rows = relabelAnalysisRows(rawRows, rawColumns);
   const exportColumns = relabelAnalysisColumns(rawExportColumns);
   const exportRows = relabelAnalysisRows(rawExportRows, rawExportColumns);
+  const detailRows = relabelAnalysisRows(rawDetailRows, rawExportColumns);
   const inputRowCount = Number(options.inputRowCount || 0);
   const exportRowCount = Number(options.exportRowCount || exportRows.length || 0);
   const summaryValues = relabelAnalysisSummaryValues(options.summaryValues);
@@ -1275,6 +1440,8 @@ function buildAnalysisReportRecord(run, pull, options = {}) {
     rows,
     exportColumns,
     exportRows,
+    detailRows,
+    detail_rows: detailRows,
     error_message: options.errorMessage || "",
     warning_message: options.warningMessage || "",
     diagnostics: options.diagnostics || null,
@@ -1292,6 +1459,11 @@ function buildAnalysisReportsFromRuns(runs = []) {
       const exportRows = ensureArray(pull.exportRows).length
         ? ensureArray(pull.exportRows)
         : ensureArray(pull.rows);
+      const detailRows = ensureArray(pull.detailRows).length
+        ? ensureArray(pull.detailRows)
+        : ensureArray(pull.exportRows).length
+          ? ensureArray(pull.exportRows)
+          : ensureArray(pull.rows);
       const exportRowCount = Number(
         pull.exportRowCount || pull.resultCount || pull.rawRowCount || exportRows.length || 0
       );
@@ -1307,6 +1479,7 @@ function buildAnalysisReportsFromRuns(runs = []) {
           summaryValues: ensureArray(pull.summaryValues),
           exportColumns,
           exportRows,
+          detailRows,
           exportRowCount,
           inputRowCount: Number(pull.rawRowCount || 0),
           zeroReason:
@@ -1427,7 +1600,7 @@ function normalizePersistedAnalysisReports(reports = []) {
 }
 
 function normalizePersistedAnalysisReport(report = {}) {
-  const exportRows = ensureArray(report.exportRows);
+  const exportRows = ensureArray(report.exportRows || report.export_rows || report.detailRows || report.detail_rows);
   if (!exportRows.length || !hasAnalysisDetailExportRows(exportRows) || typeof buildFlatRowsFromDetailExport !== "function") {
     const linkedRun = report.runId
       ? readAnalysisRuns().find((entry) => String(entry.id || "").trim() === String(report.runId || "").trim()) || null
@@ -4553,10 +4726,21 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
     throw new Error("Analysis report not found.");
   }
 
-  const savedExportRows = ensureArray(report.exportRows);
+  const savedExportRows = ensureArray(
+    report.exportRows ??
+    report.export_rows ??
+    report.detailRows ??
+    report.detail_rows ??
+    []
+  );
   const normalizedKeys = ensureArray(report.parameters?.key_codes)
     .map((value) => normalizeAnalysisStoredKeyCode(value))
     .filter(Boolean);
+  const premiumStats = buildPremiumStatsFromDetailRows(
+    savedExportRows,
+    normalizedScf,
+    getExpectedReviewKeyCode(normalizedKeys)
+  );
 
   if (savedExportRows.length && hasAnalysisDetailExportRows(savedExportRows)) {
     const savedSummary = buildFlatRowsFromDetailExport(savedExportRows);
@@ -4564,28 +4748,29 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
     if (matchingSavedRows.length) {
       const preferredSavedRow =
         matchingSavedRows.find((row) => !isSparseSavedAnalysisMetricRow(row)) || matchingSavedRows[0];
-      if (!isSparseSavedAnalysisMetricRow(preferredSavedRow)) {
-        return {
-          reportId: normalizedId,
-          scf: normalizedScf,
-          row: preferredSavedRow,
-          rows: matchingSavedRows,
-          source: "saved-detail-export-aggregate",
-        };
-      }
+      return {
+        reportId: normalizedId,
+        scf: normalizedScf,
+        row: applyPremiumStatsFromDetailRows(preferredSavedRow, premiumStats),
+        rows: matchingSavedRows,
+        source: "saved-detail-export-aggregate",
+      };
     }
   }
 
   const parameters = report.parameters || {};
   const savedSummaryRows = findAnalysisSummaryRow(report.rows, normalizedScf, normalizedKeys);
   const savedSummaryRow = savedSummaryRows[0] || null;
-  const shouldFetchLiveFallback = !savedSummaryRow || shouldRefetchLiveScfMetrics(savedSummaryRow, savedExportRows);
+  const shouldFetchLiveFallback = premiumStats.premiumCount
+    ? false
+    : !savedSummaryRow || shouldRefetchLiveScfMetrics(savedSummaryRow, savedExportRows);
 
   if (savedSummaryRow && !shouldFetchLiveFallback) {
+    const enhancedSummaryRow = applyPremiumStatsFromDetailRows(savedSummaryRow, premiumStats);
     return {
       reportId: normalizedId,
       scf: normalizedScf,
-      row: savedSummaryRow,
+      row: enhancedSummaryRow,
       rows: savedSummaryRows,
       source: "saved-summary-rows",
     };
@@ -4606,11 +4791,12 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
     const mergedRow = result?.row
       ? mergeAnalysisMetricRowsPreferNonZero(savedSummaryRow, result.row)
       : savedSummaryRow;
+    const enhancedMergedRow = applyPremiumStatsFromDetailRows(mergedRow, premiumStats);
     return {
       reportId: normalizedId,
       scf: normalizedScf,
-      row: mergedRow,
-      rows: result?.row ? [mergedRow] : savedSummaryRows,
+      row: enhancedMergedRow,
+      rows: result?.row ? [enhancedMergedRow] : savedSummaryRows,
       source: result?.row ? "saved-summary-with-live-supplement" : "saved-summary-rows",
     };
   }
@@ -4618,7 +4804,7 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
   return {
     reportId: normalizedId,
     scf: normalizedScf,
-    row: result.row,
+    row: applyPremiumStatsFromDetailRows(result.row, premiumStats),
     rows: result.rows,
     source: "salesforce-scoped-refetch",
   };
@@ -4869,6 +5055,9 @@ async function executeAnalysisRun(runId) {
         const savedExportRows = ensureArray(result.exportRows).length
           ? ensureArray(result.exportRows)
           : ensureArray(result.rows);
+        const savedDetailRows = ensureArray(result.detailRows).length
+          ? ensureArray(result.detailRows)
+          : savedExportRows;
         const exportRowCount = Number(result.exportRowCount || savedExportRows.length || 0);
         console.log("Input rows:", inputRows);
         console.log("Summary rows:", displayRows.length);
@@ -4923,6 +5112,7 @@ async function executeAnalysisRun(runId) {
           summaryValues: result.summaryValues || [],
           exportColumns: result.exportColumns || [],
           exportRows: savedExportRows,
+          detailRows: savedDetailRows,
           exportRowCount,
           inputRowCount: inputRows,
           zeroReason,
@@ -6151,6 +6341,7 @@ module.exports = {
   rebuildAnalysisReport,
   removeDnmStateGroup,
   removeReferenceListItem,
+  buildPremiumStatsFromDetailRows,
   writeReferenceListExport,
   saveAnalysisSetup,
   saveComparison,
