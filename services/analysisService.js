@@ -1328,12 +1328,55 @@ function readAnalysisReports() {
 
 function normalizePersistedAnalysisReports(reports = []) {
   let changed = false;
-  const normalizedReports = ensureArray(reports).map((report) => {
+  const normalizedSource = ensureArray(reports).map((report) => {
     const normalized = normalizePersistedAnalysisReport(report);
     if (normalized.changed) {
       changed = true;
     }
     return normalized.report;
+  });
+
+  const runIdSet = new Set(
+    readAnalysisRuns()
+      .map((entry) => String(entry?.id || "").trim())
+      .filter(Boolean)
+  );
+  const withoutOrphans = normalizedSource.filter((report) => {
+    const runId = String(report?.runId || "").trim();
+    if (!runId || runIdSet.has(runId)) {
+      return true;
+    }
+    changed = true;
+    return false;
+  });
+
+  const latestByPullId = new Map();
+  withoutOrphans.forEach((report) => {
+    const pullId = String(report?.pullId || report?.pull_id || "").trim();
+    if (!pullId) {
+      return;
+    }
+    const existing = latestByPullId.get(pullId);
+    const reportTime = Date.parse(report?.created_at || report?.updated_at || report?.completed_at || "") || 0;
+    const existingTime = existing
+      ? Date.parse(existing?.created_at || existing?.updated_at || existing?.completed_at || "") || 0
+      : -1;
+    if (!existing || reportTime >= existingTime) {
+      latestByPullId.set(pullId, report);
+    }
+  });
+
+  const normalizedReports = withoutOrphans.filter((report) => {
+    const pullId = String(report?.pullId || report?.pull_id || "").trim();
+    if (!pullId) {
+      return true;
+    }
+    const latest = latestByPullId.get(pullId);
+    const keep = latest && String(latest.id || "").trim() === String(report.id || "").trim();
+    if (!keep) {
+      changed = true;
+    }
+    return keep;
   });
 
   return {
@@ -3395,8 +3438,21 @@ function listAnalysisRuns() {
   return readAnalysisRuns().map(serializeAnalysisRun);
 }
 
-function listAnalysisReports() {
-  return readAnalysisReports().map(serializeAnalysisReport);
+function listAnalysisReports(options = {}) {
+  const normalizedSetupId = String(options?.setupId || "").trim();
+  const reports = normalizedSetupId
+    ? readAnalysisReports().filter((entry) => {
+        const reportSetupId = String(entry?.setupId || entry?.setup_id || "").trim();
+        if (reportSetupId) {
+          return reportSetupId === normalizedSetupId;
+        }
+        const runSetupId = String(
+          readAnalysisRuns().find((run) => String(run?.id || "").trim() === String(entry?.runId || "").trim())?.setupId || ""
+        ).trim();
+        return runSetupId === normalizedSetupId;
+      })
+    : readAnalysisReports();
+  return reports.map(serializeAnalysisReport);
 }
 
 function listAnalysisSetups() {
@@ -4048,6 +4104,30 @@ function pruneDeletedReportsFromSetup(setup, deletedReportIds = new Set()) {
   };
 }
 
+function expandReportsForDeletion(reports = [], targetReports = []) {
+  const normalizedTargets = ensureArray(targetReports).filter(Boolean);
+  if (!normalizedTargets.length) {
+    return [];
+  }
+
+  const targetIds = new Set(
+    normalizedTargets
+      .map((report) => String(report?.id || "").trim())
+      .filter(Boolean)
+  );
+  const targetPullIds = new Set(
+    normalizedTargets
+      .map((report) => String(report?.pullId || report?.pull_id || "").trim())
+      .filter(Boolean)
+  );
+
+  return ensureArray(reports).filter((report) => {
+    const reportId = String(report?.id || "").trim();
+    const pullId = String(report?.pullId || report?.pull_id || "").trim();
+    return targetIds.has(reportId) || (pullId && targetPullIds.has(pullId));
+  });
+}
+
 async function deleteAnalysisReport(reportId) {
   const normalizedReportId = String(reportId || "").trim();
   if (!normalizedReportId) {
@@ -4071,6 +4151,7 @@ async function deleteAnalysisReport(reportId) {
     };
   }
 
+  const reportsToDelete = expandReportsForDeletion(reports, [report]);
   const linkedRun = readAnalysisRuns().find((entry) => String(entry.id || "").trim() === String(report.runId || "").trim()) || null;
   const linkedSetup = linkedRun?.setupId
     ? readAnalysisSetups().find((entry) => String(entry.id || "").trim() === String(linkedRun.setupId || "").trim()) || null
@@ -4082,24 +4163,30 @@ async function deleteAnalysisReport(reportId) {
   console.log("[Saved Reports] deleting report pull", {
     reportId: normalizedReportId,
     setupId: String(report.setupId || linkedRun?.setupId || "").trim(),
+    siblingCount: reportsToDelete.length,
   });
   console.log("[Saved Reports] before delete count", reports.length);
 
-  if (report?.export_file_path) {
+  reportsToDelete.forEach((entry) => {
+    if (!entry?.export_file_path) return;
     try {
-      fs.unlinkSync(report.export_file_path);
+      fs.unlinkSync(entry.export_file_path);
     } catch (error) {
       // Ignore cleanup failures for already-removed exports.
     }
-  }
+  });
 
-  const nextReports = reports.filter((entry) => String(entry.id || "").trim() !== normalizedReportId);
+  const deletedIdSet = new Set(
+    reportsToDelete
+      .map((entry) => String(entry?.id || "").trim())
+      .filter(Boolean)
+  );
+  const nextReports = reports.filter((entry) => !deletedIdSet.has(String(entry.id || "").trim()));
   writeAnalysisReports(nextReports);
-  removeDeletedReportsFromRuns([report]);
+  removeDeletedReportsFromRuns(reportsToDelete);
   await flushAnalysisPersistence();
 
   const setups = readAnalysisSetups();
-  const deletedIdSet = new Set([normalizedReportId]);
   let removedReferencesCount = 0;
   const nextSetups = setups.map((setup) => {
     const pruned = pruneDeletedReportsFromSetup(setup, deletedIdSet);
@@ -4145,7 +4232,8 @@ async function deleteAnalysisReports(reportIds = []) {
 
   const reports = readAnalysisReports();
   const reportsById = new Map(reports.map((entry) => [String(entry.id || "").trim(), entry]));
-  const reportsToDelete = normalizedIds.map((id) => reportsById.get(id)).filter(Boolean);
+  const initiallyMatchedReports = normalizedIds.map((id) => reportsById.get(id)).filter(Boolean);
+  const reportsToDelete = expandReportsForDeletion(reports, initiallyMatchedReports);
   if (!reportsToDelete.length) {
     return {
       deletedIds: [],

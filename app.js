@@ -12830,16 +12830,23 @@ function bindAnalysisSubtabs() {
 }
 
 let analysisReportsLoadPromise = null;
+let analysisReportsLoadPromiseKey = "";
 let analysisSetupsLoadPromise = null;
 let analysisReportsLoadVersion = 0;
 let analysisSetupsLoadVersion = 0;
 
-function fetchAnalysisReportsPayload() {
-  if (!analysisReportsLoadPromise) {
-    analysisReportsLoadPromise = apiRequest("/api/analysis/reports")
+function fetchAnalysisReportsPayload(setupId = "") {
+  const normalizedSetupId = String(setupId || "").trim();
+  const requestPath = normalizedSetupId
+    ? `/api/analysis/reports?setupId=${encodeURIComponent(normalizedSetupId)}`
+    : "/api/analysis/reports";
+  if (!analysisReportsLoadPromise || analysisReportsLoadPromiseKey !== requestPath) {
+    analysisReportsLoadPromiseKey = requestPath;
+    analysisReportsLoadPromise = apiRequest(requestPath)
       .then((response) => ensureArray(response.reports))
       .finally(() => {
         analysisReportsLoadPromise = null;
+        analysisReportsLoadPromiseKey = "";
       });
   }
 
@@ -12850,13 +12857,13 @@ function getActiveAnalysisReportSetupId() {
   return String(state.analysis.currentSetupId || readPersistedAnalysisSetupId() || "").trim();
 }
 
-async function loadAnalysisReports(providedRows = null) {
+async function loadAnalysisReports(providedRows = null, setupIdOverride = "") {
   const loadVersion = ++analysisReportsLoadVersion;
   const tbody = el("analysis-history-body");
-  const activeSetupId = getActiveAnalysisReportSetupId();
+  const activeSetupId = String(setupIdOverride || getActiveAnalysisReportSetupId() || "").trim();
   const rows = Array.isArray(providedRows)
     ? providedRows
-    : await fetchAnalysisReportsPayload();
+    : await fetchAnalysisReportsPayload(activeSetupId);
   const scopedRows = activeSetupId
     ? rows.filter((report) => String(report.setupId || report.setup_id || "").trim() === activeSetupId)
     : rows;
@@ -13326,13 +13333,9 @@ async function loadAnalysisSetupView(options = {}) {
   setStatus("analysis-setup-status", "Loading analysis...");
   let normalizedSetups = [];
   try {
-    const [, setups] = await Promise.all([
-      loadAnalysisReports(),
-      fetchAnalysisSetupsPayload().catch(() => []),
-    ]);
-    normalizedSetups = ensureArray(setups);
+    normalizedSetups = ensureArray(await fetchAnalysisSetupsPayload().catch(() => []));
   } catch (error) {
-    setStatus("analysis-comparison-status", `Unable to load available reports: ${error.message}`);
+    setStatus("analysis-comparison-status", `Unable to load analyses: ${error.message}`);
   }
 
   let persistedSetupId = state.analysis.currentSetupId || readPersistedAnalysisSetupId();
@@ -13363,6 +13366,12 @@ async function loadAnalysisSetupView(options = {}) {
     }
   } else if (!targetSetupId && !state.analysis.setupHydrated && !options.freshComparisonSetup) {
     restorePersistedAnalysisSetupDraft("");
+  }
+
+  try {
+    await loadAnalysisReports(null, targetSetupId);
+  } catch (error) {
+    setStatus("analysis-comparison-status", `Unable to load available reports: ${error.message}`);
   }
 
   if (window?.HPA_DEBUG) {

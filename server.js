@@ -417,8 +417,13 @@ const server = http.createServer(async (request, response) => {
       logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 503, { module: "analysis" });
       return;
     }
-    sendJson(response, 200, { reports: listAnalysisReports() });
-    logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 200, { count: listAnalysisReports().length });
+    const setupId = String(requestUrl.searchParams.get("setupId") || "").trim();
+    const reports = listAnalysisReports({ setupId });
+    sendJson(response, 200, { reports });
+    logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 200, {
+      count: reports.length,
+      setupId: setupId || undefined,
+    });
     return;
   }
 
