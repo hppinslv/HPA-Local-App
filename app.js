@@ -7433,7 +7433,7 @@ function getReviewExpectedKeyCode(report = {}) {
   return normalized[0] || "";
 }
 
-function buildPremiumStatsFromDetailRowsForReview(detailRows = [], scf = "", keyCode = "") {
+function buildPremiumStatsFromDetailRowsForReview(detailRows = [], scf = "", keyCode = "", soldCount = null) {
   const normalizedScf = normalizeScf(scf);
   const normalizedKey = String(keyCode || "").trim().toUpperCase();
 
@@ -7449,6 +7449,10 @@ function buildPremiumStatsFromDetailRowsForReview(detailRows = [], scf = "", key
     })
     .map((row) => getReviewMetricTotalMonthlyPremium(row))
     .filter((value) => Number.isFinite(value) && value > 0);
+  const soldCountValue = Number(soldCount);
+  const soldCountDenominator = Number.isFinite(soldCountValue) && soldCountValue > 0
+    ? soldCountValue
+    : premiums.length;
 
   if (!premiums.length) {
     return {
@@ -7461,7 +7465,7 @@ function buildPremiumStatsFromDetailRowsForReview(detailRows = [], scf = "", key
   }
 
   return {
-    averagePremium: premiums.reduce((sum, value) => sum + value, 0) / premiums.length,
+    averagePremium: premiums.reduce((sum, value) => sum + value, 0) / soldCountDenominator,
     highPremium: Math.max(...premiums),
     lowPremium: Math.min(...premiums),
     medianPremium: getMedian(premiums),
@@ -11167,10 +11171,17 @@ function renderAnalysisComparisonReviewPanel() {
       report?.detail_rows ||
       [];
     const expectedKeyCode = getReviewExpectedKeyCode(report);
+    const soldCountForPremiumStats = Number(
+      getRowMetricNumber(exactRow || fallbackRow || {}, "Sum of Sold")
+      || getRowMetricNumber(exactRow || fallbackRow || {}, "Opp Count")
+      || getRowMetricNumber(exactRow || fallbackRow || {}, "Sold")
+      || 0
+    );
     const premiumStats = buildPremiumStatsFromDetailRowsForReview(
       Array.isArray(detailRows) ? detailRows : [],
       selectedScfForPremiumStats,
-      expectedKeyCode
+      expectedKeyCode,
+      soldCountForPremiumStats
     );
     const metricsSourceRow = applyPremiumStatsToReviewRow(exactRow || fallbackRow || {}, premiumStats);
     const matchingRows = Array.isArray(detailRows)

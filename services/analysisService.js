@@ -224,7 +224,7 @@ function getExpectedReviewKeyCode(normalizedKeys = []) {
   return normalized[0] || "";
 }
 
-function buildPremiumStatsFromDetailRows(detailRows = [], scf = "", keyCode = "") {
+function buildPremiumStatsFromDetailRows(detailRows = [], scf = "", keyCode = "", soldCount = null) {
   const normalizedScf = normalizeScf(scf);
   const normalizedKey = String(keyCode || "").trim().toUpperCase();
 
@@ -240,6 +240,10 @@ function buildPremiumStatsFromDetailRows(detailRows = [], scf = "", keyCode = ""
     })
     .map((row) => getTotalMonthlyPremiumFromRow(row))
     .filter((value) => Number.isFinite(value) && value > 0);
+  const soldCountValue = Number(soldCount);
+  const soldCountDenominator = Number.isFinite(soldCountValue) && soldCountValue > 0
+    ? soldCountValue
+    : premiums.length;
 
   if (!premiums.length) {
     return {
@@ -252,7 +256,7 @@ function buildPremiumStatsFromDetailRows(detailRows = [], scf = "", keyCode = ""
   }
 
   return {
-    averagePremium: premiums.reduce((sum, value) => sum + value, 0) / premiums.length,
+    averagePremium: premiums.reduce((sum, value) => sum + value, 0) / soldCountDenominator,
     highPremium: Math.max(...premiums),
     lowPremium: Math.min(...premiums),
     medianPremium: getMedian(premiums),
@@ -4759,10 +4763,18 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
   const normalizedKeys = ensureArray(report.parameters?.key_codes)
     .map((value) => normalizeAnalysisStoredKeyCode(value))
     .filter(Boolean);
+  const savedSummaryRows = findAnalysisSummaryRow(report.rows, normalizedScf, normalizedKeys);
+  const savedSummaryRow = savedSummaryRows[0] || null;
+  const soldCountForPremiumStats = getAnalysisMetricNumber(savedSummaryRow || {}, [
+    "Sum of Sold",
+    "Sold",
+    "Opp Count",
+  ]);
   const premiumStats = buildPremiumStatsFromDetailRows(
     savedExportRows,
     normalizedScf,
-    getExpectedReviewKeyCode(normalizedKeys)
+    getExpectedReviewKeyCode(normalizedKeys),
+    soldCountForPremiumStats
   );
 
   if (savedExportRows.length && hasAnalysisDetailExportRows(savedExportRows)) {
@@ -4782,8 +4794,6 @@ async function getAnalysisReportScfMetrics(reportId, scf) {
   }
 
   const parameters = report.parameters || {};
-  const savedSummaryRows = findAnalysisSummaryRow(report.rows, normalizedScf, normalizedKeys);
-  const savedSummaryRow = savedSummaryRows[0] || null;
   const shouldFetchLiveFallback = premiumStats.premiumCount
     ? false
     : !savedSummaryRow || shouldRefetchLiveScfMetrics(savedSummaryRow, savedExportRows);

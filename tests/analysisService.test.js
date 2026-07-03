@@ -218,13 +218,18 @@ test("buildPremiumStatsFromDetailRows handles SCF 199 N detail rows", () => {
     { "SCF Grouping": "199", "Key": "N", "Total Monthly Premium": "$101.77" },
   ];
 
-  const stats = buildPremiumStatsFromDetailRows(rows, "199", "N");
+  const soldCount = 36;
+  const stats = buildPremiumStatsFromDetailRows(rows, "199", "N", soldCount);
+  const expectedAverage = rows.reduce(
+    (sum, row) => sum + Number(String(row["Total Monthly Premium"]).replace(/[^0-9.-]/g, "")),
+    0
+  ) / soldCount;
 
   assert.equal(stats.premiumCount, 17);
   assert.equal(stats.highPremium, 155.91);
   assert.equal(stats.lowPremium, 54.25);
   assert.equal(stats.medianPremium, 106.74);
-  assert.ok(stats.averagePremium > 0);
+  assert.equal(Number(stats.averagePremium.toFixed(2)), Number(expectedAverage.toFixed(2)));
 });
 
 test("saved summary rows missing high and low premium values trigger live scf metric supplementation", async () => {
