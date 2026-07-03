@@ -3664,6 +3664,31 @@ async function fetchAnalysisReportScfMetrics(reportId, filters = {}) {
   const normalizedKeys = Array.isArray(filters.keyCodes)
     ? filters.keyCodes.map((value) => normalizeAnalysisKeyCodeValue(value).toUpperCase()).filter(Boolean)
     : [];
+  const exactExportRows = Array.isArray(exactDataset?.exportRows) ? exactDataset.exportRows : [];
+  if (exactExportRows.length && hasAnalysisDetailExportRows(exactExportRows)) {
+    const detailSummary = buildFlatRowsFromDetailExport(exactExportRows);
+    const matchingSummaryRows = Array.isArray(detailSummary?.rows)
+      ? detailSummary.rows.filter((row) => {
+          const rowScf = normalizeScf(row["SCF Grouping"] ?? row["scf grouping"] ?? row["SCF"] ?? row.scf ?? "");
+          if (rowScf !== normalizedScf) {
+            return false;
+          }
+          if (!normalizedKeys.length) {
+            return true;
+          }
+          const rowKey = String(row["Key"] ?? row.key ?? "").trim().toUpperCase();
+          return normalizedKeys.includes(rowKey);
+        })
+      : [];
+    if (matchingSummaryRows.length) {
+      return {
+        reportId: normalizedReportId,
+        scf: normalizedScf,
+        row: matchingSummaryRows.find((row) => !shouldRepairAnalysisRowWithScopedRefetch(row)) || matchingSummaryRows[0] || null,
+        rows: matchingSummaryRows,
+      };
+    }
+  }
   const candidateRows = [
     ...(Array.isArray(exactDataset?.rows) ? exactDataset.rows : []),
     ...(Array.isArray(exactDataset?.exportRows) ? exactDataset.exportRows : []),
