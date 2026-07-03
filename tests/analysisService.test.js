@@ -228,7 +228,6 @@ test("buildPremiumStatsFromDetailRows handles SCF 199 N detail rows", () => {
   assert.equal(stats.premiumCount, 17);
   assert.equal(stats.highPremium, 155.91);
   assert.equal(stats.lowPremium, 54.25);
-  assert.equal(stats.medianPremium, 106.74);
   assert.equal(Number(stats.averagePremium.toFixed(2)), Number(expectedAverage.toFixed(2)));
 });
 
@@ -331,7 +330,7 @@ test("saved summary rows missing high and low premium values trigger live scf me
     assert.equal("averageMonthlyPremium" in result.row, false);
     assert.equal("highPremium" in result.row, false);
     assert.equal("lowPremium" in result.row, false);
-    assert.equal(result.row.medianPremium, 106.74);
+    assert.equal("medianPremium" in result.row, false);
   } finally {
     salesforceClient.fetchAnalysisReportScfMetrics = originalFetchAnalysisReportScfMetrics;
     delete require.cache[analysisServicePath];

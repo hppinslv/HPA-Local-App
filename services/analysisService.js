@@ -270,11 +270,6 @@ function applyPremiumStatsFromDetailRows(row = {}, premiumStats = {}) {
   }
 
   const nextRow = { ...(row || {}) };
-  const premiumKeys = [
-    "Median Premium",
-    "median premium",
-  ];
-
   [
     "Average Premium",
     "average premium",
@@ -287,9 +282,6 @@ function applyPremiumStatsFromDetailRows(row = {}, premiumStats = {}) {
   });
 
   if (premiumStats.premiumCount <= 0) {
-    premiumKeys.forEach((key) => {
-      delete nextRow[key];
-    });
     delete nextRow.averageMonthlyPremium;
     delete nextRow.highPremium;
     delete nextRow.lowPremium;
@@ -297,12 +289,10 @@ function applyPremiumStatsFromDetailRows(row = {}, premiumStats = {}) {
     return nextRow;
   }
 
-  nextRow.medianPremium = premiumStats.medianPremium;
-  nextRow["Median Premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
-  nextRow["median premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
   delete nextRow.averageMonthlyPremium;
   delete nextRow.highPremium;
   delete nextRow.lowPremium;
+  delete nextRow.medianPremium;
   return nextRow;
 }
 

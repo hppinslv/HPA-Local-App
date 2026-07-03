@@ -7475,11 +7475,6 @@ function buildPremiumStatsFromDetailRowsForReview(detailRows = [], scf = "", key
 
 function applyPremiumStatsToReviewRow(row = {}, premiumStats = {}) {
   const nextRow = { ...(row || {}) };
-  const premiumKeys = [
-    "Median Premium",
-    "median premium",
-  ];
-
   [
     "Average Premium",
     "average premium",
@@ -7492,9 +7487,6 @@ function applyPremiumStatsToReviewRow(row = {}, premiumStats = {}) {
   });
 
   if (!Number.isFinite(premiumStats?.premiumCount) || premiumStats.premiumCount <= 0) {
-    premiumKeys.forEach((key) => {
-      delete nextRow[key];
-    });
     delete nextRow.averageMonthlyPremium;
     delete nextRow.highPremium;
     delete nextRow.lowPremium;
@@ -7502,12 +7494,10 @@ function applyPremiumStatsToReviewRow(row = {}, premiumStats = {}) {
     return nextRow;
   }
 
-  nextRow.medianPremium = premiumStats.medianPremium;
-  nextRow["Median Premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
-  nextRow["median premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
   delete nextRow.averageMonthlyPremium;
   delete nextRow.highPremium;
   delete nextRow.lowPremium;
+  delete nextRow.medianPremium;
   return nextRow;
 }
 
@@ -7692,22 +7682,18 @@ function normalizeAnalysisMetricRow(row = {}) {
   normalizedRow["sum of in force monthly premium"] = formatAnalysisCurrency(inForceMonthlyPremium);
   normalizedRow["Sum of Total Converted Monthly Premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
   normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
-  const medianPremium = Number.isFinite(Number(row.medianPremium))
-    ? Number(row.medianPremium)
-    : null;
-  if (medianPremium !== null) {
-    normalizedRow["Median Premium"] = formatAnalysisCurrency(medianPremium);
-    normalizedRow["median premium"] = formatAnalysisCurrency(medianPremium);
-  }
   delete normalizedRow.averageMonthlyPremium;
   delete normalizedRow.highPremium;
   delete normalizedRow.lowPremium;
+  delete normalizedRow.medianPremium;
   delete normalizedRow["Average Premium"];
   delete normalizedRow["average premium"];
   delete normalizedRow["High Premium"];
   delete normalizedRow["high premium"];
   delete normalizedRow["Low Premium"];
   delete normalizedRow["low premium"];
+  delete normalizedRow["Median Premium"];
+  delete normalizedRow["median premium"];
   normalizedRow["Sum of Opp Count"] = formatNavigatorCount(oppCount);
   normalizedRow["sum of opp count"] = formatNavigatorCount(oppCount);
   normalizedRow["Sum of Sold"] = formatNavigatorCount(soldCount);
@@ -8144,7 +8130,6 @@ function getMetricLabelAliases(metricLabel) {
     "in force": ["Inforce (policy currently in effect)", "Sum of In Force"],
     "sum of in force": ["Inforce (policy currently in effect)", "In Force"],
     "inforce policy currently in effect": ["Sum of In Force", "In Force"],
-    "median premium": ["Median Premium"],
     "total monthly premium": ["Sum of Total Sold", "Sum of Total Monthly Premium"],
     "sum of total monthly premium": ["Sum of Total Sold", "Total Monthly Premium"],
     "sum of total sold": ["Sum of Total Monthly Premium", "Total Monthly Premium"],
@@ -11220,11 +11205,6 @@ function renderAnalysisComparisonReviewPanel() {
       : isMetricLoading
         ? "Loading..."
         : "-";
-    const medianPremiumDisplay = row
-      ? getRowMetricDisplayValue(row, "Median Premium")
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
     const convertedCountDisplay = row
       ? formatWholeNumber(
           Number.isFinite(Number(row?.appConvertedCount))
@@ -11265,12 +11245,6 @@ function renderAnalysisComparisonReviewPanel() {
           <div>
             <span class="field-label">In Force Rate</span>
             <strong>${esc(inForceRateDisplay)}</strong>
-          </div>
-        </div>
-        <div class="analysis-review-metric-grid analysis-review-metric-grid-premiums">
-          <div>
-            <span class="field-label">Median Premium</span>
-            <strong>${esc(medianPremiumDisplay)}</strong>
           </div>
         </div>
         <div class="analysis-review-metric-grid analysis-review-metric-grid-secondary">
