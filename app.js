@@ -9259,33 +9259,10 @@ function getDoNotMailStatusForScf(scf, stateValue = "") {
     };
   }
 
-  const normalizedState = String(stateValue || "").trim().toLowerCase();
-  const dnmList = getWorkingReferenceList("dnm");
-  const groupedScfMatch = (dnmList?.stateGroups || []).find((group) =>
-    Array.isArray(group?.scfs)
-    && group.scfs.some((groupScf) => normalizeScf(groupScf) === normalizedScf)
-  );
-  if (groupedScfMatch) {
-    return {
-      isDoNotMail: true,
-      entry: groupedScfMatch,
-      label: groupedScfMatch.label || groupedScfMatch.state || "Do Not Mail",
-    };
-  }
-
-  const stateGroupMatch = (dnmList?.stateGroups || []).find((group) => {
-    if (!group?.isActive) return false;
-    const groupNames = [
-      String(group.state || "").trim().toLowerCase(),
-      String(group.label || "").trim().toLowerCase(),
-    ].filter(Boolean);
-    return normalizedState && groupNames.includes(normalizedState);
-  });
-
   return {
-    isDoNotMail: Boolean(stateGroupMatch),
-    entry: stateGroupMatch || null,
-    label: stateGroupMatch?.label || stateGroupMatch?.state || "Do Not Mail",
+    isDoNotMail: false,
+    entry: null,
+    label: "",
   };
 }
 

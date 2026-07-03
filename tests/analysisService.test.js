@@ -175,6 +175,129 @@ test("live fallback can supplement zero saved summary values without clobbering 
   assert.equal(merged["Sold Rate"], "0.1336898396");
 });
 
+test("live fallback preserves saved premium metrics when the live row omits them", () => {
+  const merged = mergeAnalysisMetricRowsPreferNonZero(
+    {
+      "SCF Grouping": "199",
+      averageMonthlyPremium: 83.63,
+      highPremium: 134.46,
+      lowPremium: 54.25,
+    },
+    {
+      "SCF Grouping": "199",
+      averageMonthlyPremium: 0,
+      highPremium: null,
+      lowPremium: undefined,
+    }
+  );
+
+  assert.equal(merged.averageMonthlyPremium, 83.63);
+  assert.equal(merged.highPremium, 134.46);
+  assert.equal(merged.lowPremium, 54.25);
+});
+
+test("saved summary rows missing high and low premium values trigger live scf metric supplementation", async () => {
+  const tempDir = createTempAnalysisDir();
+  const salesforceClientPath = require.resolve("../services/salesforceClient");
+  const analysisServicePath = require.resolve("../services/analysisService");
+  const salesforceClient = require("../services/salesforceClient");
+  const originalFetchAnalysisReportScfMetrics = salesforceClient.fetchAnalysisReportScfMetrics;
+  let stubCallCount = 0;
+
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-runs.json"),
+    JSON.stringify([
+      {
+        id: "run_199",
+        setupId: "setup_199",
+        status: "draft",
+        reportPulls: [],
+        comparisonRequests: [],
+      },
+    ], null, 2)
+  );
+  fs.writeFileSync(path.join(tempDir, "analysis-setups.json"), JSON.stringify([], null, 2));
+  fs.writeFileSync(
+    path.join(tempDir, "analysis-reports.json"),
+    JSON.stringify([
+      {
+        id: "report_199",
+        runId: "run_199",
+        pullId: "pull_199",
+        report_name: "Test Premium Supplement",
+        parameters: {
+          report_id: "00OQm000003PIxhMAG",
+          key_codes: ["N"],
+          start_date: "2013-01-01",
+          end_date: "2025-12-31",
+        },
+        rows: [
+          {
+            "SCF Grouping": "199",
+            "Key": "N",
+            "Sum of Mailed": "20,757",
+            "Sum of Opp Count": "36",
+            "Sum of In Force": "7",
+            "Sum of Converted": "15",
+            "Sold Rate": "0.9760575670",
+            "In Force Rate": "0.2239105833",
+            "Converted Rate": "0.4998427293",
+            averageMonthlyPremium: 83.6288888889,
+          },
+        ],
+        exportRows: [
+          {
+            "SCF Grouping": "199",
+            "Key": "N",
+            "Sum of Mailed": "20,757",
+            "Sum of Opp Count": "36",
+            "Sum of In Force": "7",
+            "Sum of Converted": "15",
+            "Sold Rate": "0.9760575670",
+            "In Force Rate": "0.2239105833",
+            "Converted Rate": "0.4998427293",
+            averageMonthlyPremium: 83.6288888889,
+          },
+        ],
+      },
+    ], null, 2)
+  );
+
+  salesforceClient.fetchAnalysisReportScfMetrics = async () => {
+    stubCallCount += 1;
+    return {
+      reportId: "00OQm000003PIxhMAG",
+      scf: "199",
+      row: {
+        "SCF Grouping": "199",
+        "Key": "N",
+        averageMonthlyPremium: 83.6288888889,
+        highPremium: 134.46,
+        lowPremium: 54.25,
+      },
+      rows: [],
+    };
+  };
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+
+  try {
+    const reports = service.listAnalysisReports();
+    assert.ok(reports.some((report) => report.id === "report_199"));
+    const result = await service.getAnalysisReportScfMetrics("report_199", "199");
+    assert.equal(stubCallCount, 1);
+    assert.equal(result.source, "saved-summary-with-live-supplement");
+    assert.equal(Number(result.row.averageMonthlyPremium.toFixed(2)), 83.63);
+    assert.equal(result.row.highPremium, 134.46);
+    assert.equal(result.row.lowPremium, 54.25);
+  } finally {
+    salesforceClient.fetchAnalysisReportScfMetrics = originalFetchAnalysisReportScfMetrics;
+    delete require.cache[analysisServicePath];
+    delete require.cache[salesforceClientPath];
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+  }
+});
+
 test("saved analysis reports keep sum of sold labels in view and export columns", () => {
   const tempDir = createTempAnalysisDir();
   fs.writeFileSync(

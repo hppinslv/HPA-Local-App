@@ -263,6 +263,17 @@ function shouldRefetchLiveScfMetrics(savedSummaryRow = {}, savedExportRows = [])
     return false;
   }
 
+  const averagePremium = Number(savedSummaryRow?.averageMonthlyPremium);
+  const highPremium = Number(savedSummaryRow?.highPremium);
+  const lowPremium = Number(savedSummaryRow?.lowPremium);
+  const hasAveragePremium = Number.isFinite(averagePremium) && averagePremium > 0;
+  const hasHighPremium = Number.isFinite(highPremium) && highPremium > 0;
+  const hasLowPremium = Number.isFinite(lowPremium) && lowPremium > 0;
+
+  if (hasAveragePremium && (!hasHighPremium || !hasLowPremium)) {
+    return true;
+  }
+
   const explicitConvertedCount = getAnalysisMetricNumber(savedSummaryRow, [
     "Sum of Converted",
     "Converted",
@@ -324,6 +335,18 @@ function mergeAnalysisMetricRowsPreferNonZero(baseRow = {}, candidateRow = {}) {
       baseValue > 0
     ) {
       mergedRow[label] = baseRaw;
+    }
+  });
+
+  ["averageMonthlyPremium", "highPremium", "lowPremium"].forEach((field) => {
+    const baseValue = Number(baseRow?.[field]);
+    const candidateValue = Number(candidateRow?.[field]);
+    if (
+      (!Number.isFinite(candidateValue) || candidateValue <= 0) &&
+      Number.isFinite(baseValue) &&
+      baseValue > 0
+    ) {
+      mergedRow[field] = baseValue;
     }
   });
 
