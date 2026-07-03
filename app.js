@@ -96,6 +96,7 @@ const state = {
     selectedComparisonId: "",
     lastEditedComparisonId: "",
     lastReportsLoadAt: 0,
+    lastPolledSavedReportCount: 0,
     reviewTableSort: { key: "soldRate", direction: "desc" },
     reviewSoldRateOperator: ">",
     reviewSoldRateMin: "",
@@ -12198,6 +12199,7 @@ function stopAnalysisRunPolling() {
     clearTimeout(state.analysis.runPollHandle);
     state.analysis.runPollHandle = null;
   }
+  state.analysis.lastPolledSavedReportCount = 0;
 }
 
 function parseSortableValue(value) {
@@ -12296,10 +12298,14 @@ async function pollAnalysisRun(runId) {
       return;
     }
 
-    loadRunIntoWorkspace(run);
-    await loadAnalysisReports();
-
+    const previousSavedReportCount = Number(state.analysis.lastPolledSavedReportCount || 0);
+    const currentSavedReportCount = ensureArray(run.reportPulls).filter((pull) => String(pull?.savedReportId || "").trim()).length;
     const status = String(run.status || "").toLowerCase();
+    loadRunIntoWorkspace(run);
+    if (currentSavedReportCount > previousSavedReportCount || ["complete", "partial", "failed"].includes(status)) {
+      await loadAnalysisReports();
+    }
+
     if (["complete", "partial", "failed"].includes(status)) {
       stopAnalysisRunPolling();
       return;
@@ -12603,6 +12609,7 @@ function loadSetupIntoWorkspace(setup) {
   persistAnalysisSetupId(state.analysis.currentSetupId);
   state.analysis.currentRunId = "";
   state.analysis.currentReportId = "";
+  state.analysis.lastPolledSavedReportCount = 0;
   state.analysis.reportPulls = Array.isArray(setup.reportPulls) && setup.reportPulls.length
     ? setup.reportPulls.map((pull, index) => ({
         ...createEmptyPull(index),
@@ -12660,6 +12667,7 @@ function loadRunIntoWorkspace(run) {
   clearComparisonSetupAutosave();
   state.analysis.currentRunId = run.id || "";
   state.analysis.currentSetupId = run.setupId || "";
+  state.analysis.lastPolledSavedReportCount = ensureArray(run.reportPulls).filter((pull) => String(pull?.savedReportId || "").trim()).length;
   syncAnalysisReadOnlyState(run);
   persistAnalysisSetupId(state.analysis.currentSetupId);
   state.analysis.currentReportId = "";
