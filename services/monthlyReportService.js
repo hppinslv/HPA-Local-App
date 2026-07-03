@@ -1932,6 +1932,7 @@ function buildRecoveredArtifacts(run) {
 
   const reportMonthLabel = formatReportMonth(reportMonth);
   const reportMonthFilePrefix = formatReportMonthFilePrefix(reportMonth);
+  const filePrefix = reportMonthFilePrefix;
   const completionFilePrefix = formatCompletionMonthFilePrefix(
     run?.updatedAt || run?.createdAt || run?.report?.generatedAt
   );

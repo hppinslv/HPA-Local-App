@@ -178,6 +178,18 @@ test("live fallback can supplement zero saved summary values without clobbering 
 test("saved analysis reports keep sum of sold labels in view and export columns", () => {
   const tempDir = createTempAnalysisDir();
   fs.writeFileSync(
+    path.join(tempDir, "analysis-runs.json"),
+    JSON.stringify([
+      {
+        id: "run_1",
+        setupId: "setup_1",
+        status: "complete",
+        reportPulls: [],
+        comparisonRequests: [],
+      },
+    ], null, 2)
+  );
+  fs.writeFileSync(
     path.join(tempDir, "analysis-reports.json"),
     JSON.stringify([
       {

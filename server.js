@@ -44,11 +44,13 @@ const {
   getAnalysisSetupReviewDebug,
   getAnalysisComparisonSetup,
   getAnalysisComparisonSetups,
+  getAnalysisPersistenceDebugInfo,
   getReferenceListByType,
   flushAnalysisPersistence,
   importReferenceList,
   listAnalysisReports,
   listAnalysisRuns,
+  listAnalysisSetupSummaries,
   listAnalysisSetups,
   listReferenceLists,
   rebuildAnalysisReport,
@@ -196,8 +198,16 @@ function sendPersistenceNotReady(response, moduleName) {
   sendJson(response, 503, {
     success: false,
     error: "persistence_not_ready",
-    message: "Report/import data is still initializing. Please retry.",
+    message: "Analysis data is still initializing or unavailable.",
     module: moduleName,
+  });
+}
+
+function logRouteStart(route, method, extra = {}) {
+  console.log("[Route start]", {
+    route,
+    method,
+    ...extra,
   });
 }
 
@@ -345,15 +355,46 @@ const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
   if (requestUrl.pathname === "/api/debug/runtime" && request.method === "GET") {
+    const supabaseConfig = getSupabaseConfig() || {};
     sendJson(response, 200, {
       ok: true,
       serverStartedAt,
       persistenceReady: Boolean(persistenceReadiness.ready),
+      analysisPersistenceStatus: persistenceReadiness.modules.analysis,
+      checkImportPersistenceStatus: persistenceReadiness.modules.checkImports,
       persistenceStatus: persistenceReadiness.modules,
+      supabaseEnabled: Boolean(supabaseConfig.enabled),
+      supabaseHost: getSupabaseTargetHost(),
       nodeEnv: process.env.NODE_ENV || "development",
       port: Number(port),
     });
     logRouteTiming("/api/debug/runtime", request.method, requestStartedAt, 200);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/debug/analysis" && request.method === "GET") {
+    try {
+      const debug = getAnalysisPersistenceDebugInfo();
+      sendJson(response, 200, {
+        ok: true,
+        ...debug,
+      });
+      logRouteTiming("/api/debug/analysis", request.method, requestStartedAt, 200, {
+        reportCount: debug.reportCount,
+        setupCount: debug.setupCount,
+        source: debug.source,
+      });
+    } catch (error) {
+      const sanitizedError = sanitizeError(error);
+      sendJson(response, 500, {
+        success: false,
+        error: "analysis_debug_failed",
+        message: sanitizedError.message,
+      });
+      logRouteTiming("/api/debug/analysis", request.method, requestStartedAt, 500, {
+        error: sanitizedError.message,
+      });
+    }
     return;
   }
 
@@ -396,13 +437,27 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/monthly-reports" && request.method === "GET") {
+    logRouteStart("/api/monthly-reports", request.method);
     if (!isPersistenceModuleReady("monthlyReports")) {
       sendPersistenceNotReady(response, "monthlyReports");
       logRouteTiming("/api/monthly-reports", request.method, requestStartedAt, 503, { module: "monthlyReports" });
       return;
     }
-    sendJson(response, 200, { runs: listRuns() });
-    logRouteTiming("/api/monthly-reports", request.method, requestStartedAt, 200, { count: listRuns().length });
+    try {
+      const runs = listRuns();
+      sendJson(response, 200, { runs });
+      logRouteTiming("/api/monthly-reports", request.method, requestStartedAt, 200, { count: runs.length, source: "backend-canonical" });
+    } catch (error) {
+      const sanitizedError = sanitizeError(error);
+      sendJson(response, 500, {
+        success: false,
+        error: "monthly_reports_load_failed",
+        message: sanitizedError.message,
+      });
+      logRouteTiming("/api/monthly-reports", request.method, requestStartedAt, 500, {
+        error: sanitizedError.message,
+      });
+    }
     return;
   }
 
@@ -412,29 +467,65 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/analysis/reports" && request.method === "GET") {
+    const setupId = String(requestUrl.searchParams.get("setupId") || "").trim();
+    logRouteStart("/api/analysis/reports", request.method, {
+      setupId: setupId || undefined,
+    });
     if (!isPersistenceModuleReady("analysis")) {
       sendPersistenceNotReady(response, "analysis");
       logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 503, { module: "analysis" });
       return;
     }
-    const setupId = String(requestUrl.searchParams.get("setupId") || "").trim();
-    const reports = listAnalysisReports({ setupId });
-    sendJson(response, 200, { reports });
-    logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 200, {
-      count: reports.length,
-      setupId: setupId || undefined,
-    });
+    try {
+      const reports = listAnalysisReports({ setupId });
+      const source = getAnalysisPersistenceDebugInfo().source?.reports || "unknown";
+      sendJson(response, 200, { reports });
+      logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 200, {
+        count: reports.length,
+        setupId: setupId || undefined,
+        source,
+      });
+    } catch (error) {
+      const sanitizedError = sanitizeError(error);
+      sendJson(response, 500, {
+        success: false,
+        error: "analysis_reports_load_failed",
+        message: sanitizedError.message,
+      });
+      logRouteTiming("/api/analysis/reports", request.method, requestStartedAt, 500, {
+        setupId: setupId || undefined,
+        error: sanitizedError.message,
+      });
+    }
     return;
   }
 
   if (requestUrl.pathname === "/api/analysis/setups" && request.method === "GET") {
+    logRouteStart("/api/analysis/setups", request.method);
     if (!isPersistenceModuleReady("analysis")) {
       sendPersistenceNotReady(response, "analysis");
       logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 503, { module: "analysis" });
       return;
     }
-    sendJson(response, 200, { setups: listAnalysisSetups() });
-    logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 200, { count: listAnalysisSetups().length });
+    try {
+      const setups = listAnalysisSetupSummaries();
+      const source = getAnalysisPersistenceDebugInfo().source?.setups || "unknown";
+      sendJson(response, 200, { setups });
+      logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 200, {
+        count: setups.length,
+        source,
+      });
+    } catch (error) {
+      const sanitizedError = sanitizeError(error);
+      sendJson(response, 500, {
+        success: false,
+        error: "analysis_setups_load_failed",
+        message: sanitizedError.message,
+      });
+      logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 500, {
+        error: sanitizedError.message,
+      });
+    }
     return;
   }
 
@@ -443,7 +534,7 @@ const server = http.createServer(async (request, response) => {
       .then((body) => {
         const setup = saveAnalysisSetup(body);
         return flushAnalysisPersistence().then(() => {
-          sendJson(response, 200, { setup, setups: listAnalysisSetups(), lists: listReferenceLists() });
+          sendJson(response, 200, { setup, setups: listAnalysisSetupSummaries(), lists: listReferenceLists() });
           logRouteTiming("/api/analysis/setups", request.method, requestStartedAt, 200, { action: "save" });
         });
       })
@@ -481,7 +572,7 @@ const server = http.createServer(async (request, response) => {
     collectRequestBody(request)
       .then((body) => {
         const setup = archiveAnalysisSetup(analysisSetupArchiveMatch[1], body.archived);
-        sendJson(response, 200, { setup, setups: listAnalysisSetups() });
+        sendJson(response, 200, { setup, setups: listAnalysisSetupSummaries() });
       })
       .catch((error) => {
         sendJson(response, 400, { error: error.message || "Unable to archive analysis setup." });
@@ -1320,21 +1411,38 @@ const server = http.createServer(async (request, response) => {
 
   const analysisSetupMatch = requestUrl.pathname.match(/^\/api\/analysis\/setups\/([^/]+)$/);
   if (analysisSetupMatch && request.method === "GET") {
+    logRouteStart("/api/analysis/setups/:id", request.method, { setupId: analysisSetupMatch[1] });
     if (!isPersistenceModuleReady("analysis")) {
       sendPersistenceNotReady(response, "analysis");
       logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 503, { module: "analysis" });
       return;
     }
-    const setup = getAnalysisSetup(analysisSetupMatch[1]);
+    try {
+      const setup = getAnalysisSetup(analysisSetupMatch[1]);
 
-    if (!setup) {
-      sendJson(response, 404, { error: "Analysis setup not found." });
-      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 404, { setupId: analysisSetupMatch[1] });
-      return;
+      if (!setup) {
+        sendJson(response, 404, { error: "Analysis setup not found." });
+        logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 404, { setupId: analysisSetupMatch[1] });
+        return;
+      }
+
+      sendJson(response, 200, { setup });
+      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 200, {
+        setupId: analysisSetupMatch[1],
+        source: getAnalysisPersistenceDebugInfo().source?.setups || "unknown",
+      });
+    } catch (error) {
+      const sanitizedError = sanitizeError(error);
+      sendJson(response, 500, {
+        success: false,
+        error: "analysis_setup_detail_failed",
+        message: sanitizedError.message,
+      });
+      logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 500, {
+        setupId: analysisSetupMatch[1],
+        error: sanitizedError.message,
+      });
     }
-
-    sendJson(response, 200, { setup });
-    logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 200, { setupId: analysisSetupMatch[1] });
     return;
   }
 
@@ -1351,7 +1459,7 @@ const server = http.createServer(async (request, response) => {
           id: analysisSetupMatch[1],
         });
         return flushAnalysisPersistence().then(() => {
-          sendJson(response, 200, { setup, setups: listAnalysisSetups(), lists: listReferenceLists() });
+          sendJson(response, 200, { setup, setups: listAnalysisSetupSummaries(), lists: listReferenceLists() });
           logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 200, { setupId: analysisSetupMatch[1], action: "save" });
         });
       })
@@ -1370,7 +1478,7 @@ const server = http.createServer(async (request, response) => {
     }
     try {
       deleteAnalysisSetup(analysisSetupMatch[1]);
-      sendJson(response, 200, { setups: listAnalysisSetups() });
+      sendJson(response, 200, { setups: listAnalysisSetupSummaries() });
       logRouteTiming("/api/analysis/setups/:id", request.method, requestStartedAt, 200, { setupId: analysisSetupMatch[1], action: "delete" });
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to delete analysis setup." });
@@ -1406,7 +1514,7 @@ const server = http.createServer(async (request, response) => {
         return flushAnalysisPersistence().then(() => {
           sendJson(response, 200, {
             result,
-            setups: listAnalysisSetups(),
+            setups: listAnalysisSetupSummaries(),
             reports: listAnalysisReports(),
             runs: listAnalysisRuns(),
             lists: listReferenceLists(),
@@ -1437,7 +1545,7 @@ const server = http.createServer(async (request, response) => {
           setup: result.setup,
           revertedLists: result.revertedLists,
           lists: result.lists,
-          setups: listAnalysisSetups(),
+          setups: listAnalysisSetupSummaries(),
         });
         logRouteTiming("/api/analysis/setups/:id/undo-complete", request.method, requestStartedAt, 200, { setupId: analysisSetupUndoCompleteMatch[1] });
       })

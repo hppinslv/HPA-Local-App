@@ -10,7 +10,13 @@ const {
   hasAnalysisDetailExportRows,
   normalizeLabel,
 } = require("./salesforceClient");
-const { flushStateObject, loadStateObject, queueStateSync } = require("./supabasePersistence");
+const { getSupabaseConfig } = require("./config");
+const {
+  flushStateObject,
+  loadStateObject,
+  loadStateObjectDetailed,
+  queueStateSync,
+} = require("./supabasePersistence");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const ANALYSIS_STORAGE_DIR = process.env.HPA_ANALYSIS_DATA_DIR
@@ -803,6 +809,18 @@ let analysisReportsCacheMtimeMs = 0;
 let analysisReportsInitialized = false;
 let referenceListsCache = null;
 let analysisPersistenceReady = false;
+const analysisPersistenceState = {
+  ready: false,
+  initializedAt: null,
+  source: {
+    runs: "unknown",
+    setups: "unknown",
+    reports: "unknown",
+    referenceLists: "unknown",
+  },
+  fallbackRebuildUsed: false,
+  lastError: null,
+};
 
 function safeParseJson(filePath, fallbackValue) {
   if (!fs.existsSync(filePath)) {
@@ -1674,6 +1692,10 @@ async function initializeAnalysisStatePersistence() {
     return;
   }
   analysisPersistenceReady = true;
+  analysisPersistenceState.initializedAt = new Date().toISOString();
+  analysisPersistenceState.ready = false;
+  analysisPersistenceState.lastError = null;
+  analysisPersistenceState.fallbackRebuildUsed = false;
 
   const localRuns = fs.existsSync(ANALYSIS_RUNS_PATH)
     ? safeParseJson(ANALYSIS_RUNS_PATH, [])
@@ -1693,42 +1715,75 @@ async function initializeAnalysisStatePersistence() {
         SCF_REFERENCE_LISTS_FALLBACK_PATH,
         createDefaultReferenceLists()
       );
+  const supabaseEnabled = Boolean(getSupabaseConfig()?.enabled);
 
-  const remoteRuns = await loadStateObject(ANALYSIS_RUNS_SUPABASE_KEY, localRuns);
-  const remoteSetups = await loadStateObject(ANALYSIS_SETUPS_SUPABASE_KEY, localSetups);
-  const remoteLists = await loadStateObject(SCF_REFERENCE_LISTS_SUPABASE_KEY, localLists);
+  try {
+    let remoteRunsResult = { value: localRuns, source: "local-fallback" };
+    let remoteSetupsResult = { value: localSetups, source: "local-fallback" };
+    let remoteListsResult = { value: localLists, source: "local-fallback" };
+    let remoteReportsResult = { value: null, source: "local-fallback" };
 
-  analysisRunsCache = Array.isArray(remoteRuns) ? clone(remoteRuns) : clone(localRuns);
-  analysisSetupsCache = Array.isArray(remoteSetups) ? clone(remoteSetups) : clone(localSetups);
-  const resolvedReferenceLists = remoteLists && remoteLists.lists ? remoteLists : localLists;
+    if (supabaseEnabled) {
+      remoteRunsResult = await loadStateObjectDetailed(ANALYSIS_RUNS_SUPABASE_KEY, localRuns, { throwOnError: true });
+      remoteSetupsResult = await loadStateObjectDetailed(ANALYSIS_SETUPS_SUPABASE_KEY, localSetups, { throwOnError: true });
+      remoteListsResult = await loadStateObjectDetailed(SCF_REFERENCE_LISTS_SUPABASE_KEY, localLists, { throwOnError: true });
+      remoteReportsResult = await loadStateObjectDetailed(ANALYSIS_REPORTS_SUPABASE_KEY, null, { throwOnError: true });
+    }
 
-  referenceListsCache =
-    typeof resolvedReferenceLists === "object" && resolvedReferenceLists !== null
-      ? clone(resolvedReferenceLists)
-      : clone(createDefaultReferenceLists());
+    analysisRunsCache = Array.isArray(remoteRunsResult.value) ? clone(remoteRunsResult.value) : clone(localRuns);
+    analysisSetupsCache = Array.isArray(remoteSetupsResult.value) ? clone(remoteSetupsResult.value) : clone(localSetups);
+    const resolvedReferenceLists = remoteListsResult.value && remoteListsResult.value.lists
+      ? remoteListsResult.value
+      : localLists;
 
-  const reportFallback = Array.isArray(localReports) && localReports.length
-    ? localReports
-    : !analysisReportsInitialized
-      ? buildAnalysisReportsFromRuns(analysisRunsCache)
-      : [];
-  const remoteReports = await loadStateObject(
-    ANALYSIS_REPORTS_SUPABASE_KEY,
-    null
-  );
-  const resolvedReports = Array.isArray(remoteReports)
-    ? remoteReports
-    : reportFallback;
-  analysisReportsCache = clone(resolvedReports);
-  analysisReportsInitialized = true;
-  analysisReportsCacheMtimeMs = fs.existsSync(ANALYSIS_REPORTS_PATH)
-    ? fs.statSync(ANALYSIS_REPORTS_PATH).mtimeMs || 0
-    : 0;
+    referenceListsCache =
+      typeof resolvedReferenceLists === "object" && resolvedReferenceLists !== null
+        ? clone(resolvedReferenceLists)
+        : clone(createDefaultReferenceLists());
 
-  writeAnalysisRuns(analysisRunsCache);
-  writeAnalysisSetups(analysisSetupsCache);
-  writeReferenceLists(referenceListsCache);
-  writeAnalysisReports(analysisReportsCache);
+    let reportFallbackSource = Array.isArray(localReports) && localReports.length
+      ? "local-fallback"
+      : "migration-fallback";
+    const reportFallback = Array.isArray(localReports) && localReports.length
+      ? localReports
+      : !analysisReportsInitialized
+        ? buildAnalysisReportsFromRuns(analysisRunsCache)
+        : [];
+    const resolvedReports = Array.isArray(remoteReportsResult.value)
+      ? remoteReportsResult.value
+      : reportFallback;
+    if (!Array.isArray(remoteReportsResult.value) && reportFallbackSource === "migration-fallback") {
+      analysisPersistenceState.fallbackRebuildUsed = true;
+    }
+    analysisReportsCache = clone(resolvedReports);
+    analysisReportsInitialized = true;
+    analysisReportsCacheMtimeMs = fs.existsSync(ANALYSIS_REPORTS_PATH)
+      ? fs.statSync(ANALYSIS_REPORTS_PATH).mtimeMs || 0
+      : 0;
+
+    analysisPersistenceState.source = {
+      runs: remoteRunsResult.source || "local-fallback",
+      setups: remoteSetupsResult.source || "local-fallback",
+      referenceLists: remoteListsResult.source || "local-fallback",
+      reports: Array.isArray(remoteReportsResult.value)
+        ? (remoteReportsResult.source || "database")
+        : reportFallbackSource,
+    };
+
+    writeAnalysisRuns(analysisRunsCache);
+    writeAnalysisSetups(analysisSetupsCache);
+    writeReferenceLists(referenceListsCache);
+    writeAnalysisReports(analysisReportsCache);
+    analysisPersistenceState.ready = true;
+  } catch (error) {
+    analysisPersistenceReady = false;
+    analysisPersistenceState.ready = false;
+    analysisPersistenceState.lastError = {
+      message: String(error?.message || error || "Unknown error"),
+      name: String(error?.name || "Error"),
+    };
+    throw error;
+  }
 }
 
 function createRunId() {
@@ -3409,6 +3464,31 @@ function serializeAnalysisReport(report) {
   };
 }
 
+function serializeAnalysisSetupSummary(setup) {
+  const serialized = serializeAnalysisSetup(setup);
+  return {
+    id: serialized.id,
+    runName: serialized.runName,
+    run_name: serialized.run_name,
+    status: serialized.status,
+    archived: serialized.archived,
+    createdAt: serialized.createdAt,
+    created_at: serialized.created_at,
+    updatedAt: serialized.updatedAt,
+    updated_at: serialized.updated_at,
+    completedAt: serialized.completedAt,
+    completed_at: serialized.completed_at,
+    reportPullCount: ensureArray(serialized.reportPulls).length,
+    report_pull_count: ensureArray(serialized.reportPulls).length,
+    comparisonCount: ensureArray(serialized.comparisonRequests).length,
+    comparison_count: ensureArray(serialized.comparisonRequests).length,
+    hasReviewSummary: Boolean(serialized?.results?.comparisonReview?.summary),
+    has_review_summary: Boolean(serialized?.results?.comparisonReview?.summary),
+    canUndoLatestCompletion: serialized.canUndoLatestCompletion === true,
+    can_undo_latest_completion: serialized.canUndoLatestCompletion === true,
+  };
+}
+
 function summarizeRun(run) {
   const blocked = ensureArray(run.scfActions).filter((entry) => entry.action === "blocked").length;
   const candidates = ensureArray(run.scfActions).filter((entry) => entry.action === "candidate").length;
@@ -3455,8 +3535,8 @@ function listAnalysisReports(options = {}) {
   return reports.map(serializeAnalysisReport);
 }
 
-function listAnalysisSetups() {
-  const serialized = readAnalysisSetups().map(serializeAnalysisSetup);
+function applyLatestOpenAnalysisArchiveProjection(entries = []) {
+  const serialized = ensureArray(entries);
   const latestOpenId = serialized
     .filter((entry) => !entry.archived && isOpenAnalysisStatus(entry.status || ""))
     .sort((left, right) => {
@@ -3476,6 +3556,14 @@ function listAnalysisSetups() {
         }
       : entry
   ));
+}
+
+function listAnalysisSetups() {
+  return applyLatestOpenAnalysisArchiveProjection(readAnalysisSetups().map(serializeAnalysisSetup));
+}
+
+function listAnalysisSetupSummaries() {
+  return applyLatestOpenAnalysisArchiveProjection(readAnalysisSetups().map(serializeAnalysisSetupSummary));
 }
 
 function getAnalysisSetup(setupId) {
@@ -3619,6 +3707,52 @@ function getAnalysisComparisonSetups(setupId) {
 function getAnalysisComparisonSetup(setupId, comparisonId) {
   const comparisonSetups = getAnalysisComparisonSetups(setupId);
   return comparisonSetups.find((entry) => String(entry.id || "").trim() === String(comparisonId || "").trim()) || null;
+}
+
+function getAnalysisPersistenceDebugInfo() {
+  if (!analysisPersistenceState.ready) {
+    return {
+      ready: false,
+      initializedAt: analysisPersistenceState.initializedAt,
+      source: clone(analysisPersistenceState.source),
+      fallbackRebuildUsed: analysisPersistenceState.fallbackRebuildUsed === true,
+      lastError: analysisPersistenceState.lastError,
+      reportCount: 0,
+      setupCount: 0,
+      archivedSetupCount: 0,
+      deletedReportCount: 0,
+      deletedSetupCount: 0,
+      tombstoneTracking: false,
+      newestReportTimestamp: null,
+      newestSetupTimestamp: null,
+    };
+  }
+  const reports = listAnalysisReports();
+  const setups = listAnalysisSetups();
+  const newestReportTimestamp = reports
+    .map((entry) => entry.updated_at || entry.updatedAt || entry.created_at || entry.createdAt || "")
+    .filter(Boolean)
+    .sort((left, right) => (Date.parse(right) || 0) - (Date.parse(left) || 0))[0] || null;
+  const newestSetupTimestamp = setups
+    .map((entry) => entry.updated_at || entry.updatedAt || entry.created_at || entry.createdAt || "")
+    .filter(Boolean)
+    .sort((left, right) => (Date.parse(right) || 0) - (Date.parse(left) || 0))[0] || null;
+
+  return {
+    ready: analysisPersistenceState.ready === true,
+    initializedAt: analysisPersistenceState.initializedAt,
+    source: clone(analysisPersistenceState.source),
+    fallbackRebuildUsed: analysisPersistenceState.fallbackRebuildUsed === true,
+    lastError: analysisPersistenceState.lastError,
+    reportCount: reports.length,
+    setupCount: setups.length,
+    archivedSetupCount: setups.filter((entry) => entry.archived).length,
+    deletedReportCount: 0,
+    deletedSetupCount: 0,
+    tombstoneTracking: false,
+    newestReportTimestamp,
+    newestSetupTimestamp,
+  };
 }
 
 function isCompletedAnalysisStatus(value = "") {
@@ -5974,12 +6108,14 @@ module.exports = {
   getAnalysisSetupReviewDebug,
   getAnalysisComparisonSetup,
   getAnalysisComparisonSetups,
+  getAnalysisPersistenceDebugInfo,
   getReferenceListByType,
   importReferenceList,
   isDoNotMailScf,
   listAnalysisReports,
   listAnalysisRuns,
   listAnalysisSetups,
+  listAnalysisSetupSummaries,
   listReferenceLists,
   normalizeScf,
   buildAnalysisOverwriteProtection,

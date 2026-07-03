@@ -19,6 +19,17 @@ function normalizePath(path = "") {
 
 const DEFAULT_SUPABASE_REQUEST_TIMEOUT_MS = 3500;
 const DEFAULT_SUPABASE_CHUNK_SIZE_BYTES = 4 * 1024 * 1024;
+const persistenceRuntime = {
+  lastLoads: {},
+  lastSaves: {},
+};
+
+function sanitizeError(error) {
+  return {
+    message: String(error?.message || error || "Unknown error"),
+    name: String(error?.name || "Error"),
+  };
+}
 
 function parseTimeoutMs(candidate) {
   const parsed = Number(candidate);
@@ -42,6 +53,14 @@ function getRuntimeConfig() {
     key,
     bucket,
     prefix,
+  };
+}
+
+function recordPersistenceRuntime(kind, stateKey, details = {}) {
+  persistenceRuntime[kind] = persistenceRuntime[kind] || {};
+  persistenceRuntime[kind][stateKey] = {
+    at: new Date().toISOString(),
+    ...details,
   };
 }
 
@@ -361,9 +380,24 @@ function logPersistenceWarning(action, stateKey, details) {
 }
 
 async function loadStateObject(stateKey, fallbackValue = null) {
+  const result = await loadStateObjectDetailed(stateKey, fallbackValue);
+  return result.value;
+}
+
+async function loadStateObjectDetailed(stateKey, fallbackValue = null, options = {}) {
   const config = getRuntimeConfig();
   if (!config.enabled) {
-    return fallbackSafeClone(fallbackValue);
+    recordPersistenceRuntime("lastLoads", stateKey, {
+      ok: true,
+      source: "local-fallback",
+      remoteEnabled: false,
+    });
+    return {
+      value: fallbackSafeClone(fallbackValue),
+      source: "local-fallback",
+      remoteEnabled: false,
+      error: null,
+    };
   }
 
   try {
@@ -371,14 +405,40 @@ async function loadStateObject(stateKey, fallbackValue = null) {
     const resolved = isChunkManifest(loaded)
       ? await loadChunkedState(buildStatePath(stateKey), loaded)
       : loaded;
+    let value;
     if (Array.isArray(fallbackValue) || fallbackValue === null) {
-      return resolved !== null && Array.isArray(resolved) ? resolved : fallbackSafeClone(fallbackValue);
+      value = resolved !== null && Array.isArray(resolved) ? resolved : fallbackSafeClone(fallbackValue);
+    } else {
+      value = resolved && typeof resolved === "object" ? resolved : fallbackSafeClone(fallbackValue);
     }
-
-    return resolved && typeof resolved === "object" ? resolved : fallbackSafeClone(fallbackValue);
+    recordPersistenceRuntime("lastLoads", stateKey, {
+      ok: true,
+      source: "database",
+      remoteEnabled: true,
+    });
+    return {
+      value,
+      source: "database",
+      remoteEnabled: true,
+      error: null,
+    };
   } catch (error) {
     logPersistenceWarning("load", stateKey, error.message);
-    return fallbackSafeClone(fallbackValue);
+    recordPersistenceRuntime("lastLoads", stateKey, {
+      ok: false,
+      source: "local-fallback",
+      remoteEnabled: true,
+      error: sanitizeError(error),
+    });
+    if (options.throwOnError === true) {
+      throw error;
+    }
+    return {
+      value: fallbackSafeClone(fallbackValue),
+      source: "local-fallback",
+      remoteEnabled: true,
+      error: sanitizeError(error),
+    };
   }
 }
 
@@ -392,6 +452,10 @@ function queueStateSync(stateKey, payload) {
   Promise.resolve()
     .then(() => saveStateObject(stateKey, snapshot))
     .catch((error) => {
+      recordPersistenceRuntime("lastSaves", stateKey, {
+        ok: false,
+        error: sanitizeError(error),
+      });
       logPersistenceWarning("save", stateKey, error.message);
     });
 }
@@ -406,10 +470,20 @@ async function saveStateObject(stateKey, payload) {
   const serialized = JSON.stringify(payload);
   if (Buffer.byteLength(serialized, "utf8") > getChunkSizeBytes()) {
     await saveChunkedState(pathname, payload);
+    recordPersistenceRuntime("lastSaves", stateKey, {
+      ok: true,
+      source: "database",
+      chunked: true,
+    });
     return true;
   }
 
   await saveObject(pathname, payload);
+  recordPersistenceRuntime("lastSaves", stateKey, {
+    ok: true,
+    source: "database",
+    chunked: false,
+  });
   return true;
 }
 
@@ -417,16 +491,41 @@ async function flushStateObject(stateKey, payload) {
   try {
     return await saveStateObject(stateKey, payload);
   } catch (error) {
+    recordPersistenceRuntime("lastSaves", stateKey, {
+      ok: false,
+      error: sanitizeError(error),
+    });
     logPersistenceWarning("save", stateKey, error.message);
     return false;
   }
+}
+
+function getPersistenceRuntimeSnapshot() {
+  const config = getRuntimeConfig();
+  let host = "";
+  try {
+    host = config.baseUrl ? new URL(config.baseUrl).host : "";
+  } catch {
+    host = "";
+  }
+
+  return {
+    enabled: Boolean(config.enabled),
+    bucket: config.bucket,
+    prefix: config.prefix,
+    host,
+    lastLoads: clone(persistenceRuntime.lastLoads),
+    lastSaves: clone(persistenceRuntime.lastSaves),
+  };
 }
 
 module.exports = {
   hasObject,
   buildStatePath,
   loadStateObject,
+  loadStateObjectDetailed,
   queueStateSync,
   flushStateObject,
   saveStateObject,
+  getPersistenceRuntimeSnapshot,
 };

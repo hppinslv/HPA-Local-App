@@ -134,6 +134,8 @@ const state = {
     collapsedPullIds: {},
     setupHydrated: false,
     lastSetupLoadSource: "",
+    setupsLoadError: "",
+    reportsLoadError: "",
     reviewFloatingPanel: {
       x: 16,
       y: 16,
@@ -2171,6 +2173,8 @@ function getComparisonReviewResultFromEntry(entry = {}) {
 
 function resolveAnalysisLandingFromEntry(entry = {}) {
   const comparisonReview = getComparisonReviewResultFromEntry(entry);
+  const comparisonCount = Number(entry?.comparisonCount ?? entry?.comparison_count ?? (Array.isArray(entry?.comparisonRequests) ? entry.comparisonRequests.length : 0));
+  const reportPullCount = Number(entry?.reportPullCount ?? entry?.report_pull_count ?? (Array.isArray(entry?.reportPulls) ? entry.reportPulls.length : 0));
   if (comparisonReview?.summary) {
     return {
       panel: "compare-review",
@@ -2178,15 +2182,35 @@ function resolveAnalysisLandingFromEntry(entry = {}) {
     };
   }
 
-  if (Array.isArray(entry?.comparisonRequests) && entry.comparisonRequests.length) {
+  if (comparisonCount > 0) {
     return { panel: "compare-review", summaryMode: "review" };
   }
 
-  if (Array.isArray(entry?.reportPulls) && entry.reportPulls.length) {
+  if (reportPullCount > 0) {
     return { panel: "home", summaryMode: "review" };
   }
 
   return { panel: "previous", summaryMode: "review" };
+}
+
+function getAnalysisSetupComparisonCount(setup = {}) {
+  return Number(
+    setup?.comparisonCount
+    ?? setup?.comparison_count
+    ?? (Array.isArray(setup?.comparisonRequests) ? setup.comparisonRequests.length : 0)
+  );
+}
+
+function getAnalysisSetupReportPullCount(setup = {}) {
+  return Number(
+    setup?.reportPullCount
+    ?? setup?.report_pull_count
+    ?? (Array.isArray(setup?.reportPulls) ? setup.reportPulls.length : 0)
+  );
+}
+
+function getAnalysisComparisonsLoadErrorMessage() {
+  return "Could not load saved comparisons. Check backend connection or persistence status.";
 }
 
 function choosePreferredAnalysisSetup(setups = [], options = {}) {
@@ -2205,8 +2229,8 @@ function choosePreferredAnalysisSetup(setups = [], options = {}) {
   const scoreSetup = (setup) => {
     const setupId = String(setup?.id || "").trim();
     const runName = String(setup?.run_name || setup?.runName || "").trim().toLowerCase();
-    const comparisonCount = Array.isArray(setup?.comparisonRequests) ? setup.comparisonRequests.length : 0;
-    const pullCount = Array.isArray(setup?.reportPulls) ? setup.reportPulls.length : 0;
+    const comparisonCount = getAnalysisSetupComparisonCount(setup);
+    const pullCount = getAnalysisSetupReportPullCount(setup);
     let score = 0;
     if (setupId && preferredId && setupId === preferredId) {
       score += 1000;
@@ -10769,6 +10793,15 @@ function renderAnalysisComparisonReviewPanel() {
   if (completeButton) {
     completeButton.disabled = true;
   }
+  if (state.analysis.setupsLoadError || state.analysis.reportsLoadError) {
+    const message = getAnalysisComparisonsLoadErrorMessage();
+    const statusText = el("analysis-comparison-selection-status");
+    if (statusText) {
+      statusText.textContent = message;
+    }
+    container.innerHTML = `<div class="empty-state-block">${esc(message)}</div>`;
+    return;
+  }
   if (recoverComparisonSetupFromWorkspace()) {
     scheduleAnalysisComparisonReviewRender(20);
     return;
@@ -12861,9 +12894,16 @@ async function loadAnalysisReports(providedRows = null, setupIdOverride = "") {
   const loadVersion = ++analysisReportsLoadVersion;
   const tbody = el("analysis-history-body");
   const activeSetupId = String(setupIdOverride || getActiveAnalysisReportSetupId() || "").trim();
-  const rows = Array.isArray(providedRows)
-    ? providedRows
-    : await fetchAnalysisReportsPayload(activeSetupId);
+  let rows;
+  try {
+    rows = Array.isArray(providedRows)
+      ? providedRows
+      : await fetchAnalysisReportsPayload(activeSetupId);
+    state.analysis.reportsLoadError = "";
+  } catch (error) {
+    state.analysis.reportsLoadError = getAnalysisComparisonsLoadErrorMessage();
+    throw error;
+  }
   const scopedRows = activeSetupId
     ? rows.filter((report) => String(report.setupId || report.setup_id || "").trim() === activeSetupId)
     : rows;
@@ -13133,7 +13173,7 @@ function renderAnalysisSetups(normalizedSetups = []) {
         createdAt: setup.created_at || setup.createdAt || null,
         updatedAt: setup.updated_at || setup.updatedAt || null,
         completedAt: setup.completed_at || setup.completedAt || null,
-        reportPullCount: Array.isArray(setup.reportPulls) ? setup.reportPulls.length : 0,
+        reportPullCount: getAnalysisSetupReportPullCount(setup),
         isTopRow: index === 0,
         canUndoLatestCompletion: setup.canUndoLatestCompletion === true,
       }))
@@ -13215,9 +13255,27 @@ function renderAnalysisSetups(normalizedSetups = []) {
   });
 }
 
+function renderAnalysisSetupsLoadError(message) {
+  const tbody = el("analysis-setup-body");
+  if (!tbody) {
+    return;
+  }
+  tbody.innerHTML = `<tr><td colspan="8" class="empty-cell">${esc(message)}</td></tr>`;
+}
+
 async function loadAnalysisSetups() {
   const loadVersion = ++analysisSetupsLoadVersion;
-  const normalizedSetups = await fetchAnalysisSetupsPayload();
+  let normalizedSetups;
+  try {
+    normalizedSetups = await fetchAnalysisSetupsPayload();
+    state.analysis.setupsLoadError = "";
+  } catch (error) {
+    const message = getAnalysisComparisonsLoadErrorMessage();
+    state.analysis.setupsLoadError = message;
+    renderAnalysisSetupsLoadError(message);
+    setStatus("analysis-setup-status", message);
+    throw error;
+  }
   if (loadVersion !== analysisSetupsLoadVersion) {
     return normalizedSetups;
   }
@@ -13333,9 +13391,17 @@ async function loadAnalysisSetupView(options = {}) {
   setStatus("analysis-setup-status", "Loading analysis...");
   let normalizedSetups = [];
   try {
-    normalizedSetups = ensureArray(await fetchAnalysisSetupsPayload().catch(() => []));
+    normalizedSetups = ensureArray(await fetchAnalysisSetupsPayload());
+    state.analysis.setupsLoadError = "";
   } catch (error) {
-    setStatus("analysis-comparison-status", `Unable to load analyses: ${error.message}`);
+    const message = getAnalysisComparisonsLoadErrorMessage();
+    state.analysis.setupsLoadError = message;
+    setStatus("analysis-comparison-status", message);
+    if (state.analysis.panel === "compare-review") {
+      renderComparisonReviewPanelShell();
+      renderAnalysisComparisonReviewPanel();
+    }
+    throw error;
   }
 
   let persistedSetupId = state.analysis.currentSetupId || readPersistedAnalysisSetupId();
@@ -13362,7 +13428,10 @@ async function loadAnalysisSetupView(options = {}) {
       persistAnalysisSetupId(targetSetupId);
     } catch (error) {
       persistAnalysisSetupId("");
-      setStatus("analysis-comparison-status", `Unable to restore saved comparison setup: ${error.message}`);
+      const message = getAnalysisComparisonsLoadErrorMessage();
+      state.analysis.setupsLoadError = message;
+      setStatus("analysis-comparison-status", message);
+      throw error;
     }
   } else if (!targetSetupId && !state.analysis.setupHydrated && !options.freshComparisonSetup) {
     restorePersistedAnalysisSetupDraft("");
@@ -13370,8 +13439,16 @@ async function loadAnalysisSetupView(options = {}) {
 
   try {
     await loadAnalysisReports(null, targetSetupId);
+    state.analysis.reportsLoadError = "";
   } catch (error) {
-    setStatus("analysis-comparison-status", `Unable to load available reports: ${error.message}`);
+    const message = getAnalysisComparisonsLoadErrorMessage();
+    state.analysis.reportsLoadError = message;
+    setStatus("analysis-comparison-status", message);
+    if (state.analysis.panel === "compare-review") {
+      renderComparisonReviewPanelShell();
+      renderAnalysisComparisonReviewPanel();
+    }
+    throw error;
   }
 
   if (window?.HPA_DEBUG) {
