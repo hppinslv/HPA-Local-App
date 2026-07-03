@@ -222,6 +222,8 @@ const setStatus = (id, message) => {
   if (el) el.textContent = message || "";
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const el = (id) => document.getElementById(id);
 const all = (selector) => Array.from(document.querySelectorAll(selector));
 const esc = (value) =>
@@ -595,7 +597,17 @@ const apiRequest = async (url, options = {}) => {
     init.body = JSON.stringify(options.body || {});
   }
 
-  const res = await fetch(url, init);
+  let res;
+  try {
+    res = await fetch(url, init);
+  } catch (error) {
+    console.error("[apiRequest] network failure", {
+      method: init.method,
+      url,
+      message: error instanceof Error ? error.message : String(error || "Unknown fetch failure"),
+    });
+    throw error;
+  }
   const raw = await res.text();
   let payload = {};
   if (raw) {
@@ -610,6 +622,13 @@ const apiRequest = async (url, options = {}) => {
   }
   return payload;
 };
+
+function shouldRetryAnalysisListLoad(error) {
+  const message = String(error?.message || "").trim().toLowerCase();
+  return message === "failed to fetch"
+    || message.includes("persistence_not_ready")
+    || message.includes("still initializing");
+}
 
 function getResolvedApiBaseUrl() {
   try {
@@ -12976,8 +12995,28 @@ async function loadAnalysisReports(providedRows = null) {
 
 function fetchAnalysisSetupsPayload() {
   if (!analysisSetupsLoadPromise) {
-    analysisSetupsLoadPromise = apiRequest("/api/analysis/setups")
-      .then((response) => ensureArray(response.setups).filter((entry) => shouldDisplayAnalysisHistoryEntry(entry)))
+    analysisSetupsLoadPromise = (async () => {
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const response = await apiRequest("/api/analysis/setups");
+          return ensureArray(response.setups).filter((entry) => shouldDisplayAnalysisHistoryEntry(entry));
+        } catch (error) {
+          if (attempt >= maxAttempts || !shouldRetryAnalysisListLoad(error)) {
+            throw error;
+          }
+          const delayMs = attempt === 1 ? 500 : 1500;
+          console.warn("[analysis] retrying analysis setup list load", {
+            attempt,
+            nextAttempt: attempt + 1,
+            delayMs,
+            message: error instanceof Error ? error.message : String(error || "Unknown analysis list load failure"),
+          });
+          await sleep(delayMs);
+        }
+      }
+      return [];
+    })()
       .finally(() => {
         analysisSetupsLoadPromise = null;
       });
@@ -13173,7 +13212,9 @@ async function loadAnalysisSetups() {
   if (loadVersion !== analysisSetupsLoadVersion) {
     return normalizedSetups;
   }
-  return renderAnalysisSetups(normalizedSetups);
+  renderAnalysisSetups(normalizedSetups);
+  setStatus("analysis-setup-status", "");
+  return normalizedSetups;
 }
 
 async function deleteAnalysisSetupEntry(setupId) {

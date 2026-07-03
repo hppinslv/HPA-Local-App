@@ -4858,6 +4858,7 @@ module.exports = {
   fetchMonthlySalesforceReportData,
   fetchRawSalesforceReportRows,
   fetchReportDescribe,
+  fetchSObjectDescribe,
   ensureSumOfConvertedColumn,
   getAnalysisDebugFilePath,
   getConnectedSalesforceToken,

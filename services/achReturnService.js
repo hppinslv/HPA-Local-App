@@ -2,6 +2,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const {
+  fetchSObjectDescribe,
   fetchRawSalesforceReportRows,
   getConnectedSalesforceToken,
   runSoqlQuery,
@@ -20,6 +21,7 @@ const ACH_RETURN_PAYMENT_DETAIL_REPORT_ID = "00OQm000003QDEPMA4";
 const IMPORT_BATCH_SIZE = 200;
 const ACH_RETURN_SKIP_POLICY_PAY_TYPE_RETURN_CODE = "R01";
 const MONTHLY_BILLING_PAY_TYPE = "3";
+const ACH_RETURN_TASK_LOOKBACK_DAYS = 365;
 
 let sessionCache = null;
 let rowCache = null;
@@ -273,6 +275,344 @@ function escapeSoqlString(value) {
   return String(value || "")
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'");
+}
+
+function normalizeComparableText(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function buildAchReturnCommentKeyParts(row = {}) {
+  return [
+    normalizeComparableText(row.certificateNumber),
+    normalizeComparableText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber),
+    normalizeComparableText(normalizeAmount(row.creditAmount)),
+    normalizeComparableText(row.returnCode || row.reasonCode),
+    normalizeComparableText(row.returnReason),
+    normalizeComparableText(normalizeDateText(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded)),
+  ].filter(Boolean);
+}
+
+function buildAchReturnCommentText(row = {}, processedAt = new Date().toISOString()) {
+  const amountText = formatCurrency(normalizeAmount(row.creditAmount));
+  const checkNumber = normalizeText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber);
+  const returnCode = normalizeText(row.returnCode || row.reasonCode).toUpperCase();
+  const returnReason = normalizeText(row.returnReason);
+  const processedOn = formatDateMmDdYyyy(processedAt) || formatDateMmDdYyyy(new Date().toISOString());
+  const creditDate = formatDateMmDdYyyy(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded);
+  const isFundsCode = returnCode === "ISF" || returnCode === "NSF";
+  const reasonDetail = [returnCode, returnReason].filter(Boolean).join(" - ");
+  const sentences = [];
+
+  if (isFundsCode) {
+    sentences.push(`Rcvd notice from the bank of ${returnCode}.`);
+  } else if (amountText) {
+    sentences.push(`Rcvd notice from the bank of returned check for ${amountText}.`);
+  } else {
+    sentences.push("Rcvd notice from the bank of returned check.");
+  }
+
+  if (amountText) {
+    sentences.push(`Processed returned check reversal/credit of ${amountText}.`);
+  }
+  if (checkNumber) {
+    sentences.push(`Check #${checkNumber}.`);
+  }
+  if (creditDate) {
+    sentences.push(`Return date ${creditDate}.`);
+  }
+  if (reasonDetail && normalizeComparableText(reasonDetail) !== normalizeComparableText(returnCode)) {
+    sentences.push(`Return reason: ${reasonDetail}.`);
+  }
+  if (processedOn) {
+    sentences.push(`Processed on ${processedOn}.`);
+  }
+
+  return sentences.join(" ").trim();
+}
+
+function getDescribePicklistValues(field = {}) {
+  return Array.isArray(field?.picklistValues)
+    ? field.picklistValues.filter((entry) => entry && entry.active !== false)
+    : [];
+}
+
+function choosePicklistValue(field, candidates = []) {
+  const values = getDescribePicklistValues(field);
+  if (!values.length) return "";
+
+  const normalizedValues = values.map((entry) => ({
+    value: normalizeText(entry.value),
+    label: normalizeText(entry.label || entry.value),
+    normalizedValue: normalizeComparableText(entry.value),
+    normalizedLabel: normalizeComparableText(entry.label || entry.value),
+  }));
+
+  for (const candidate of candidates.map((entry) => normalizeText(entry)).filter(Boolean)) {
+    const normalizedCandidate = normalizeComparableText(candidate);
+    const exactMatch = normalizedValues.find((entry) => (
+      entry.normalizedValue === normalizedCandidate || entry.normalizedLabel === normalizedCandidate
+    ));
+    if (exactMatch) {
+      return exactMatch.value;
+    }
+  }
+
+  for (const candidate of candidates.map((entry) => normalizeText(entry)).filter(Boolean)) {
+    const normalizedCandidate = normalizeComparableText(candidate);
+    const fuzzyMatch = normalizedValues.find((entry) => (
+      entry.normalizedValue.includes(normalizedCandidate)
+      || entry.normalizedLabel.includes(normalizedCandidate)
+      || normalizedCandidate.includes(entry.normalizedValue)
+      || normalizedCandidate.includes(entry.normalizedLabel)
+    ));
+    if (fuzzyMatch) {
+      return fuzzyMatch.value;
+    }
+  }
+
+  return "";
+}
+
+function findDescribeField(describePayload, candidates = [], fallbackPredicate = null) {
+  const fields = Array.isArray(describePayload?.fields) ? describePayload.fields : [];
+  const createableFields = fields.filter((field) => field && field.createable !== false);
+  const normalizedCandidates = candidates.map((entry) => normalizeComparableText(entry)).filter(Boolean);
+
+  for (const candidate of normalizedCandidates) {
+    const exactMatch = createableFields.find((field) => (
+      normalizeComparableText(field.name) === candidate || normalizeComparableText(field.label) === candidate
+    ));
+    if (exactMatch) {
+      return exactMatch;
+    }
+  }
+
+  for (const candidate of normalizedCandidates) {
+    const fuzzyMatch = createableFields.find((field) => (
+      normalizeComparableText(field.name).includes(candidate)
+      || normalizeComparableText(field.label).includes(candidate)
+      || candidate.includes(normalizeComparableText(field.name))
+      || candidate.includes(normalizeComparableText(field.label))
+    ));
+    if (fuzzyMatch) {
+      return fuzzyMatch;
+    }
+  }
+
+  if (typeof fallbackPredicate === "function") {
+    return createableFields.find((field) => fallbackPredicate(field)) || null;
+  }
+
+  return null;
+}
+
+function buildReturnedCheckCommentTypeCandidates(row = {}) {
+  const returnCode = normalizeText(row.returnCode || row.reasonCode).toUpperCase();
+  return [
+    "Returned Check",
+    returnCode === "ISF" || returnCode === "NSF" ? "Payment Issue" : "",
+    "Billing",
+    "Admin",
+  ].filter(Boolean);
+}
+
+function buildReturnedCheckCommentReasonCandidates(row = {}) {
+  const returnCode = normalizeText(row.returnCode || row.reasonCode).toUpperCase();
+  const returnReason = normalizeText(row.returnReason);
+  return [
+    returnCode,
+    returnReason,
+    `${returnCode} ${returnReason}`.trim(),
+    "Returned Check",
+    "Payment Issue",
+    "Processed refund",
+    "Billing",
+  ].filter(Boolean);
+}
+
+async function resolveReturnedCheckTaskFieldConfig(tokenRecord) {
+  const describePayload = await fetchSObjectDescribe(tokenRecord, "Task");
+  const statusField = findDescribeField(describePayload, ["Status"]);
+  const subjectField = findDescribeField(describePayload, ["Subject"]);
+  const subtypeField = findDescribeField(describePayload, ["TaskSubtype"]);
+  const descriptionField = findDescribeField(describePayload, ["Description"]);
+  const activityDateField = findDescribeField(describePayload, ["ActivityDate", "Follow Up Date"]);
+  const commentTypeField = findDescribeField(
+    describePayload,
+    ["Comment Type", "CommentType", "Type"],
+    (field) => normalizeComparableText(field.name) === "type"
+  );
+  const commentReasonField = findDescribeField(
+    describePayload,
+    ["Comment Reason", "CommentReason", "Call Disposition", "Disposition", "Reason"]
+  );
+
+  return {
+    statusField,
+    subjectField,
+    subtypeField,
+    descriptionField,
+    activityDateField,
+    commentTypeField,
+    commentReasonField,
+  };
+}
+
+function buildReturnedCheckTaskPayload(row = {}, fieldConfig, processedAt = new Date().toISOString()) {
+  const descriptionText = buildAchReturnCommentText(row, processedAt);
+  const commentTypeValue = fieldConfig.commentTypeField
+    ? choosePicklistValue(fieldConfig.commentTypeField, buildReturnedCheckCommentTypeCandidates(row))
+    : "";
+  const commentReasonValue = fieldConfig.commentReasonField
+    ? choosePicklistValue(fieldConfig.commentReasonField, buildReturnedCheckCommentReasonCandidates(row))
+    : "";
+  const statusValue = fieldConfig.statusField
+    ? choosePicklistValue(fieldConfig.statusField, ["Completed", "Closed", "Done"])
+    : "";
+  const subtypeValue = fieldConfig.subtypeField
+    ? choosePicklistValue(fieldConfig.subtypeField, ["Call"])
+    : "";
+  const subjectValue = commentTypeValue && commentReasonValue
+    ? `${commentTypeValue} - ${commentReasonValue}`
+    : commentTypeValue || "Returned Check";
+  const payload = {
+    WhatId: normalizeText(row.certificateRecordId) || undefined,
+  };
+
+  if (fieldConfig.subjectField?.name) {
+    payload[fieldConfig.subjectField.name] = subjectValue;
+  } else {
+    payload.Subject = subjectValue;
+  }
+  if (fieldConfig.statusField?.name && statusValue) {
+    payload[fieldConfig.statusField.name] = statusValue;
+  }
+  if (fieldConfig.subtypeField?.name && subtypeValue) {
+    payload[fieldConfig.subtypeField.name] = subtypeValue;
+  }
+  if (fieldConfig.descriptionField?.name) {
+    payload[fieldConfig.descriptionField.name] = descriptionText;
+  } else {
+    payload.Description = descriptionText;
+  }
+  if (
+    fieldConfig.activityDateField?.name
+    && fieldConfig.activityDateField.nillable === false
+    && !fieldConfig.activityDateField.defaultValue
+  ) {
+    payload[fieldConfig.activityDateField.name] =
+      normalizeDateText(processedAt) || normalizeDateText(new Date().toISOString());
+  }
+  if (fieldConfig.commentTypeField?.name && commentTypeValue) {
+    payload[fieldConfig.commentTypeField.name] = commentTypeValue;
+  }
+  if (fieldConfig.commentReasonField?.name && commentReasonValue) {
+    payload[fieldConfig.commentReasonField.name] = commentReasonValue;
+  }
+
+  return {
+    payload,
+    descriptionText,
+    commentTypeValue,
+    commentReasonValue,
+  };
+}
+
+function isEquivalentReturnedCheckTask(record = {}, row = {}) {
+  const combinedText = normalizeComparableText([record.Subject, record.Description].filter(Boolean).join(" "));
+  if (!combinedText) return false;
+  if (!combinedText.includes("returned check") && !combinedText.includes("processed returned check")) {
+    return false;
+  }
+
+  const keyParts = buildAchReturnCommentKeyParts(row);
+  const matchedParts = keyParts.filter((entry) => combinedText.includes(entry));
+  if (!matchedParts.length) {
+    return false;
+  }
+
+  const requiredThreshold = Math.min(3, keyParts.length || 0);
+  return matchedParts.length >= requiredThreshold;
+}
+
+async function findExistingReturnedCheckTask(tokenRecord, row = {}) {
+  const certificateRecordId = normalizeText(row.certificateRecordId);
+  if (!certificateRecordId) {
+    return null;
+  }
+
+  const soql = `
+SELECT Id, Subject, Description, ActivityDate, Status, TaskSubtype, CreatedDate
+FROM Task
+WHERE WhatId = '${escapeSoqlString(certificateRecordId)}'
+  AND CreatedDate = LAST_N_DAYS:${ACH_RETURN_TASK_LOOKBACK_DAYS}
+ORDER BY CreatedDate DESC
+LIMIT 200
+`.trim();
+  const records = await runSoqlQuery(tokenRecord, soql);
+  return records.find((record) => isEquivalentReturnedCheckTask(record, row)) || null;
+}
+
+async function createReturnedCheckTask(tokenRecord, row = {}, processedAt = new Date().toISOString()) {
+  const certificateRecordId = normalizeText(row.certificateRecordId);
+  if (!certificateRecordId) {
+    return {
+      status: "skipped_no_certificate_match",
+      message: "Salesforce comment skipped - no certificate match.",
+      taskId: "",
+    };
+  }
+
+  const existingTask = await findExistingReturnedCheckTask(tokenRecord, row);
+  if (existingTask) {
+    return {
+      status: "already_exists",
+      message: "Salesforce comment already existed.",
+      taskId: normalizeText(existingTask.Id),
+    };
+  }
+
+  const fieldConfig = await resolveReturnedCheckTaskFieldConfig(tokenRecord);
+  const { payload } = buildReturnedCheckTaskPayload(row, fieldConfig, processedAt);
+  const response = await salesforceRequest(
+    tokenRecord,
+    "/services/data/v61.0/sobjects/Task",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+  let responsePayload = {};
+  try {
+    responsePayload = await response.json();
+  } catch {
+    responsePayload = {};
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      responsePayload?.[0]?.message
+      || responsePayload?.message
+      || "Unable to create Salesforce returned check activity."
+    );
+  }
+
+  return {
+    status: "added",
+    message: "Salesforce comment added.",
+    taskId: normalizeText(responsePayload.id),
+  };
+}
+
+function appendRowMessage(baseMessage, extraMessage) {
+  const primary = normalizeText(baseMessage);
+  const extra = normalizeText(extraMessage);
+  if (!primary) return extra;
+  if (!extra) return primary;
+  return `${primary} ${extra}`.trim();
 }
 
 async function runPaymentMatchQuery(tokenRecord, needle) {
@@ -851,6 +1191,10 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
     row.import_result_message = "";
     row.imported_salesforce_id = "";
     row.imported_salesforce_created = false;
+    row.salesforce_comment_status = "";
+    row.salesforce_comment_message = "";
+    row.salesforce_comment_task_id = "";
+    row.salesforce_comment_error = "";
     const blockingIssues = validateImportableRow(row);
     if ((row.validation_status || row.status) === "error" || blockingIssues.length) {
       row.import_result_status = "validation_failed";
@@ -896,6 +1240,7 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
   let successfulRows = 0;
   let failedRows = 0;
   let policyUpdateFailures = [];
+  const commentFailures = [];
 
   for (let startIndex = 0; startIndex < importableRows.length; startIndex += IMPORT_BATCH_SIZE) {
     const batchRows = importableRows.slice(startIndex, startIndex + IMPORT_BATCH_SIZE);
@@ -937,6 +1282,40 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
     });
   }
 
+  const processedRows = importableRows.filter((row) => ["imported", "already_exists"].includes(row.import_result_status));
+  for (const row of processedRows) {
+    try {
+      const activityResult = await createReturnedCheckTask(tokenRecord, row, new Date().toISOString());
+      row.salesforce_comment_status = activityResult.status;
+      row.salesforce_comment_message = activityResult.message;
+      row.salesforce_comment_task_id = activityResult.taskId || "";
+      row.import_result_message = appendRowMessage(row.import_result_message, activityResult.message);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error || "Unknown Salesforce activity error.");
+      row.salesforce_comment_status = "failed";
+      row.salesforce_comment_message = "Returned check processed, but Salesforce comment could not be saved.";
+      row.salesforce_comment_task_id = "";
+      row.salesforce_comment_error = errorMessage;
+      row.import_result_message = appendRowMessage(
+        row.import_result_message,
+        "Returned check processed, but Salesforce comment could not be saved."
+      );
+      commentFailures.push({
+        certificateNumber: normalizeText(row.certificateNumber),
+        checkNumber: normalizeText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber),
+        amount: normalizeAmount(row.creditAmount),
+        errorMessage,
+      });
+      logAchReturnEvent("Returned check Salesforce comment failed", {
+        sessionId,
+        certificateNumber: normalizeText(row.certificateNumber),
+        checkNumber: normalizeText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber),
+        amount: normalizeAmount(row.creditAmount),
+        salesforceError: errorMessage,
+      });
+    }
+  }
+
   if (successfulRows > 0) {
     policyUpdateFailures = await updatePolicyPayTypeForAchReturns(tokenRecord, importableRows);
     if (policyUpdateFailures.length) {
@@ -966,7 +1345,9 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
   session.import_confirmed_at = new Date().toISOString();
   session.import_completed_at = new Date().toISOString();
   session.import_confirmed_by = normalizeText(confirmedBy || DEFAULT_ACTOR);
-  session.final_status = failedRows > 0 || policyUpdateFailures.length > 0 ? "imported_with_errors" : "imported";
+  session.final_status = failedRows > 0 || policyUpdateFailures.length > 0 || commentFailures.length > 0
+    ? "imported_with_errors"
+    : "imported";
   session.updated_at = new Date().toISOString();
   writeSessions(sessions);
   logAchReturnEvent("Confirm import finished", {
@@ -974,6 +1355,7 @@ async function confirmAchReturnImport(sessionId, { confirmedBy = DEFAULT_ACTOR }
     attemptedImportCount: importableRows.length,
     successfulRows,
     failedRows,
+    commentFailures: commentFailures.length,
     finalStatus: session.final_status,
   });
   return updateSessionCounts(sessionId);
@@ -1658,6 +2040,12 @@ function exportAchReturnSession(sessionId) {
 }
 
 module.exports = {
+  __test: {
+    buildAchReturnCommentKeyParts,
+    buildAchReturnCommentText,
+    buildReturnedCheckTaskPayload,
+    isEquivalentReturnedCheckTask,
+  },
   clearCurrentAchReturnSession,
   confirmAchReturnImport,
   confirmCurrentAchReturnImport,
