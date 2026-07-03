@@ -11040,7 +11040,7 @@ function renderAnalysisComparisonReviewPanel() {
           <strong>${esc(getAnalysisReportDateRangeLabel(report))}</strong>
           <span>${esc(cardStatusLabel)}</span>
         </div>
-        <div class="analysis-review-metric-grid">
+        <div class="analysis-review-metric-grid analysis-review-metric-grid-rates">
           <div>
             <span class="field-label">Sold Rate</span>
             <strong>${esc(soldRateDisplay)}</strong>
@@ -11053,6 +11053,8 @@ function renderAnalysisComparisonReviewPanel() {
             <span class="field-label">In Force Rate</span>
             <strong>${esc(inForceRateDisplay)}</strong>
           </div>
+        </div>
+        <div class="analysis-review-metric-grid analysis-review-metric-grid-premiums">
           <div>
             <span class="field-label">Average Premium</span>
             <strong>${esc(averagePremiumDisplay)}</strong>
