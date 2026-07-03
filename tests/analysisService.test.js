@@ -328,9 +328,9 @@ test("saved summary rows missing high and low premium values trigger live scf me
     const result = await service.getAnalysisReportScfMetrics("report_199", "199");
     assert.equal(stubCallCount, 0);
     assert.equal(result.source, "saved-detail-export-aggregate");
-    assert.equal(Number(result.row.averageMonthlyPremium.toFixed(2)), 105.31);
-    assert.equal(result.row.highPremium, 155.91);
-    assert.equal(result.row.lowPremium, 54.25);
+    assert.equal("averageMonthlyPremium" in result.row, false);
+    assert.equal("highPremium" in result.row, false);
+    assert.equal("lowPremium" in result.row, false);
     assert.equal(result.row.medianPremium, 106.74);
   } finally {
     salesforceClient.fetchAnalysisReportScfMetrics = originalFetchAnalysisReportScfMetrics;

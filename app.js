@@ -7476,39 +7476,38 @@ function buildPremiumStatsFromDetailRowsForReview(detailRows = [], scf = "", key
 function applyPremiumStatsToReviewRow(row = {}, premiumStats = {}) {
   const nextRow = { ...(row || {}) };
   const premiumKeys = [
+    "Median Premium",
+    "median premium",
+  ];
+
+  [
     "Average Premium",
     "average premium",
     "High Premium",
     "high premium",
     "Low Premium",
     "low premium",
-    "Median Premium",
-    "median premium",
-  ];
+  ].forEach((key) => {
+    delete nextRow[key];
+  });
 
   if (!Number.isFinite(premiumStats?.premiumCount) || premiumStats.premiumCount <= 0) {
     premiumKeys.forEach((key) => {
       delete nextRow[key];
     });
-    nextRow.averageMonthlyPremium = null;
-    nextRow.highPremium = null;
-    nextRow.lowPremium = null;
-    nextRow.medianPremium = null;
+    delete nextRow.averageMonthlyPremium;
+    delete nextRow.highPremium;
+    delete nextRow.lowPremium;
+    delete nextRow.medianPremium;
     return nextRow;
   }
 
-  nextRow.averageMonthlyPremium = premiumStats.averagePremium;
-  nextRow.highPremium = premiumStats.highPremium;
-  nextRow.lowPremium = premiumStats.lowPremium;
   nextRow.medianPremium = premiumStats.medianPremium;
-  nextRow["Average Premium"] = formatAnalysisCurrency(premiumStats.averagePremium);
-  nextRow["average premium"] = formatAnalysisCurrency(premiumStats.averagePremium);
-  nextRow["High Premium"] = formatAnalysisCurrency(premiumStats.highPremium);
-  nextRow["high premium"] = formatAnalysisCurrency(premiumStats.highPremium);
-  nextRow["Low Premium"] = formatAnalysisCurrency(premiumStats.lowPremium);
-  nextRow["low premium"] = formatAnalysisCurrency(premiumStats.lowPremium);
   nextRow["Median Premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
   nextRow["median premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
+  delete nextRow.averageMonthlyPremium;
+  delete nextRow.highPremium;
+  delete nextRow.lowPremium;
   return nextRow;
 }
 
@@ -7693,34 +7692,22 @@ function normalizeAnalysisMetricRow(row = {}) {
   normalizedRow["sum of in force monthly premium"] = formatAnalysisCurrency(inForceMonthlyPremium);
   normalizedRow["Sum of Total Converted Monthly Premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
   normalizedRow["sum of total converted monthly premiums"] = formatAnalysisCurrency(totalConvertedMonthlyPremiums);
-  const averagePremium = Number.isFinite(Number(row.averageMonthlyPremium))
-    ? Number(row.averageMonthlyPremium)
-    : null;
-  const highPremium = Number.isFinite(Number(row.highPremium))
-    ? Number(row.highPremium)
-    : null;
-  const lowPremium = Number.isFinite(Number(row.lowPremium))
-    ? Number(row.lowPremium)
-    : null;
   const medianPremium = Number.isFinite(Number(row.medianPremium))
     ? Number(row.medianPremium)
     : null;
-  if (averagePremium !== null) {
-    normalizedRow["Average Premium"] = formatAnalysisCurrency(averagePremium);
-    normalizedRow["average premium"] = formatAnalysisCurrency(averagePremium);
-  }
-  if (highPremium !== null) {
-    normalizedRow["High Premium"] = formatAnalysisCurrency(highPremium);
-    normalizedRow["high premium"] = formatAnalysisCurrency(highPremium);
-  }
-  if (lowPremium !== null) {
-    normalizedRow["Low Premium"] = formatAnalysisCurrency(lowPremium);
-    normalizedRow["low premium"] = formatAnalysisCurrency(lowPremium);
-  }
   if (medianPremium !== null) {
     normalizedRow["Median Premium"] = formatAnalysisCurrency(medianPremium);
     normalizedRow["median premium"] = formatAnalysisCurrency(medianPremium);
   }
+  delete normalizedRow.averageMonthlyPremium;
+  delete normalizedRow.highPremium;
+  delete normalizedRow.lowPremium;
+  delete normalizedRow["Average Premium"];
+  delete normalizedRow["average premium"];
+  delete normalizedRow["High Premium"];
+  delete normalizedRow["high premium"];
+  delete normalizedRow["Low Premium"];
+  delete normalizedRow["low premium"];
   normalizedRow["Sum of Opp Count"] = formatNavigatorCount(oppCount);
   normalizedRow["sum of opp count"] = formatNavigatorCount(oppCount);
   normalizedRow["Sum of Sold"] = formatNavigatorCount(soldCount);
@@ -7857,12 +7844,6 @@ function buildSyntheticNavigatorRow({
           convertedRate: convertedRate,
           mailed: safeMailed,
       });
-  const premiumAverage = safePremiumAmounts.length
-    ? safePremiumAmounts.reduce((sum, value) => sum + value, 0) / safePremiumAmounts.length
-    : null;
-  const premiumHigh = safePremiumAmounts.length ? Math.max(...safePremiumAmounts) : null;
-  const premiumLow = safePremiumAmounts.length ? Math.min(...safePremiumAmounts) : null;
-
   return {
     "SCF Grouping": scf,
     "scf grouping": scf,
@@ -7884,12 +7865,6 @@ function buildSyntheticNavigatorRow({
     "sum of in force monthly premium": formatAnalysisCurrency(safeInForceMonthlyPremium),
     "Sum of Total Converted Monthly Premiums": formatAnalysisCurrency(safeTotalConvertedMonthlyPremiums),
     "sum of total converted monthly premiums": formatAnalysisCurrency(safeTotalConvertedMonthlyPremiums),
-    "Average Premium": premiumAverage !== null ? formatAnalysisCurrency(premiumAverage) : "",
-    "average premium": premiumAverage !== null ? formatAnalysisCurrency(premiumAverage) : "",
-    "High Premium": premiumHigh !== null ? formatAnalysisCurrency(premiumHigh) : "",
-    "high premium": premiumHigh !== null ? formatAnalysisCurrency(premiumHigh) : "",
-    "Low Premium": premiumLow !== null ? formatAnalysisCurrency(premiumLow) : "",
-    "low premium": premiumLow !== null ? formatAnalysisCurrency(premiumLow) : "",
     salesforceSoldRate: resolvedSalesforceSoldRate,
     salesforceInForceRate: resolvedSalesforceInForceRate,
     salesforceConvertedRate: Number.isFinite(Number(salesforceConvertedRate)) ? Number(salesforceConvertedRate) : null,
@@ -8169,9 +8144,6 @@ function getMetricLabelAliases(metricLabel) {
     "in force": ["Inforce (policy currently in effect)", "Sum of In Force"],
     "sum of in force": ["Inforce (policy currently in effect)", "In Force"],
     "inforce policy currently in effect": ["Sum of In Force", "In Force"],
-    "average premium": ["Average Premium"],
-    "high premium": ["High Premium"],
-    "low premium": ["Low Premium"],
     "median premium": ["Median Premium"],
     "total monthly premium": ["Sum of Total Sold", "Sum of Total Monthly Premium"],
     "sum of total monthly premium": ["Sum of Total Sold", "Total Monthly Premium"],
@@ -11248,21 +11220,6 @@ function renderAnalysisComparisonReviewPanel() {
       : isMetricLoading
         ? "Loading..."
         : "-";
-    const averagePremiumDisplay = row
-      ? getRowMetricDisplayValue(row, "Average Premium")
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
-    const highPremiumDisplay = row
-      ? getRowMetricDisplayValue(row, "High Premium")
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
-    const lowPremiumDisplay = row
-      ? getRowMetricDisplayValue(row, "Low Premium")
-      : isMetricLoading
-        ? "Loading..."
-        : "-";
     const medianPremiumDisplay = row
       ? getRowMetricDisplayValue(row, "Median Premium")
       : isMetricLoading
@@ -11311,18 +11268,6 @@ function renderAnalysisComparisonReviewPanel() {
           </div>
         </div>
         <div class="analysis-review-metric-grid analysis-review-metric-grid-premiums">
-          <div>
-            <span class="field-label">Average Premium</span>
-            <strong>${esc(averagePremiumDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">High Premium</span>
-            <strong>${esc(highPremiumDisplay)}</strong>
-          </div>
-          <div>
-            <span class="field-label">Low Premium</span>
-            <strong>${esc(lowPremiumDisplay)}</strong>
-          </div>
           <div>
             <span class="field-label">Median Premium</span>
             <strong>${esc(medianPremiumDisplay)}</strong>

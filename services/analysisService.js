@@ -271,39 +271,38 @@ function applyPremiumStatsFromDetailRows(row = {}, premiumStats = {}) {
 
   const nextRow = { ...(row || {}) };
   const premiumKeys = [
+    "Median Premium",
+    "median premium",
+  ];
+
+  [
     "Average Premium",
     "average premium",
     "High Premium",
     "high premium",
     "Low Premium",
     "low premium",
-    "Median Premium",
-    "median premium",
-  ];
+  ].forEach((key) => {
+    delete nextRow[key];
+  });
 
   if (premiumStats.premiumCount <= 0) {
     premiumKeys.forEach((key) => {
       delete nextRow[key];
     });
-    nextRow.averageMonthlyPremium = null;
-    nextRow.highPremium = null;
-    nextRow.lowPremium = null;
-    nextRow.medianPremium = null;
+    delete nextRow.averageMonthlyPremium;
+    delete nextRow.highPremium;
+    delete nextRow.lowPremium;
+    delete nextRow.medianPremium;
     return nextRow;
   }
 
-  nextRow.averageMonthlyPremium = premiumStats.averagePremium;
-  nextRow.highPremium = premiumStats.highPremium;
-  nextRow.lowPremium = premiumStats.lowPremium;
   nextRow.medianPremium = premiumStats.medianPremium;
-  nextRow["Average Premium"] = formatAnalysisCurrency(premiumStats.averagePremium);
-  nextRow["average premium"] = formatAnalysisCurrency(premiumStats.averagePremium);
-  nextRow["High Premium"] = formatAnalysisCurrency(premiumStats.highPremium);
-  nextRow["high premium"] = formatAnalysisCurrency(premiumStats.highPremium);
-  nextRow["Low Premium"] = formatAnalysisCurrency(premiumStats.lowPremium);
-  nextRow["low premium"] = formatAnalysisCurrency(premiumStats.lowPremium);
   nextRow["Median Premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
   nextRow["median premium"] = formatAnalysisCurrency(premiumStats.medianPremium);
+  delete nextRow.averageMonthlyPremium;
+  delete nextRow.highPremium;
+  delete nextRow.lowPremium;
   return nextRow;
 }
 
