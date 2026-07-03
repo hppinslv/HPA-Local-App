@@ -79,6 +79,10 @@ function normalizeLabel(value) {
     .replace(/[^a-z0-9]+/g, " ");
 }
 
+function ensureArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function sanitizeDebugToken(value) {
   return String(value || "")
     .trim()
