@@ -743,29 +743,31 @@ function buildFinalSummaryLetterHtml(letterData) {
         padding: 0;
       }
       .distribution-table {
-        width: 100%;
+        width: 96%;
         border-collapse: collapse;
         table-layout: fixed;
+        margin-left: 10px;
       }
       .distribution-table td {
         padding: 0 0 4px;
-        font-size: 11pt;
-        line-height: 1.15;
+        font-size: 10.5pt;
+        line-height: 1.1;
         vertical-align: top;
       }
       .distribution-label {
-        width: 260px;
-        padding-left: 48px;
+        width: 230px;
+        padding-left: 38px;
         white-space: nowrap;
       }
       .distribution-amount {
-        width: 120px;
+        width: 110px;
         text-align: right;
         white-space: nowrap;
-        padding-right: 12px;
+        padding-right: 10px;
         font-variant-numeric: tabular-nums;
       }
       .distribution-note {
+        font-size: 10pt;
         white-space: nowrap;
       }
       .distribution-total td {
