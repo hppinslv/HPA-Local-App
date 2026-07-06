@@ -749,23 +749,24 @@ function buildFinalSummaryLetterHtml(letterData) {
       }
       .distribution-table td {
         padding: 0 0 4px;
-        font-size: 12pt;
-        line-height: 1.3;
+        font-size: 11pt;
+        line-height: 1.15;
         vertical-align: top;
       }
       .distribution-label {
-        width: 37%;
-        padding-left: 42px;
+        width: 260px;
+        padding-left: 48px;
+        white-space: nowrap;
       }
       .distribution-amount {
-        width: 13%;
+        width: 120px;
         text-align: right;
         white-space: nowrap;
         padding-right: 12px;
+        font-variant-numeric: tabular-nums;
       }
       .distribution-note {
-        width: 50%;
-        white-space: normal;
+        white-space: nowrap;
       }
       .distribution-total td {
         padding-top: 4px;
