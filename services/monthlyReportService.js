@@ -24,6 +24,7 @@ const {
   formatReportMonthFilePrefix,
 } = require("./monthlyReportServiceHelpers");
 const {
+  createPrintableArtifactFromHtml,
   generatePdfFromDocx,
   generatePdfFromHtml,
 } = require("./pdfPrintService");
@@ -1179,19 +1180,46 @@ function createFinalSummaryLetterArtifacts(runId, report) {
   const safeMonthLabel = letterData.reportMonthLabel.replace(/[^A-Za-z0-9-]/g, "-");
   const docxFileName = `Final_Summary_Letter_${safeMonthLabel}.docx`;
   const pdfFileName = `${filePrefix}_Premier - Letter.pdf`;
+  const htmlFileName = `${filePrefix}_Premier - Letter.html`;
   const jsonFileName = `${filePrefix}_Premier - Letter.json`;
   const docxPath = path.join(runDir, docxFileName);
   const pdfPath = path.join(runDir, pdfFileName);
   const legacyPreviewFileNames = fs.existsSync(runDir)
     ? fs.readdirSync(runDir).filter((fileName) => /^final-summary-letter-.*\.html$/i.test(String(fileName || "")))
     : [];
+  const htmlContent = buildFinalSummaryLetterHtml(letterData);
 
   legacyPreviewFileNames.forEach((fileName) => {
     fs.rmSync(path.join(runDir, fileName), { force: true });
   });
 
   buildFinalSummaryLetterDocx(letterData, docxPath);
-  generatePdfFromDocx(docxPath, pdfPath);
+  const printArtifacts = [];
+  let printArtifactWarning = "";
+  try {
+    generatePdfFromDocx(docxPath, pdfPath);
+    printArtifacts.push({
+      kind: "print",
+      label: "Download PDF",
+      fileName: pdfFileName,
+      contentType: "application/pdf",
+    });
+  } catch (error) {
+    const fallback = createPrintableArtifactFromHtml({
+      html: htmlContent,
+      outputDir: runDir,
+      pdfFileName,
+      htmlFileName,
+    });
+    printArtifactWarning = fallback.warning || "";
+    printArtifacts.push({
+      kind: "summary-letter-preview",
+      label: "Open Final Summary Letter HTML Preview",
+      fileName: fallback.artifact.fileName,
+      contentType: fallback.artifact.contentType,
+    });
+    printArtifacts.push(fallback.artifact);
+  }
   fs.writeFileSync(
     path.join(runDir, jsonFileName),
     `${JSON.stringify(letterData, null, 2)}\n`,
@@ -1213,14 +1241,9 @@ function createFinalSummaryLetterArtifacts(runId, report) {
         fileName: jsonFileName,
         contentType: "application/json; charset=utf-8",
       },
-      {
-        kind: "print",
-        label: "Download PDF",
-        fileName: pdfFileName,
-        contentType: "application/pdf",
-      },
+      ...printArtifacts,
     ],
-    printArtifactWarning: "",
+    printArtifactWarning,
   };
 }
 
