@@ -662,7 +662,7 @@ function buildFinalSummaryLetterLines(letterData) {
     `AMALGAMATED: ${currency(letterData.amalgamatedPremium)} (41% of Premium collected in ${letterData.reportMonthDashLabel})`,
     `HPA Commission: ${currency(letterData.hpaCommission)} (59% of Premium collected in ${letterData.reportMonthDashLabel})`,
     `AHA Dues: ${currency(letterData.ahaDues)} (Membership dues collected in ${letterData.reportMonthDashLabel})`,
-    `FTJ (Fee): ${currency(letterData.ftjFee)} (Taken from HPA Commissions above)`,
+    `Premier Work-SiteSolutions (Fee): ${currency(letterData.ftjFee)} (Taken from HPA Commissions above)`,
     `Total: ${currency(letterData.fundsReceived)}`,
     "",
     "These figures have been carefully reviewed and double-checked with each of the transaction types from which the figures were originally calculated.",
@@ -981,7 +981,7 @@ function buildFinalSummaryLetterTemplateXml(templateXml, letterData) {
     paraId: "50B31CE1",
     textId: "3014B063",
     rsidP: "00FE6A12",
-    label: "FTJ",
+    label: "Premier Work-SiteSolutions",
     suffix: " (Fee):",
     amount: letterData.ftjFee,
   });
