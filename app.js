@@ -14303,9 +14303,9 @@ function bindMonthlyActions() {
       const status = esc(String(run.status || "").trim() || "queued");
       const excelArtifact = getHistoryArtifact(run, ["spreadsheet"]);
       const printArtifact = getHistoryArtifact(run, [
-        "print",
-        "summary-letter-preview",
-      ]) || getHistoryArtifact(run, ["summary-letter", "summary-letter-html"]);
+        "summary-letter",
+        "summary-letter-html",
+      ]) || getHistoryArtifact(run, ["print", "summary-letter-preview"]);
 
       reportHistoryBody.appendChild(Object.assign(document.createElement("tr"), {
         innerHTML: `

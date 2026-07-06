@@ -688,9 +688,11 @@ function buildFinalSummaryLetterHtml(letterData) {
     const separatorIndex = line.indexOf(": ");
     const label = separatorIndex >= 0 ? `${line.slice(0, separatorIndex)}:` : line;
     const value = separatorIndex >= 0 ? line.slice(separatorIndex + 2) : "";
+    const valueMatch = value.match(/^(\$\s*[\d,]+\.\d{2})(.*)$/);
     return {
       label,
-      value,
+      amount: valueMatch ? valueMatch[1].trim() : value,
+      note: valueMatch ? valueMatch[2].trim() : "",
       isTotal: index === distributionLines.length - 1,
     };
   });
@@ -752,14 +754,18 @@ function buildFinalSummaryLetterHtml(letterData) {
         vertical-align: top;
       }
       .distribution-label {
-        width: 32%;
+        width: 37%;
         padding-left: 42px;
-        white-space: nowrap;
       }
-      .distribution-value {
-        width: 68%;
-        white-space: nowrap;
+      .distribution-amount {
+        width: 13%;
         text-align: right;
+        white-space: nowrap;
+        padding-right: 12px;
+      }
+      .distribution-note {
+        width: 50%;
+        white-space: normal;
       }
       .distribution-total td {
         padding-top: 4px;
@@ -784,9 +790,10 @@ function buildFinalSummaryLetterHtml(letterData) {
           <tbody>
             ${distributionRows
               .map(
-                ({ label, value, isTotal }) => `<tr class="${isTotal ? "distribution-total" : ""}">
+                ({ label, amount, note, isTotal }) => `<tr class="${isTotal ? "distribution-total" : ""}">
               <td class="distribution-label">${escapeXml(label)}</td>
-              <td class="distribution-value">${escapeXml(value)}</td>
+              <td class="distribution-amount">${escapeXml(amount)}</td>
+              <td class="distribution-note">${escapeXml(note)}</td>
             </tr>`
               )
               .join("")}
@@ -1172,6 +1179,13 @@ function createFinalSummaryLetterArtifacts(runId, report) {
   const jsonFileName = `${filePrefix}_Premier - Letter.json`;
   const docxPath = path.join(runDir, docxFileName);
   const pdfPath = path.join(runDir, pdfFileName);
+  const legacyPreviewFileNames = fs.existsSync(runDir)
+    ? fs.readdirSync(runDir).filter((fileName) => /^final-summary-letter-.*\.html$/i.test(String(fileName || "")))
+    : [];
+
+  legacyPreviewFileNames.forEach((fileName) => {
+    fs.rmSync(path.join(runDir, fileName), { force: true });
+  });
 
   buildFinalSummaryLetterDocx(letterData, docxPath);
   generatePdfFromDocx(docxPath, pdfPath);
@@ -2324,7 +2338,6 @@ function copySummaryLetterArtifactsToRun(summaryRunId, targetRunId) {
     [
       "print",
       "summary-letter",
-      "summary-letter-preview",
       "summary-letter-json",
     ].includes(String(artifact?.kind || "").trim())
   );
