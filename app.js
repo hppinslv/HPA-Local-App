@@ -3348,7 +3348,12 @@ async function generateMailingDataWorkbook() {
       ? `${entry.outputFileName} generated successfully.`
       : "Mailing Data workbook generated successfully.");
     if (entry?.id) {
-      await apiDownload(`/api/mailing-data/${encodeURIComponent(entry.id)}/download`, entry.outputFileName || "mailing-data.xlsx");
+      const downloadUrl = `${window.location.origin}/api/mailing-data/${encodeURIComponent(entry.id)}/download`;
+      try {
+        triggerDirectDownload(downloadUrl, entry.outputFileName || "mailing-data.xlsx");
+      } catch {
+        await apiDownload(downloadUrl, entry.outputFileName || "mailing-data.xlsx");
+      }
     }
   } catch (error) {
     setStatus("mailing-data-progress-status", "");
@@ -3450,12 +3455,17 @@ function bindMailingDataEvents() {
     const entryId = target.getAttribute("data-mailing-data-download");
     if (!entryId) return;
     const entry = ensureArray(state.mailingData.history).find((item) => item.id === entryId);
-    void apiDownload(
-      `/api/mailing-data/${encodeURIComponent(entryId)}/download`,
-      entry?.outputFileName || "mailing-data.xlsx"
-    ).catch((error) => {
-      setStatus("mailing-data-status", `Download failed: ${error.message}`);
-    });
+    const downloadUrl = `${window.location.origin}/api/mailing-data/${encodeURIComponent(entryId)}/download`;
+    try {
+      triggerDirectDownload(downloadUrl, entry?.outputFileName || "mailing-data.xlsx");
+    } catch (error) {
+      void apiDownload(
+        downloadUrl,
+        entry?.outputFileName || "mailing-data.xlsx"
+      ).catch((downloadError) => {
+        setStatus("mailing-data-status", `Download failed: ${downloadError.message}`);
+      });
+    }
   });
 }
 
