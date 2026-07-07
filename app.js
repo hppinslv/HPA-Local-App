@@ -3246,7 +3246,7 @@ function renderMailingDataPage() {
       const latestDownloadUrl = `/api/mailing-data/${encodeURIComponent(latestEntry.id)}/download`;
       downloadBanner.innerHTML = `
         <div class="actions-row">
-          <a class="primary-button" href="${esc(latestDownloadUrl)}" download="${esc(latestEntry.outputFileName || "mailing-data.xlsx")}">
+          <a class="primary-button" href="${esc(latestDownloadUrl)}">
             Download Latest Workbook
           </a>
         </div>
@@ -3272,7 +3272,6 @@ function renderMailingDataPage() {
             <a
               class="secondary-button table-action-button"
               href="/api/mailing-data/${encodeURIComponent(entry.id || "")}/download"
-              download="${esc(entry.outputFileName || "mailing-data.xlsx")}"
             >
               Download
             </a>

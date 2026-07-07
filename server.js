@@ -2126,7 +2126,11 @@ const server = http.createServer(async (request, response) => {
     const contentType =
       contentTypes[extension] || "application/octet-stream";
 
-    response.writeHead(200, { "Content-Type": contentType });
+    const headers = { "Content-Type": contentType };
+    if ([".html", ".js", ".css"].includes(extension)) {
+      headers["Cache-Control"] = "no-store, max-age=0";
+    }
+    response.writeHead(200, headers);
     response.end(data);
   });
 });
