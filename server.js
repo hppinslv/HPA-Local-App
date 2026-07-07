@@ -646,8 +646,9 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/api/mailing-data/generate" && request.method === "POST") {
     collectRequestBody(request)
       .then((body) => {
-        console.info("[Mailing Data] generate route hit", {
+        console.log("[MAILBAG ROUTE HIT]", request.method, requestUrl.pathname, {
           at: new Date().toISOString(),
+          action: "generate",
         });
         const result = generateMailingDataWorkbook(body || {});
         sendJson(response, 200, {
@@ -672,10 +673,11 @@ const server = http.createServer(async (request, response) => {
   if (mailingDataDownloadMatch && request.method === "GET") {
     try {
       const artifact = getMailingDataArtifact(mailingDataDownloadMatch[1]);
-      console.info("[Mailing Data] download route hit", {
+      console.log("[MAILBAG ROUTE HIT]", request.method, requestUrl.pathname, {
         at: new Date().toISOString(),
+        action: "download",
         entryId: mailingDataDownloadMatch[1],
-        fileName: artifact.fileName,
+        filename: artifact.fileName,
       });
       fs.readFile(artifact.filePath, (error, data) => {
         if (error) {

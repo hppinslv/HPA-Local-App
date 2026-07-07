@@ -934,7 +934,7 @@ function getMailingDataArtifact(entryId) {
   }
   return {
     filePath: entry.outputFilePath,
-    fileName: String(entry.outputFileName || path.basename(entry.outputFilePath)).replace("Mailbag_HPA.AHAv2.xlsx", "Mailbag_HPA_AHAv2.xlsx"),
+    fileName: String(entry.outputFileName || path.basename(entry.outputFilePath)).replace(/_Mailbag_HPA\./i, "_Mailbag_HPA_"),
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   };
 }

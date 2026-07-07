@@ -5,6 +5,8 @@ const UI = {
   reportTypeButtons: '[data-report-picker]',
 };
 
+const MAILBAG_DOWNLOAD_BUILD = "2026-07-07-v2";
+
 const MONTHLY_REPORT_LABELS = {
   "transaction-summary": "Transaction Summary",
   "transaction-detail": "Transaction Detail",
@@ -701,10 +703,20 @@ function logMailingDataDownloadEvent(eventName, extra = {}) {
   });
 }
 
+function logMailbagClickTrace(functionName, expectedFilename = "202607_Mailbag_HPA_AHAv2.xlsx", extra = {}) {
+  console.log("[MAILBAG CLICK TRACE] clicked generate/download button", {
+    timestamp: new Date().toISOString(),
+    functionName,
+    expectedFilename,
+    build: MAILBAG_DOWNLOAD_BUILD,
+    ...extra,
+  });
+}
+
 function getSafeMailingDataFileName(fileName) {
   const raw = String(fileName || "mailing-data.xlsx").trim() || "mailing-data.xlsx";
   return raw
-    .replace("Mailbag_HPA.AHAv2.xlsx", "Mailbag_HPA_AHAv2.xlsx")
+    .replace(/_Mailbag_HPA\./i, "_Mailbag_HPA_")
     .replace(/[^\w.-]+/g, "_");
 }
 
@@ -3197,6 +3209,10 @@ function getMailingDataUploads() {
 
 function renderMailingDataPage() {
   const isMailingDataBusy = state.mailingData.exportInProgress || state.mailingData.downloadInProgress;
+  const buildMarker = el("mailing-data-build-marker");
+  if (buildMarker) {
+    buildMarker.textContent = `Mailbag download build: ${MAILBAG_DOWNLOAD_BUILD}`;
+  }
   const generateButton = el("mailing-data-generate-button");
   if (generateButton) {
     generateButton.disabled = isMailingDataBusy;
@@ -3488,6 +3504,7 @@ async function downloadMailingDataWorkbook(entryId, options = {}) {
 }
 
 async function generateMailingDataWorkbook() {
+  logMailbagClickTrace("generateMailingDataWorkbook");
   logMailingDataDownloadEvent("button click", {
     action: "generate mailbag workbook",
   });
@@ -3611,6 +3628,9 @@ function bindMailingDataEvents() {
     if (!(button instanceof HTMLButtonElement) || button.disabled) return;
     const entryId = String(button.getAttribute("data-mailing-data-download") || "").trim();
     if (!entryId) return;
+    logMailbagClickTrace("downloadMailingDataWorkbook.banner", getSafeMailingDataFileName(
+      ensureArray(state.mailingData.history).find((item) => item.id === entryId)?.outputFileName || "202607_Mailbag_HPA_AHAv2.xlsx"
+    ), { entryId });
     logMailingDataDownloadEvent("button click", {
       action: "download latest workbook",
       entryId,
@@ -3632,6 +3652,9 @@ function bindMailingDataEvents() {
     if (downloadButton instanceof HTMLButtonElement && !downloadButton.disabled) {
       const entryId = String(downloadButton.getAttribute("data-mailing-data-download") || "").trim();
       if (entryId) {
+        logMailbagClickTrace("downloadMailingDataWorkbook.history", getSafeMailingDataFileName(
+          ensureArray(state.mailingData.history).find((item) => item.id === entryId)?.outputFileName || "202607_Mailbag_HPA_AHAv2.xlsx"
+        ), { entryId });
         logMailingDataDownloadEvent("button click", {
           action: "download history workbook",
           entryId,

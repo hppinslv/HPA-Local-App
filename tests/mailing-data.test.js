@@ -70,7 +70,7 @@ test("mailing data preview and workbook generation match the sample mailbag layo
   assert.equal(preview.uploads[1].keyCode, "RFC");
   assert.equal(preview.uploads[1].startingSequence, 54313);
   assert.equal(preview.uploads[1].endingSequence, 126167);
-  assert.equal(preview.outputFileName, "202607_Mailbag_HPA.AHAv2.xlsx");
+  assert.equal(preview.outputFileName, "202607_Mailbag_HPA_AHAv2.xlsx");
 
   const generated = generateMailingDataWorkbook({
     uploads,
