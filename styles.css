@@ -2200,8 +2200,9 @@ textarea {
 }
 
 #ach-return-export-table {
-  width: 100%;
-  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
 }
 
 #ach-return-export-table th,
@@ -2221,14 +2222,38 @@ textarea {
 }
 
 #ach-return-export-table .table-action-cell {
-  min-width: 120px;
-  width: 120px;
-  white-space: nowrap;
+  min-width: 160px;
+  width: 160px;
+  white-space: normal;
+  text-align: left;
+}
+
+#ach-return-export-table td.table-action-cell {
+  display: grid;
+  gap: 8px;
+  align-content: start;
 }
 
 #ach-return-export-table .secondary-button.table-action-button,
 #ach-return-export-table .cc-row-note {
   font-size: 0.74rem;
+}
+
+#ach-return-export-table .secondary-button.table-action-button {
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+#ach-return-export-table th:nth-child(2),
+#ach-return-export-table td:nth-child(2) {
+  min-width: 110px;
+  white-space: nowrap;
+}
+
+#ach-return-export-table th:nth-child(3),
+#ach-return-export-table td:nth-child(3) {
+  min-width: 120px;
 }
 
 table {
