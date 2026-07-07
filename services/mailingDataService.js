@@ -797,6 +797,34 @@ function buildApplicationsSheetXml(templateSheetXml, rows, mailDateIso) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" mc:Ignorable="x14ac">\n  <dimension ref="A1:AN${finalRow}"/>\n  ${metadata.sheetViewsXml}\n  ${metadata.colsXml}\n  <sheetData>${metadata.headerRowXml}${dataRows}</sheetData>\n  <autoFilter ref="A1:AN${autoFilterEndRow}"/>\n  ${metadata.phoneticPrXml}\n  ${metadata.pageMarginsXml}\n  ${metadata.pageSetupXml}\n  ${metadata.headerFooterXml}\n  ${metadata.extLstXml}\n</worksheet>\n`;
 }
 
+function removeCalcChainArtifacts(extractDir) {
+  const calcChainPath = path.join(extractDir, "xl", "calcChain.xml");
+  const workbookRelsPath = path.join(extractDir, "xl", "_rels", "workbook.xml.rels");
+  const contentTypesPath = path.join(extractDir, "[Content_Types].xml");
+
+  if (fs.existsSync(calcChainPath)) {
+    fs.rmSync(calcChainPath, { force: true });
+  }
+
+  if (fs.existsSync(workbookRelsPath)) {
+    const workbookRelsXml = fs.readFileSync(workbookRelsPath, "utf8")
+      .replace(
+        /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/calcChain"[^>]*\/>/g,
+        ""
+      );
+    fs.writeFileSync(workbookRelsPath, workbookRelsXml, "utf8");
+  }
+
+  if (fs.existsSync(contentTypesPath)) {
+    const contentTypesXml = fs.readFileSync(contentTypesPath, "utf8")
+      .replace(
+        /<Override\b[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>\s*/g,
+        ""
+      );
+    fs.writeFileSync(contentTypesPath, contentTypesXml, "utf8");
+  }
+}
+
 function buildTemplateWorkbook(rows, outputPath, mailDateIso) {
   if (!fs.existsSync(TEMPLATE_PATH)) {
     throw new Error(`Mailing Data template not found: ${TEMPLATE_PATH}`);
@@ -814,6 +842,7 @@ function buildTemplateWorkbook(rows, outputPath, mailDateIso) {
     const sheetPath = path.join(extractDir, "xl", "worksheets", "sheet1.xml");
     const templateSheetXml = fs.readFileSync(sheetPath, "utf8");
     fs.writeFileSync(sheetPath, buildApplicationsSheetXml(templateSheetXml, rows, mailDateIso), "utf8");
+    removeCalcChainArtifacts(extractDir);
     runPowerShell(`Compress-Archive -Path '${path.join(extractDir, "*").replace(/'/g, "''")}' -DestinationPath '${workingZipPath.replace(/'/g, "''")}' -Force`);
     fs.copyFileSync(workingZipPath, outputPath);
   } finally {
