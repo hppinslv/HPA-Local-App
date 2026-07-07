@@ -3237,6 +3237,23 @@ function renderMailingDataPage() {
     }
   }
 
+  const downloadBanner = el("mailing-data-download-banner");
+  if (downloadBanner) {
+    const latestEntry = ensureArray(state.mailingData.history)[0] || null;
+    if (!latestEntry?.id) {
+      downloadBanner.innerHTML = "";
+    } else {
+      const latestDownloadUrl = `/api/mailing-data/${encodeURIComponent(latestEntry.id)}/download`;
+      downloadBanner.innerHTML = `
+        <div class="actions-row">
+          <a class="primary-button" href="${esc(latestDownloadUrl)}" download="${esc(latestEntry.outputFileName || "mailing-data.xlsx")}">
+            Download Latest Workbook
+          </a>
+        </div>
+      `;
+    }
+  }
+
   const historyBody = el("mailing-data-history-body");
   if (historyBody) {
     const history = ensureArray(state.mailingData.history);
@@ -3252,7 +3269,13 @@ function renderMailingDataPage() {
           <td>${esc(entry.startingCaseNumber || "")}</td>
           <td>${esc(entry.endingCaseNumber || "")}</td>
           <td class="table-action-cell">
-            <button class="secondary-button table-action-button" data-mailing-data-download="${esc(entry.id || "")}">Download</button>
+            <a
+              class="secondary-button table-action-button"
+              href="/api/mailing-data/${encodeURIComponent(entry.id || "")}/download"
+              download="${esc(entry.outputFileName || "mailing-data.xlsx")}"
+            >
+              Download
+            </a>
             ${history[0]?.id === entry.id
               ? `<button class="secondary-button table-action-button" data-mailing-data-delete="${esc(entry.id || "")}">Delete Most Recent</button>`
               : ""}
@@ -3345,16 +3368,8 @@ async function generateMailingDataWorkbook() {
     renderMailingDataPage();
     setStatus("mailing-data-progress-status", "Complete");
     setStatus("mailing-data-status", entry
-      ? `${entry.outputFileName} generated successfully.`
+      ? `${entry.outputFileName} generated successfully. Use Download Latest Workbook below.`
       : "Mailing Data workbook generated successfully.");
-    if (entry?.id) {
-      const downloadUrl = `${window.location.origin}/api/mailing-data/${encodeURIComponent(entry.id)}/download`;
-      try {
-        triggerDirectDownload(downloadUrl, entry.outputFileName || "mailing-data.xlsx");
-      } catch {
-        await apiDownload(downloadUrl, entry.outputFileName || "mailing-data.xlsx");
-      }
-    }
   } catch (error) {
     setStatus("mailing-data-progress-status", "");
     setStatus("mailing-data-status", `Generation failed: ${error.message}`);
@@ -3451,20 +3466,6 @@ function bindMailingDataEvents() {
         setStatus("mailing-data-status", `Delete failed: ${error.message}`);
       });
       return;
-    }
-    const entryId = target.getAttribute("data-mailing-data-download");
-    if (!entryId) return;
-    const entry = ensureArray(state.mailingData.history).find((item) => item.id === entryId);
-    const downloadUrl = `${window.location.origin}/api/mailing-data/${encodeURIComponent(entryId)}/download`;
-    try {
-      triggerDirectDownload(downloadUrl, entry?.outputFileName || "mailing-data.xlsx");
-    } catch (error) {
-      void apiDownload(
-        downloadUrl,
-        entry?.outputFileName || "mailing-data.xlsx"
-      ).catch((downloadError) => {
-        setStatus("mailing-data-status", `Download failed: ${downloadError.message}`);
-      });
     }
   });
 }
