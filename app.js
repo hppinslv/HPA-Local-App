@@ -3246,13 +3246,13 @@ function renderMailingDataPage() {
       const latestDownloadUrl = `/api/mailing-data/${encodeURIComponent(latestEntry.id)}/download`;
       downloadBanner.innerHTML = `
         <div class="actions-row">
-          <button
+          <a
             class="primary-button"
-            type="button"
-            data-mailing-data-download="${esc(latestEntry.id || "")}"
+            href="${esc(latestDownloadUrl)}"
+            download="${esc(latestEntry.outputFileName || "mailing-data.xlsx")}"
           >
             Download Latest Workbook
-          </button>
+          </a>
         </div>
       `;
     }
@@ -3273,13 +3273,13 @@ function renderMailingDataPage() {
           <td>${esc(entry.startingCaseNumber || "")}</td>
           <td>${esc(entry.endingCaseNumber || "")}</td>
           <td class="table-action-cell">
-            <button
+            <a
               class="secondary-button table-action-button"
-              type="button"
-              data-mailing-data-download="${esc(entry.id || "")}"
+              href="/api/mailing-data/${encodeURIComponent(entry.id || "")}/download"
+              download="${esc(entry.outputFileName || "mailing-data.xlsx")}"
             >
               Download
-            </button>
+            </a>
             ${history[0]?.id === entry.id
               ? `<button class="secondary-button table-action-button" data-mailing-data-delete="${esc(entry.id || "")}">Delete Most Recent</button>`
               : ""}
@@ -3469,20 +3469,6 @@ function bindMailingDataEvents() {
       }).catch((error) => {
         setStatus("mailing-data-status", `Delete failed: ${error.message}`);
       });
-      return;
-    }
-    const entryId = target.getAttribute("data-mailing-data-download");
-    if (entryId) {
-      const entry = ensureArray(state.mailingData.history).find((item) => item.id === entryId);
-      const downloadUrl = `/api/mailing-data/${encodeURIComponent(entryId)}/download`;
-      setStatus("mailing-data-status", `Downloading ${entry?.outputFileName || "mailing-data.xlsx"}...`);
-      void apiDownload(downloadUrl, entry?.outputFileName || "mailing-data.xlsx")
-        .then(() => {
-          setStatus("mailing-data-status", `${entry?.outputFileName || "Mailing Data workbook"} download started.`);
-        })
-        .catch((downloadError) => {
-          setStatus("mailing-data-status", `Download failed: ${downloadError.message}`);
-        });
       return;
     }
   });

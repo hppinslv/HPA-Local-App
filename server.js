@@ -671,7 +671,8 @@ const server = http.createServer(async (request, response) => {
         }
         response.writeHead(200, {
           "Content-Type": artifact.contentType,
-          "Content-Disposition": `attachment; filename="${artifact.fileName}"`,
+          "Content-Disposition": `inline; filename="${artifact.fileName}"`,
+          "X-Content-Type-Options": "nosniff",
         });
         response.end(data);
       });
