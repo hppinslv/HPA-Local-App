@@ -4794,6 +4794,23 @@ function getAchReturnDraftManualValues() {
     : {};
 }
 
+function collectAchReturnManualValuesFromDom() {
+  const currentManualValues = getAchReturnDraftManualValues();
+  const reviewPremium = el("ach-return-manual-premium")?.value;
+  const reviewDues = el("ach-return-manual-dues")?.value;
+  const tablePremium = el("ach-return-draft-premium")?.value;
+  const tableDues = el("ach-return-draft-dues")?.value;
+  const premiumValue = tablePremium ?? reviewPremium;
+  const duesValue = tableDues ?? reviewDues;
+
+  return {
+    ...currentManualValues,
+    premium: premiumValue ?? currentManualValues.premium ?? "",
+    dues: duesValue ?? currentManualValues.dues ?? "",
+    duesCollected: duesValue ?? currentManualValues.duesCollected ?? "",
+  };
+}
+
 function buildAchReturnPendingCredit(parsed, selectedMatch, manualValues = {}) {
   if (!selectedMatch) {
     return null;
@@ -4947,8 +4964,8 @@ function renderAchReturnSpreadsheetRow(row, options = {}) {
       <td>${esc(row.creditType || row.certificateType || "ACH")}</td>
       <td>${esc(row.paymentMethod || "")}</td>
       <td>${esc(row.creditDate || "")}</td>
-      <td>${esc(formatAchReturnCurrency(row.premium))}</td>
-      <td>${esc(formatAchReturnCurrency(row.duesCollected))}</td>
+      <td>${options.premiumHtml || esc(formatAchReturnCurrency(row.premium))}</td>
+      <td>${options.duesHtml || esc(formatAchReturnCurrency(row.duesCollected))}</td>
       <td>${esc(row.creditReasonCode || "")}</td>
       <td>${esc(row.rollbackMonths || "")}</td>
       <td>${esc(formatAchReturnCurrency(row.creditAmount))}</td>
@@ -5126,6 +5143,8 @@ function renderAchReturnTable() {
   const renderedRows = [];
 
   if (draftPendingCredit) {
+    const draftPremiumInputValue = draft?.manualValues?.premium ?? (draftPendingCredit.premium ?? "");
+    const draftDuesInputValue = draft?.manualValues?.duesCollected ?? draft?.manualValues?.dues ?? (draftPendingCredit.duesCollected ?? "");
     renderedRows.push(
       renderAchReturnSpreadsheetRow(
         {
@@ -5145,6 +5164,8 @@ function renderAchReturnTable() {
           actionsHtml: draftCanSave
             ? '<button class="secondary-button table-action-button" data-ach-save-draft="1">Save Row &amp; Add Another</button>'
             : '<span class="cc-row-note">Finish the match above to save</span>',
+          premiumHtml: `<input id="ach-return-draft-premium" class="field-input table-inline-input" inputmode="decimal" value="${esc(String(draftPremiumInputValue ?? ""))}" placeholder="Premium">`,
+          duesHtml: `<input id="ach-return-draft-dues" class="field-input table-inline-input" inputmode="decimal" value="${esc(String(draftDuesInputValue ?? ""))}" placeholder="Dues">`,
         }
       )
     );
@@ -5310,6 +5331,9 @@ async function handleAchReturnCreateRow() {
     setStatus("ach-return-status", "Parse an ACH return email first.");
     return;
   }
+  const manualValues = collectAchReturnManualValuesFromDom();
+  state.achReturns.draft.manualValues = manualValues;
+  persistAchReturnDraftState();
   const selectedMatchKey = String(
     el("ach-return-match-select")?.value || draft.selectedMatchKey || draft.selectedMatch?.matchKey || ""
   ).trim();
@@ -5321,7 +5345,7 @@ async function handleAchReturnCreateRow() {
         emailBody,
         selectedMatchKey,
         actor: "Local User",
-        manualValues: draft?.manualValues || {},
+        manualValues,
       },
     });
     state.achReturns.sessions = payload.sessions || [];
@@ -5654,6 +5678,27 @@ function bindAchReturnEvents() {
       setStatus("ach-return-export-status", "ACH reversal row removed.");
     } catch (error) {
       setStatus("ach-return-export-status", `Unable to remove ACH reversal row: ${error.message}`);
+    }
+  });
+
+  el("ach-return-table-body")?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || !state.achReturns.draft) return;
+    if (target.id === "ach-return-draft-premium") {
+      state.achReturns.draft.manualValues = {
+        ...(state.achReturns.draft.manualValues || {}),
+        premium: target.value || "",
+      };
+      persistAchReturnDraftState();
+      return;
+    }
+    if (target.id === "ach-return-draft-dues") {
+      state.achReturns.draft.manualValues = {
+        ...(state.achReturns.draft.manualValues || {}),
+        dues: target.value || "",
+        duesCollected: target.value || "",
+      };
+      persistAchReturnDraftState();
     }
   });
 
