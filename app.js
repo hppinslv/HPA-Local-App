@@ -4813,16 +4813,22 @@ function collectAchReturnManualValuesFromDom() {
   const currentManualValues = getAchReturnDraftManualValues();
   const reviewPremium = el("ach-return-manual-premium")?.value;
   const reviewDues = el("ach-return-manual-dues")?.value;
+  const reviewRollbackMonths = el("ach-return-manual-rollback-months")?.value;
   const tablePremium = el("ach-return-draft-premium")?.value;
   const tableDues = el("ach-return-draft-dues")?.value;
+  const tableRollbackMonths = el("ach-return-draft-rollback-months")?.value;
   const premiumValue = tablePremium ?? reviewPremium;
   const duesValue = tableDues ?? reviewDues;
+  const rollbackMonthsValue = tableRollbackMonths ?? reviewRollbackMonths;
 
   return {
     ...currentManualValues,
     premium: premiumValue ?? currentManualValues.premium ?? "",
     dues: duesValue ?? currentManualValues.dues ?? "",
     duesCollected: duesValue ?? currentManualValues.duesCollected ?? "",
+    rollbackMonths: rollbackMonthsValue ?? currentManualValues.rollbackMonths ?? currentManualValues.months ?? currentManualValues.monthsPaid ?? "",
+    months: rollbackMonthsValue ?? currentManualValues.months ?? currentManualValues.rollbackMonths ?? "",
+    monthsPaid: rollbackMonthsValue ?? currentManualValues.monthsPaid ?? currentManualValues.rollbackMonths ?? "",
   };
 }
 
@@ -4982,7 +4988,7 @@ function renderAchReturnSpreadsheetRow(row, options = {}) {
       <td>${options.premiumHtml || esc(formatAchReturnCurrency(row.premium))}</td>
       <td>${options.duesHtml || esc(formatAchReturnCurrency(row.duesCollected))}</td>
       <td>${esc(row.creditReasonCode || "")}</td>
-      <td>${esc(row.rollbackMonths || "")}</td>
+      <td>${options.rollbackMonthsHtml || esc(row.rollbackMonths || "")}</td>
       <td>${esc(formatAchReturnCurrency(row.creditAmount))}</td>
       <td>${esc(row.reasonForCredit || row.notes || "")}</td>
       <td>${esc(row.dateRefunded || "")}</td>
@@ -5110,7 +5116,9 @@ function renderAchReturnReview() {
                   <input id="ach-return-manual-premium" class="field-input" inputmode="decimal" value="${esc(manualValues?.premium ?? (selectedPremium !== null ? String(selectedPremium) : ""))}" placeholder="Fill only if lookup missed premium">
                   <label class="field-label" for="ach-return-manual-dues">Dues Override</label>
                   <input id="ach-return-manual-dues" class="field-input" inputmode="decimal" value="${esc(manualValues?.dues ?? manualValues?.duesCollected ?? (selectedDues !== null ? String(selectedDues) : ""))}" placeholder="Fill only if lookup missed dues">
-                  <p class="cc-row-note">You can correct premium or dues here before saving the ACH reversal row.</p>
+                  <label class="field-label" for="ach-return-manual-rollback-months">Number of Months Override</label>
+                  <input id="ach-return-manual-rollback-months" class="field-input" inputmode="numeric" type="number" min="0" step="1" value="${esc(manualValues?.rollbackMonths ?? manualValues?.months ?? manualValues?.monthsPaid ?? (selectedRollbackMonths || ""))}" placeholder="Fill only if lookup missed number of months">
+                  <p class="cc-row-note">You can correct premium, dues, or number of months here before saving the ACH reversal row.</p>
                 </div>
               ` : `<p class="empty-cell">Multiple matches found. Select the correct payment above.</p>`}
             `
@@ -5160,6 +5168,11 @@ function renderAchReturnTable() {
   if (draftPendingCredit) {
     const draftPremiumInputValue = draft?.manualValues?.premium ?? (draftPendingCredit.premium ?? "");
     const draftDuesInputValue = draft?.manualValues?.duesCollected ?? draft?.manualValues?.dues ?? (draftPendingCredit.duesCollected ?? "");
+    const draftRollbackMonthsInputValue =
+      draft?.manualValues?.rollbackMonths
+      ?? draft?.manualValues?.months
+      ?? draft?.manualValues?.monthsPaid
+      ?? (draftPendingCredit.rollbackMonths ?? "");
     renderedRows.push(
       renderAchReturnSpreadsheetRow(
         {
@@ -5181,6 +5194,7 @@ function renderAchReturnTable() {
             : '<span class="cc-row-note">Finish the match above to save</span>',
           premiumHtml: `<input id="ach-return-draft-premium" class="field-input table-inline-input" inputmode="decimal" value="${esc(String(draftPremiumInputValue ?? ""))}" placeholder="Premium">`,
           duesHtml: `<input id="ach-return-draft-dues" class="field-input table-inline-input" inputmode="decimal" value="${esc(String(draftDuesInputValue ?? ""))}" placeholder="Dues">`,
+          rollbackMonthsHtml: `<input id="ach-return-draft-rollback-months" class="field-input table-inline-input" inputmode="numeric" type="number" min="0" step="1" value="${esc(String(draftRollbackMonthsInputValue ?? ""))}" placeholder="Months">`,
         }
       )
     );
@@ -5536,12 +5550,19 @@ async function handleAchReturnEditRow(rowId) {
   if (nextDues === null) {
     return;
   }
+  const nextRollbackMonths = window.prompt("Number of Months", row.rollbackMonths ?? "");
+  if (nextRollbackMonths === null) {
+    return;
+  }
 
   const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`, {
     method: "PATCH",
     body: {
       premium: nextPremium,
       duesCollected: nextDues,
+      rollbackMonths: nextRollbackMonths,
+      months: nextRollbackMonths,
+      monthsPaid: nextRollbackMonths,
     },
   });
   state.achReturns.sessions = payload.sessions || [];
@@ -5714,6 +5735,16 @@ function bindAchReturnEvents() {
         duesCollected: target.value || "",
       };
       persistAchReturnDraftState();
+      return;
+    }
+    if (target.id === "ach-return-draft-rollback-months") {
+      state.achReturns.draft.manualValues = {
+        ...(state.achReturns.draft.manualValues || {}),
+        rollbackMonths: target.value || "",
+        months: target.value || "",
+        monthsPaid: target.value || "",
+      };
+      persistAchReturnDraftState();
     }
   });
 
@@ -5748,6 +5779,13 @@ function bindAchReturnEvents() {
         ...(state.achReturns.draft.manualValues || {}),
         duesCollected: target.value || "",
         dues: target.value || "",
+      };
+    } else if (target instanceof HTMLInputElement && target.id === "ach-return-manual-rollback-months") {
+      state.achReturns.draft.manualValues = {
+        ...(state.achReturns.draft.manualValues || {}),
+        rollbackMonths: target.value || "",
+        months: target.value || "",
+        monthsPaid: target.value || "",
       };
     } else {
       return;
