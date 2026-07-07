@@ -411,7 +411,7 @@ function normalizeUploadRequest(entry, index) {
 }
 
 function buildOutputFileName(mailingMonth) {
-  return `${formatMonthFilePrefix(mailingMonth)}_Mailbag_HPA.AHAv2.xlsx`;
+  return `${formatMonthFilePrefix(mailingMonth)}_Mailbag_HPA_AHAv2.xlsx`;
 }
 
 function computeNextCaseNumber(historyEntries) {
@@ -886,6 +886,12 @@ function previewMailingData({ uploads = [], mailingMonth = "", startingCaseNumbe
 }
 
 function generateMailingDataWorkbook({ uploads = [], mailingMonth = "", startingCaseNumber = "" } = {}) {
+  console.info("[Mailing Data] workbook generation started", {
+    at: new Date().toISOString(),
+    uploadCount: Array.isArray(uploads) ? uploads.length : 0,
+    mailingMonth,
+    startingCaseNumber,
+  });
   const normalizedUploads = sortUploads(uploads.map(normalizeUploadRequest));
   if (!normalizedUploads.length) {
     throw new Error("Upload at least one ZIP file.");
@@ -902,6 +908,12 @@ function generateMailingDataWorkbook({ uploads = [], mailingMonth = "", starting
   ensureStorage();
   const artifactPath = path.join(GENERATED_DIR, preview.outputFileName);
   buildTemplateWorkbook(combinedRows, artifactPath, preview.mailDate);
+  console.info("[Mailing Data] workbook generated", {
+    at: new Date().toISOString(),
+    fileName: preview.outputFileName,
+    artifactPath,
+    totalRecords: preview.totalRecords,
+  });
   const entry = createHistoryEntry(preview, parsedUploads, artifactPath);
   const history = readHistory();
   history.unshift(entry);
@@ -922,7 +934,7 @@ function getMailingDataArtifact(entryId) {
   }
   return {
     filePath: entry.outputFilePath,
-    fileName: entry.outputFileName || path.basename(entry.outputFilePath),
+    fileName: String(entry.outputFileName || path.basename(entry.outputFilePath)).replace("Mailbag_HPA.AHAv2.xlsx", "Mailbag_HPA_AHAv2.xlsx"),
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   };
 }

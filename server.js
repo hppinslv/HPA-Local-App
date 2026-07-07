@@ -646,12 +646,20 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/api/mailing-data/generate" && request.method === "POST") {
     collectRequestBody(request)
       .then((body) => {
+        console.info("[Mailing Data] generate route hit", {
+          at: new Date().toISOString(),
+        });
         const result = generateMailingDataWorkbook(body || {});
         sendJson(response, 200, {
           historyEntry: result.historyEntry,
           preview: result.preview,
           history: listMailingDataHistory(),
           nextCaseNumber: getNextMailingCaseNumber(),
+        });
+        console.info("[Mailing Data] generate response sent", {
+          at: new Date().toISOString(),
+          entryId: result.historyEntry?.id || "",
+          fileName: result.historyEntry?.outputFileName || "",
         });
       })
       .catch((error) => {
@@ -664,6 +672,11 @@ const server = http.createServer(async (request, response) => {
   if (mailingDataDownloadMatch && request.method === "GET") {
     try {
       const artifact = getMailingDataArtifact(mailingDataDownloadMatch[1]);
+      console.info("[Mailing Data] download route hit", {
+        at: new Date().toISOString(),
+        entryId: mailingDataDownloadMatch[1],
+        fileName: artifact.fileName,
+      });
       fs.readFile(artifact.filePath, (error, data) => {
         if (error) {
           sendJson(response, 500, { error: "Unable to read generated Mailing Data workbook." });
@@ -671,10 +684,17 @@ const server = http.createServer(async (request, response) => {
         }
         response.writeHead(200, {
           "Content-Type": artifact.contentType,
-          "Content-Disposition": `inline; filename="${artifact.fileName}"`,
+          "Content-Disposition": `attachment; filename="${artifact.fileName}"`,
+          "Cache-Control": "no-store",
           "X-Content-Type-Options": "nosniff",
         });
         response.end(data);
+        console.info("[Mailing Data] download response sent", {
+          at: new Date().toISOString(),
+          entryId: mailingDataDownloadMatch[1],
+          fileName: artifact.fileName,
+          bytes: data.length,
+        });
       });
     } catch (error) {
       sendJson(response, 404, { error: error.message || "Mailing Data workbook not found." });

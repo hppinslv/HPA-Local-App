@@ -216,6 +216,9 @@ const state = {
     nextCaseNumber: "",
     preview: null,
     history: [],
+    exportInProgress: false,
+    downloadInProgress: false,
+    activeDownloadEntryId: "",
   },
   referenceLists: [],
 };
@@ -689,6 +692,21 @@ const apiDownload = async (url, fallbackFileName) => {
   a.remove();
   URL.revokeObjectURL(urlObj);
 };
+
+function logMailingDataDownloadEvent(eventName, extra = {}) {
+  console.info("[Mailing Data]", {
+    event: eventName,
+    at: new Date().toISOString(),
+    ...extra,
+  });
+}
+
+function getSafeMailingDataFileName(fileName) {
+  const raw = String(fileName || "mailing-data.xlsx").trim() || "mailing-data.xlsx";
+  return raw
+    .replace("Mailbag_HPA.AHAv2.xlsx", "Mailbag_HPA_AHAv2.xlsx")
+    .replace(/[^\w.-]+/g, "_");
+}
 
 const triggerDirectDownload = (url, fallbackFileName) => {
   const anchor = document.createElement("a");
@@ -3178,6 +3196,25 @@ function getMailingDataUploads() {
 }
 
 function renderMailingDataPage() {
+  const isMailingDataBusy = state.mailingData.exportInProgress || state.mailingData.downloadInProgress;
+  const generateButton = el("mailing-data-generate-button");
+  if (generateButton) {
+    generateButton.disabled = isMailingDataBusy;
+    generateButton.textContent = state.mailingData.exportInProgress
+      ? "Generating Workbook..."
+      : state.mailingData.downloadInProgress
+        ? "Downloading Workbook..."
+        : "Generate Mailbag Workbook";
+  }
+  const previewButton = el("mailing-data-preview-button");
+  if (previewButton) {
+    previewButton.disabled = isMailingDataBusy;
+  }
+  const nextCaseButton = el("mailing-data-next-case-button");
+  if (nextCaseButton) {
+    nextCaseButton.disabled = isMailingDataBusy;
+  }
+
   const monthInput = el("mailing-data-month");
   if (monthInput && monthInput.value !== String(state.mailingData.mailingMonth || "")) {
     monthInput.value = String(state.mailingData.mailingMonth || "");
@@ -3243,16 +3280,16 @@ function renderMailingDataPage() {
     if (!latestEntry?.id) {
       downloadBanner.innerHTML = "";
     } else {
-      const latestDownloadUrl = `/api/mailing-data/${encodeURIComponent(latestEntry.id)}/download`;
       downloadBanner.innerHTML = `
         <div class="actions-row">
-          <a
+          <button
             class="primary-button"
-            href="${esc(latestDownloadUrl)}"
-            download="${esc(latestEntry.outputFileName || "mailing-data.xlsx")}"
+            type="button"
+            data-mailing-data-download="${esc(latestEntry.id || "")}"
+            ${isMailingDataBusy ? "disabled" : ""}
           >
             Download Latest Workbook
-          </a>
+          </button>
         </div>
       `;
     }
@@ -3273,15 +3310,16 @@ function renderMailingDataPage() {
           <td>${esc(entry.startingCaseNumber || "")}</td>
           <td>${esc(entry.endingCaseNumber || "")}</td>
           <td class="table-action-cell">
-            <a
+            <button
               class="secondary-button table-action-button"
-              href="/api/mailing-data/${encodeURIComponent(entry.id || "")}/download"
-              download="${esc(entry.outputFileName || "mailing-data.xlsx")}"
+              type="button"
+              data-mailing-data-download="${esc(entry.id || "")}"
+              ${isMailingDataBusy ? "disabled" : ""}
             >
               Download
-            </a>
+            </button>
             ${history[0]?.id === entry.id
-              ? `<button class="secondary-button table-action-button" data-mailing-data-delete="${esc(entry.id || "")}">Delete Most Recent</button>`
+              ? `<button class="secondary-button table-action-button" data-mailing-data-delete="${esc(entry.id || "")}" ${isMailingDataBusy ? "disabled" : ""}>Delete Most Recent</button>`
               : ""}
           </td>
         </tr>
@@ -3340,14 +3378,139 @@ async function runMailingDataPreview() {
   }
 }
 
+async function downloadMailingDataWorkbook(entryId, options = {}) {
+  const source = String(options.source || "manual");
+  const entry = ensureArray(state.mailingData.history).find((item) => item.id === entryId) || null;
+  if (!entry?.id) {
+    setStatus("mailing-data-status", "Unable to find that Mailing Data workbook.");
+    return;
+  }
+  if (state.mailingData.downloadInProgress) {
+    logMailingDataDownloadEvent("download suppressed", {
+      source,
+      reason: "download already in progress",
+      entryId,
+    });
+    return;
+  }
+  if (state.mailingData.exportInProgress && source !== "generate") {
+    logMailingDataDownloadEvent("download suppressed", {
+      source,
+      reason: "export already in progress",
+      entryId,
+    });
+    return;
+  }
+
+  const downloadUrl = `/api/mailing-data/${encodeURIComponent(entry.id)}/download`;
+  const safeFileName = getSafeMailingDataFileName(entry.outputFileName || "mailing-data.xlsx");
+  state.mailingData.downloadInProgress = true;
+  state.mailingData.activeDownloadEntryId = entry.id;
+  renderMailingDataPage();
+  setStatus("mailing-data-status", `Downloading ${safeFileName}...`);
+  logMailingDataDownloadEvent("download request started", {
+    source,
+    entryId: entry.id,
+    fileName: safeFileName,
+    url: downloadUrl,
+  });
+
+  let objectUrl = "";
+  let anchor = null;
+  let downloadSucceeded = false;
+  try {
+    const response = await fetch(downloadUrl, {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let payload = {};
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          payload = { raw: text };
+        }
+      }
+      throw new Error(payload.error || payload.message || payload.raw || `${response.status} ${response.statusText}`);
+    }
+    const responseFileName = getSafeMailingDataFileName(
+      getFilenameFromDisposition(response.headers.get("content-disposition"), safeFileName)
+    );
+    const blob = await response.blob();
+    logMailingDataDownloadEvent("frontend blob received", {
+      source,
+      entryId: entry.id,
+      fileName: responseFileName,
+      blobSize: blob.size,
+      blobType: blob.type,
+    });
+    objectUrl = URL.createObjectURL(blob);
+    anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = responseFileName;
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    logMailingDataDownloadEvent("download link clicked", {
+      source,
+      entryId: entry.id,
+      fileName: responseFileName,
+    });
+    downloadSucceeded = true;
+    setStatus("mailing-data-status", `${responseFileName} download started.`);
+  } catch (error) {
+    logMailingDataDownloadEvent("download failed", {
+      source,
+      entryId: entry.id,
+      fileName: safeFileName,
+      message: error.message,
+    });
+    throw error;
+  } finally {
+    if (anchor) {
+      anchor.remove();
+    }
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+    }
+    state.mailingData.downloadInProgress = false;
+    state.mailingData.activeDownloadEntryId = "";
+    renderMailingDataPage();
+    logMailingDataDownloadEvent("export finished", {
+      source,
+      entryId: entry.id,
+      fileName: safeFileName,
+      succeeded: downloadSucceeded,
+    });
+  }
+}
+
 async function generateMailingDataWorkbook() {
+  logMailingDataDownloadEvent("button click", {
+    action: "generate mailbag workbook",
+  });
+  if (state.mailingData.exportInProgress || state.mailingData.downloadInProgress) {
+    logMailingDataDownloadEvent("generate suppressed", {
+      reason: state.mailingData.exportInProgress ? "export already in progress" : "download already in progress",
+    });
+    return;
+  }
   const uploads = getMailingDataUploads();
   if (!uploads.length) {
     setStatus("mailing-data-status", "Select the ZIP files first.");
     return;
   }
+  state.mailingData.exportInProgress = true;
+  renderMailingDataPage();
   setStatus("mailing-data-progress-status", "Building workbook...");
   setStatus("mailing-data-status", "Generating Mailing Data workbook...");
+  logMailingDataDownloadEvent("export request started", {
+    uploadCount: uploads.length,
+    mailingMonth: state.mailingData.mailingMonth,
+    startingCaseNumber: state.mailingData.startingCaseNumber,
+  });
   try {
     const payload = await apiRequest("/api/mailing-data/generate", {
       method: "POST",
@@ -3372,11 +3535,17 @@ async function generateMailingDataWorkbook() {
     renderMailingDataPage();
     setStatus("mailing-data-progress-status", "Complete");
     setStatus("mailing-data-status", entry
-      ? `${entry.outputFileName} generated successfully. Use Download Latest Workbook below.`
+      ? `${getSafeMailingDataFileName(entry.outputFileName)} generated successfully. Starting download...`
       : "Mailing Data workbook generated successfully.");
+    if (entry?.id) {
+      await downloadMailingDataWorkbook(entry.id, { source: "generate" });
+    }
   } catch (error) {
     setStatus("mailing-data-progress-status", "");
     setStatus("mailing-data-status", `Generation failed: ${error.message}`);
+  } finally {
+    state.mailingData.exportInProgress = false;
+    renderMailingDataPage();
   }
 }
 
@@ -3435,10 +3604,53 @@ function bindMailingDataEvents() {
     void generateMailingDataWorkbook();
   });
 
+  el("mailing-data-download-banner")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("[data-mailing-data-download]");
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+    const entryId = String(button.getAttribute("data-mailing-data-download") || "").trim();
+    if (!entryId) return;
+    logMailingDataDownloadEvent("button click", {
+      action: "download latest workbook",
+      entryId,
+    });
+    void downloadMailingDataWorkbook(entryId, { source: "banner" }).catch((error) => {
+      logMailingDataDownloadEvent("download failed", {
+        source: "banner",
+        entryId,
+        message: error.message,
+      });
+      setStatus("mailing-data-status", `Download failed: ${error.message}`);
+    });
+  });
+
   el("mailing-data-history-body")?.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-    const deleteEntryId = target.getAttribute("data-mailing-data-delete");
+    const downloadButton = target.closest("[data-mailing-data-download]");
+    if (downloadButton instanceof HTMLButtonElement && !downloadButton.disabled) {
+      const entryId = String(downloadButton.getAttribute("data-mailing-data-download") || "").trim();
+      if (entryId) {
+        logMailingDataDownloadEvent("button click", {
+          action: "download history workbook",
+          entryId,
+        });
+        void downloadMailingDataWorkbook(entryId, { source: "history" }).catch((error) => {
+          logMailingDataDownloadEvent("download failed", {
+            source: "history",
+            entryId,
+            message: error.message,
+          });
+          setStatus("mailing-data-status", `Download failed: ${error.message}`);
+        });
+      }
+      return;
+    }
+    const deleteButton = target.closest("[data-mailing-data-delete]");
+    const deleteEntryId = deleteButton instanceof HTMLElement
+      ? deleteButton.getAttribute("data-mailing-data-delete")
+      : "";
     if (deleteEntryId) {
       const entry = ensureArray(state.mailingData.history).find((item) => item.id === deleteEntryId);
       if (!entry) {
