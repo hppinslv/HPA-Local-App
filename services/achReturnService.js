@@ -219,6 +219,21 @@ function parseRollbackMonths(value) {
   return "";
 }
 
+function hasOwnValue(value) {
+  if (value === null || value === undefined) return false;
+  return String(value).trim() !== "";
+}
+
+function coalesceAmount(...values) {
+  for (const value of values) {
+    const parsed = normalizeAmount(value);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
 function resolveDuesFromPaymentMatch(row) {
   const candidates = [
     row.dues,
@@ -231,11 +246,16 @@ function resolveDuesFromPaymentMatch(row) {
     row.payment_dues,
     row.paymentDues,
     row.raw_json?.Dues,
+    row.raw_json?.["Dues Collected"],
+    row.raw_json?.["dues collected"],
+    row.raw_json?.["AHA Dues"],
+    row.raw_json?.["aha dues"],
     row.raw_json?.Dues__c,
     row.raw_json?.Dues_Collected__c,
     row.raw_json?.DuesCollected__c,
     row.raw_json?.Dues_Collected,
     row.raw_json?.AHA_Dues__c,
+    row.raw_json?.Aha_Dues__c,
     row.raw_json?.AhaDues__c,
     row.raw_json?.AhaDues,
     row.raw_json?.AHA_DUES__c,
@@ -259,6 +279,13 @@ function resolvePremiumFromPaymentMatch(row) {
     row.total_premium,
     row.totalPremium,
     row.raw_json?.Premium,
+    row.raw_json?.premium,
+    row.raw_json?.["Payment Premium"],
+    row.raw_json?.["payment premium"],
+    row.raw_json?.["Gross Premium"],
+    row.raw_json?.["gross premium"],
+    row.raw_json?.["Total Premium"],
+    row.raw_json?.["total premium"],
     row.raw_json?.Premium__c,
     row.raw_json?.Total_Premium__c,
     row.raw_json?.Gross_Premium__c,
@@ -269,6 +296,35 @@ function resolvePremiumFromPaymentMatch(row) {
     if (parsed !== null) return parsed;
   }
   return null;
+}
+
+function applyAchReturnManualValues(target = {}, manualValues = {}) {
+  const nextTarget = target;
+  if (!manualValues || typeof manualValues !== "object") {
+    return nextTarget;
+  }
+
+  const premium = coalesceAmount(manualValues.premium, manualValues.premiumAmount);
+  if (premium !== null) {
+    nextTarget.premium = premium;
+  }
+
+  const dues = coalesceAmount(manualValues.dues, manualValues.duesCollected, manualValues.duesAmount);
+  if (dues !== null) {
+    nextTarget.dues = dues;
+    nextTarget.duesCollected = dues;
+  }
+
+  const rollbackMonths = parseRollbackMonths(
+    manualValues.rollbackMonths
+    || manualValues.months
+    || manualValues.monthsPaid
+  );
+  if (rollbackMonths) {
+    nextTarget.rollbackMonths = rollbackMonths;
+  }
+
+  return nextTarget;
 }
 
 function escapeSoqlString(value) {
@@ -1816,7 +1872,7 @@ async function previewAchReturn(emailBody = "") {
   };
 }
 
-async function createAchReturnRow({ emailBody = "", selectedMatchKey = "", actor = DEFAULT_ACTOR } = {}) {
+async function createAchReturnRow({ emailBody = "", selectedMatchKey = "", actor = DEFAULT_ACTOR, manualValues = null } = {}) {
   const preview = await previewAchReturn(emailBody);
   if (preview.errors.length) {
     throw new Error(preview.errors[0]);
@@ -1831,6 +1887,7 @@ async function createAchReturnRow({ emailBody = "", selectedMatchKey = "", actor
   }
 
   const pendingCredit = buildPendingReversalCredit(preview.parsed, selectedMatch);
+  applyAchReturnManualValues(pendingCredit, manualValues);
   if (!pendingCredit.certificateRecordId && pendingCredit.certificateNumber) {
     const certificateIdMap = await fetchCertificateRecordIdsForCertificates([pendingCredit.certificateNumber]);
     pendingCredit.certificateRecordId = normalizeText(
@@ -1873,6 +1930,7 @@ async function createAchReturnRow({ emailBody = "", selectedMatchKey = "", actor
     matched_payment: clone(selectedMatch),
     ...pendingCredit,
   };
+  applyAchReturnManualValues(row.matched_payment, manualValues);
   row.policyId = normalizeText(row.matched_payment?.policyId || row.matched_payment?.policy_id || row.policyId);
   row.issue_reason = row.validation_status === "ready"
     ? ""
@@ -1917,6 +1975,46 @@ function removeAchReturnRow(sessionId, rowId) {
   }
   const nextRows = readRows().filter((entry) => !(entry.session_id === sessionId && entry.id === rowId));
   writeRows(nextRows);
+  return updateSessionCounts(sessionId);
+}
+
+function updateAchReturnRow(sessionId, rowId, updates = {}) {
+  const session = readSessions().find((entry) => entry.id === sessionId);
+  if (!session) {
+    throw new Error("ACH return session not found.");
+  }
+
+  const rows = readRows();
+  const rowIndex = rows.findIndex((entry) => entry.session_id === sessionId && entry.id === rowId);
+  if (rowIndex < 0) {
+    throw new Error("ACH reversal row not found.");
+  }
+
+  const nextRow = {
+    ...rows[rowIndex],
+  };
+
+  applyAchReturnManualValues(nextRow, updates);
+  if (nextRow.matched_payment && typeof nextRow.matched_payment === "object") {
+    applyAchReturnManualValues(nextRow.matched_payment, updates);
+  }
+  if (hasOwnValue(updates.dateRefunded)) {
+    nextRow.dateRefunded = formatDateMmDdYyyy(updates.dateRefunded) || normalizeText(updates.dateRefunded);
+  }
+  nextRow.updated_at = new Date().toISOString();
+  nextRow.validation_status = nextRow.policyId
+    && nextRow.certificateRecordId
+    && nextRow.creditAmount > 0
+    && nextRow.creditDate
+    && nextRow.returnCode
+    ? "ready"
+    : "error";
+  nextRow.issue_reason = nextRow.validation_status === "ready"
+    ? ""
+    : "Missing one or more required ACH reversal export fields.";
+
+  rows[rowIndex] = nextRow;
+  writeRows(rows);
   return updateSessionCounts(sessionId);
 }
 
@@ -2065,4 +2163,5 @@ module.exports = {
   listAchReturnSessions,
   previewAchReturn,
   removeAchReturnRow,
+  updateAchReturnRow,
 };

@@ -4787,7 +4787,14 @@ function resolveMatchAmount(selectedMatch, valueGetters) {
   return null;
 }
 
-function buildAchReturnPendingCredit(parsed, selectedMatch) {
+function getAchReturnDraftManualValues() {
+  const draft = state.achReturns.draft;
+  return draft && typeof draft.manualValues === "object" && draft.manualValues
+    ? draft.manualValues
+    : {};
+}
+
+function buildAchReturnPendingCredit(parsed, selectedMatch, manualValues = {}) {
   if (!selectedMatch) {
     return null;
   }
@@ -4816,18 +4823,34 @@ function buildAchReturnPendingCredit(parsed, selectedMatch) {
     () => selectedMatch?.raw?.Name,
   ]);
 
-  const premium = resolveMatchAmount(selectedMatch, [() => selectedMatch?.premium]);
+  const premium = resolveMatchAmount(selectedMatch, [
+    () => manualValues?.premium,
+    () => selectedMatch?.premium,
+    () => selectedMatch?.raw?.Premium,
+    () => selectedMatch?.raw?.premium,
+    () => selectedMatch?.raw?.Premium__c,
+    () => selectedMatch?.raw?.Payment_Premium__c,
+    () => selectedMatch?.raw?.Total_Premium__c,
+    () => selectedMatch?.raw?.Gross_Premium__c,
+  ]);
 
   const dues = resolveMatchAmount(selectedMatch, [
+    () => manualValues?.dues,
+    () => manualValues?.duesCollected,
     () => selectedMatch?.dues,
     () => selectedMatch?.raw?.dues,
     () => selectedMatch?.raw?.dues_amount,
+    () => selectedMatch?.raw?.["Dues Collected"],
+    () => selectedMatch?.raw?.["dues collected"],
     () => selectedMatch?.raw?.aha_dues,
     () => selectedMatch?.raw?.AHA_Dues__c,
     () => selectedMatch?.raw?.Aha_Dues__c,
+    () => selectedMatch?.raw?.Dues__c,
+    () => selectedMatch?.raw?.Dues_Collected__c,
   ]);
 
   const rollbackMonths = resolveMatchTextValue(selectedMatch, [
+    () => manualValues?.rollbackMonths,
     () => selectedMatch?.rollbackMonths,
     () => selectedMatch?.months,
     () => selectedMatch?.id3,
@@ -4951,7 +4974,8 @@ function renderAchReturnReview() {
   const matches = Array.isArray(draft.matches) ? draft.matches : [];
   const selectedMatchKey = draft.selectedMatchKey || draft.selectedMatch?.matchKey || "";
   const selectedMatch = matches.find((entry) => entry.matchKey === selectedMatchKey) || draft.selectedMatch || null;
-  const pendingCredit = buildAchReturnPendingCredit(parsed, selectedMatch);
+  const manualValues = getAchReturnDraftManualValues();
+  const pendingCredit = buildAchReturnPendingCredit(parsed, selectedMatch, manualValues);
   const errors = Array.isArray(draft.errors) ? draft.errors : [];
 
   const selectedCertificateNumber = resolveMatchTextValue(selectedMatch, [
@@ -4972,11 +4996,19 @@ function renderAchReturnReview() {
     () => selectedMatch?.raw?.Customer_Name__c,
     () => selectedMatch?.raw?.Name,
   ]);
-  const selectedPremium = resolveMatchAmount(selectedMatch, [() => selectedMatch?.premium]);
+  const selectedPremium = resolveMatchAmount(selectedMatch, [
+    () => pendingCredit?.premium,
+    () => selectedMatch?.premium,
+    () => selectedMatch?.raw?.Premium,
+    () => selectedMatch?.raw?.premium,
+  ]);
   const selectedDues = resolveMatchAmount(selectedMatch, [
+    () => pendingCredit?.duesCollected,
     () => selectedMatch?.dues,
     () => selectedMatch?.raw?.dues,
     () => selectedMatch?.raw?.dues_amount,
+    () => selectedMatch?.raw?.["Dues Collected"],
+    () => selectedMatch?.raw?.["dues collected"],
     () => selectedMatch?.raw?.AHA_Dues__c,
     () => selectedMatch?.raw?.Aha_Dues__c,
     () => selectedMatch?.raw?.Dues__c,
@@ -5042,6 +5074,11 @@ function renderAchReturnReview() {
                   <p><strong>Payment Date:</strong> ${esc(selectedMatch.paymentDate || "-")}</p>
                   <p><strong>Payment Method:</strong> ${esc(selectedMatch.paymentMethod || "-")}</p>
                   <p><strong>Transaction/Reference Number:</strong> ${esc(selectedMatch.transactionReference || "-")}</p>
+                  <label class="field-label" for="ach-return-manual-premium">Premium Override</label>
+                  <input id="ach-return-manual-premium" class="field-input" inputmode="decimal" value="${esc(manualValues?.premium ?? (selectedPremium !== null ? String(selectedPremium) : ""))}" placeholder="Fill only if lookup missed premium">
+                  <label class="field-label" for="ach-return-manual-dues">Dues Override</label>
+                  <input id="ach-return-manual-dues" class="field-input" inputmode="decimal" value="${esc(manualValues?.dues ?? manualValues?.duesCollected ?? (selectedDues !== null ? String(selectedDues) : ""))}" placeholder="Fill only if lookup missed dues">
+                  <p class="cc-row-note">You can correct premium or dues here before saving the ACH reversal row.</p>
                 </div>
               ` : `<p class="empty-cell">Multiple matches found. Select the correct payment above.</p>`}
             `
@@ -5068,7 +5105,9 @@ function renderAchReturnTable() {
   const draftMatches = Array.isArray(draft?.matches) ? draft.matches : [];
   const draftSelectedMatchKey = draft?.selectedMatchKey || draft?.selectedMatch?.matchKey || "";
   const draftSelectedMatch = draftMatches.find((entry) => entry.matchKey === draftSelectedMatchKey) || draft?.selectedMatch || null;
-  const draftPendingCredit = draftSelectedMatch ? buildAchReturnPendingCredit(draft?.parsed || {}, draftSelectedMatch) : null;
+  const draftPendingCredit = draftSelectedMatch
+    ? buildAchReturnPendingCredit(draft?.parsed || {}, draftSelectedMatch, draft?.manualValues || {})
+    : null;
   const draftErrors = Array.isArray(draft?.errors) ? draft.errors : [];
   const draftCanSave = Boolean(draftPendingCredit) && !draftErrors.length && Boolean(draftSelectedMatch);
 
@@ -5119,7 +5158,10 @@ function renderAchReturnTable() {
         includeActions: true,
         actionsHtml: isImportedSession
           ? '<span class="cc-row-note">Read only</span>'
-          : `<button class="secondary-button table-action-button" data-ach-remove-row="${esc(row.id)}">Delete Row</button>`,
+          : `
+            <button class="secondary-button table-action-button" data-ach-edit-row="${esc(row.id)}">Edit Row</button>
+            <button class="secondary-button table-action-button" data-ach-remove-row="${esc(row.id)}">Delete Row</button>
+          `,
       })
     )
   );
@@ -5279,6 +5321,7 @@ async function handleAchReturnCreateRow() {
         emailBody,
         selectedMatchKey,
         actor: "Local User",
+        manualValues: draft?.manualValues || {},
       },
     });
     state.achReturns.sessions = payload.sessions || [];
@@ -5344,7 +5387,9 @@ async function handleAchReturnConfirmImport() {
       el("ach-return-match-select")?.value || draft.selectedMatchKey || draft.selectedMatch?.matchKey || ""
     ).trim();
     const selectedMatch = draftMatches.find((entry) => entry.matchKey === selectedMatchKey) || draft.selectedMatch || null;
-    const draftPendingCredit = selectedMatch ? buildAchReturnPendingCredit(draft.parsed || {}, selectedMatch) : null;
+    const draftPendingCredit = selectedMatch
+      ? buildAchReturnPendingCredit(draft.parsed || {}, selectedMatch, draft.manualValues || {})
+      : null;
     if (draftErrors.length || !selectedMatch || !draftPendingCredit) {
       setStatus("ach-return-status", "Finish the visible ACH draft before importing. Save Row is required when the draft has errors or no matched payment.");
       setStatus("ach-return-export-status", "Finish the visible ACH draft before importing. Save Row is required when the draft has errors or no matched payment.");
@@ -5433,6 +5478,39 @@ async function handleAchReturnExport() {
   } catch (error) {
     setStatus("ach-return-export-status", `Unable to export ACH returns CSV: ${error.message}`);
   }
+}
+
+async function handleAchReturnEditRow(rowId) {
+  const session = getCurrentAchReturnSession();
+  const rows = Array.isArray(session?.rows) ? session.rows : [];
+  const row = rows.find((entry) => entry.id === rowId);
+  if (!session?.id || !row) {
+    setStatus("ach-return-export-status", "ACH reversal row not found.");
+    return;
+  }
+
+  const nextPremium = window.prompt("Premium", row.premium ?? "");
+  if (nextPremium === null) {
+    return;
+  }
+  const nextDues = window.prompt("Dues Collected", row.duesCollected ?? row.dues ?? "");
+  if (nextDues === null) {
+    return;
+  }
+
+  const payload = await apiRequest(`/api/ach-returns/${encodeURIComponent(session.id)}/rows/${encodeURIComponent(rowId)}`, {
+    method: "PATCH",
+    body: {
+      premium: nextPremium,
+      duesCollected: nextDues,
+    },
+  });
+  state.achReturns.sessions = payload.sessions || [];
+  state.achReturns.currentSession = payload.session || null;
+  state.achReturns.currentSessionId = payload.session?.id || "";
+  persistUiState();
+  renderAchReturnPage();
+  setStatus("ach-return-export-status", "ACH reversal row updated.");
 }
 
 function bindAchReturnEvents() {
@@ -5553,6 +5631,11 @@ function bindAchReturnEvents() {
       await handleAchReturnCreateRow();
       return;
     }
+    const editRowId = target.getAttribute("data-ach-edit-row");
+    if (editRowId) {
+      await handleAchReturnEditRow(editRowId);
+      return;
+    }
     const rowId = target.getAttribute("data-ach-remove-row");
     const session = getCurrentAchReturnSession();
     if (!rowId || !session?.id) return;
@@ -5590,11 +5673,25 @@ function bindAchReturnEvents() {
 
   el("ach-return-review-panel")?.addEventListener("change", (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLSelectElement) || target.id !== "ach-return-match-select") return;
     if (!state.achReturns.draft) return;
-    state.achReturns.draft.selectedMatchKey = target.value || "";
-    const matches = Array.isArray(state.achReturns.draft.matches) ? state.achReturns.draft.matches : [];
-    state.achReturns.draft.selectedMatch = matches.find((entry) => entry.matchKey === state.achReturns.draft.selectedMatchKey) || null;
+    if (target instanceof HTMLSelectElement && target.id === "ach-return-match-select") {
+      state.achReturns.draft.selectedMatchKey = target.value || "";
+      const matches = Array.isArray(state.achReturns.draft.matches) ? state.achReturns.draft.matches : [];
+      state.achReturns.draft.selectedMatch = matches.find((entry) => entry.matchKey === state.achReturns.draft.selectedMatchKey) || null;
+    } else if (target instanceof HTMLInputElement && target.id === "ach-return-manual-premium") {
+      state.achReturns.draft.manualValues = {
+        ...(state.achReturns.draft.manualValues || {}),
+        premium: target.value || "",
+      };
+    } else if (target instanceof HTMLInputElement && target.id === "ach-return-manual-dues") {
+      state.achReturns.draft.manualValues = {
+        ...(state.achReturns.draft.manualValues || {}),
+        duesCollected: target.value || "",
+        dues: target.value || "",
+      };
+    } else {
+      return;
+    }
     persistAchReturnDraftState();
     renderAchReturnPage();
   });

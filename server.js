@@ -111,6 +111,7 @@ const {
   listAchReturnSessions,
   previewAchReturn,
   removeAchReturnRow,
+  updateAchReturnRow,
 } = require("./services/achReturnService");
 const {
   deleteMostRecentMailingDataRun,
@@ -712,6 +713,7 @@ const server = http.createServer(async (request, response) => {
           emailBody: body.emailBody || "",
           selectedMatchKey: body.selectedMatchKey || "",
           actor: body.actor || body.user,
+          manualValues: body.manualValues || null,
         });
         sendJson(response, 200, {
           session,
@@ -1652,6 +1654,21 @@ const server = http.createServer(async (request, response) => {
   }
 
   const achReturnRowMatch = requestUrl.pathname.match(/^\/api\/ach-returns\/([^/]+)\/rows\/([^/]+)$/);
+  if (achReturnRowMatch && request.method === "PATCH") {
+    collectRequestBody(request)
+      .then(async (body) => {
+        const session = updateAchReturnRow(achReturnRowMatch[1], achReturnRowMatch[2], body || {});
+        sendJson(response, 200, {
+          session,
+          sessions: listAchReturnSessions(),
+        });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to update ACH reversal row." });
+      });
+    return;
+  }
+
   if (achReturnRowMatch && request.method === "DELETE") {
     try {
       const session = removeAchReturnRow(achReturnRowMatch[1], achReturnRowMatch[2]);
