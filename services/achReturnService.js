@@ -356,18 +356,14 @@ function buildAchReturnCommentKeyParts(row = {}) {
 
 function buildAchReturnCommentText(row = {}, processedAt = new Date().toISOString()) {
   const amountText = formatCurrency(normalizeAmount(row.creditAmount));
-  const checkNumber = normalizeText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber);
   const returnCode = normalizeText(row.returnCode || row.reasonCode).toUpperCase();
   const returnReason = normalizeText(row.returnReason);
   const processedOn = formatDateMmDdYyyy(processedAt) || formatDateMmDdYyyy(new Date().toISOString());
   const creditDate = formatDateMmDdYyyy(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded);
-  const isFundsCode = returnCode === "ISF" || returnCode === "NSF";
   const reasonDetail = [returnCode, returnReason].filter(Boolean).join(" - ");
   const sentences = [];
 
-  if (isFundsCode) {
-    sentences.push(`Rcvd notice from the bank of ${returnCode}.`);
-  } else if (amountText) {
+  if (amountText) {
     sentences.push(`Rcvd notice from the bank of returned check for ${amountText}.`);
   } else {
     sentences.push("Rcvd notice from the bank of returned check.");
@@ -376,13 +372,10 @@ function buildAchReturnCommentText(row = {}, processedAt = new Date().toISOStrin
   if (amountText) {
     sentences.push(`Processed returned check reversal/credit of ${amountText}.`);
   }
-  if (checkNumber) {
-    sentences.push(`Check #${checkNumber}.`);
-  }
   if (creditDate) {
     sentences.push(`Return date ${creditDate}.`);
   }
-  if (reasonDetail && normalizeComparableText(reasonDetail) !== normalizeComparableText(returnCode)) {
+  if (reasonDetail) {
     sentences.push(`Return reason: ${reasonDetail}.`);
   }
   if (processedOn) {
