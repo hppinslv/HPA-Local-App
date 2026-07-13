@@ -1374,6 +1374,10 @@ function revalidateSession(sessionId) {
     const policyEntry = policySelection.entry;
     const matchedPolicyId = normalizePolicyId(policyEntry?.policy_id || "");
     const matchedCertificateRecordId = normalizeSalesforceId(policyEntry?.certificate_record_id || "");
+    const hasManualMonths = row.corrected_months !== null && row.corrected_months !== undefined && String(row.corrected_months).trim() !== "";
+    const manualMonths = hasManualMonths ? String(row.corrected_months).trim() : "";
+    const derivedMonths = extractLeadingMonths(row.id3);
+    row.months = manualMonths !== "" ? manualMonths : derivedMonths;
     const expectedAmount = getExpectedPremiumAmount(policyEntry, row.months);
     const premiumLabel = getPremiumLabelForMonths(row.months);
     const issues = [];
@@ -1465,13 +1469,12 @@ function revalidateSession(sessionId) {
       transaction_date: row.transaction_date,
     });
     row.date_received = formatDateReceived(row.transaction_date);
-    row.months = extractLeadingMonths(row.id3);
     row.status = buildRowStatus(issues);
     row.issue_reason = summarizeIssues(issues);
     row.issue_details = issues;
     row.expected_amount = Number.isFinite(expectedAmount) ? expectedAmount : null;
     row.expected_amount_label = Number.isFinite(expectedAmount) ? premiumLabel : "";
-    row.manually_corrected = Boolean(row.manual_policy_id || row.corrected_certificate_number);
+    row.manually_corrected = Boolean(row.manual_policy_id || row.corrected_certificate_number || manualMonths);
 
     if (row.status === "ready") readyCount += 1;
     if (row.status === "warning") {
@@ -1610,6 +1613,7 @@ function buildImportRow(sessionId, sourceRow) {
     matched_certificate_record_id: "",
     payment_account: normalizeText(sourceRow.PaymentAccount),
     months: extractLeadingMonths(sourceRow.ID3),
+    corrected_months: "",
     payment_name: "",
     status: "pending",
     issue_reason: "",
@@ -1700,6 +1704,11 @@ function createCcPaymentImportSession({ fileName, base64Content, uploadedBy = DE
 }
 
 function applyCcPaymentImportRowUpdates(row, updates = {}) {
+  if (Object.prototype.hasOwnProperty.call(updates, "months")) {
+    const parsedMonths = Number(String(updates.months || "").trim());
+    row.corrected_months = Number.isFinite(parsedMonths) && parsedMonths >= 0 ? String(parsedMonths) : "";
+  }
+
   if (Object.prototype.hasOwnProperty.call(updates, "certificate_number")) {
     row.certificate_number = normalizeCertificateNumber(updates.certificate_number);
     row.corrected_certificate_number = row.certificate_number;

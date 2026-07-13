@@ -3858,7 +3858,12 @@ function renderCcPaymentReviewTable() {
           <td>${esc(row.payment_name || "")}</td>
           <td>${esc(row.source_record_id || "")}</td>
           <td>${esc(row.date_received || "")}</td>
-          <td>${esc(row.months || "")}</td>
+          <td>
+            <div class="field-stack">
+              <strong>${esc(String(row.months ?? "").trim() !== "" ? row.months : "-")}</strong>
+              ${isImportedSession ? "" : `<input class="field-input cc-inline-input" data-cc-row-field="months" data-cc-row-id="${esc(row.id)}" type="number" min="0" step="1" value="${esc(String(row.corrected_months ?? "").trim() !== "" ? row.corrected_months : (String(row.months ?? "").trim() !== "" ? row.months : ""))}" placeholder="Months" />`}
+            </div>
+          </td>
           <td>
             <div class="field-stack">
               <strong>${esc(row.amount || "")}</strong>
@@ -4096,7 +4101,7 @@ function bindCcPaymentImportEvents() {
     if (!session?.id) return;
     const rowEdits = collectCcPaymentRowEdits(session);
     if (!rowEdits.length) {
-      setStatus("cc-payment-status", "There are no unsaved certificate or policy changes.");
+      setStatus("cc-payment-status", "There are no unsaved certificate, policy, or month changes.");
       updateCcPaymentExportState();
       return;
     }
@@ -4212,16 +4217,20 @@ function collectCcPaymentRowEdits(session) {
     .map((row) => {
       const certificateInput = document.querySelector(`[data-cc-row-field="certificate_number"][data-cc-row-id="${row.id}"]`);
       const policyInput = document.querySelector(`[data-cc-row-field="manual_policy_id"][data-cc-row-id="${row.id}"]`);
-      if (!(certificateInput instanceof HTMLInputElement) && !(policyInput instanceof HTMLInputElement)) {
+      const monthsInput = document.querySelector(`[data-cc-row-field="months"][data-cc-row-id="${row.id}"]`);
+      if (!(certificateInput instanceof HTMLInputElement) && !(policyInput instanceof HTMLInputElement) && !(monthsInput instanceof HTMLInputElement)) {
         return null;
       }
       const nextCertificateNumber = certificateInput instanceof HTMLInputElement ? certificateInput.value || "" : "";
       const nextPolicyId = policyInput instanceof HTMLInputElement ? policyInput.value || "" : "";
+      const nextMonths = monthsInput instanceof HTMLInputElement ? monthsInput.value || "" : "";
       const currentCertificateNumber = row.corrected_certificate_number || row.certificate_number || "";
       const currentPolicyId = row.manual_policy_id || row.matched_policy_id || "";
+      const currentMonths = String(row.corrected_months ?? "").trim() !== "" ? String(row.corrected_months) : String(row.months ?? "");
       if (
         String(nextCertificateNumber).trim() === String(currentCertificateNumber).trim()
         && String(nextPolicyId).trim() === String(currentPolicyId).trim()
+        && String(nextMonths).trim() === String(currentMonths).trim()
       ) {
         return null;
       }
@@ -4229,6 +4238,7 @@ function collectCcPaymentRowEdits(session) {
         id: row.id,
         certificate_number: nextCertificateNumber,
         manual_policy_id: nextPolicyId,
+        months: nextMonths,
       };
     })
     .filter(Boolean);
