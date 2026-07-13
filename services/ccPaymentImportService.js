@@ -370,6 +370,22 @@ function getPremiumLabelForMonths(months) {
   return `${numericMonths || ""} month`;
 }
 
+function getManualMonthsOverride(row) {
+  if (row?.corrected_months === null || row?.corrected_months === undefined) {
+    return "";
+  }
+  const text = String(row.corrected_months).trim();
+  return text !== "" ? text : "";
+}
+
+function getEffectiveRowMonths(row, fallbackMonths = "") {
+  const manualMonths = getManualMonthsOverride(row);
+  if (manualMonths !== "") {
+    return manualMonths;
+  }
+  return String(fallbackMonths || row?.months || "").trim();
+}
+
 function getExpectedPremiumAmount(entry, months) {
   if (!entry || typeof entry !== "object") {
     return null;
@@ -1114,7 +1130,7 @@ WHERE Name IN (${uniqueCertificates.map((entry) => `'${escapeSoqlString(entry)}'
 
 async function findNameAmountMatchForRow(row) {
   const paymentAmount = normalizeAmount(row.amount);
-  const premiumField = getPremiumFieldForMonths(row.months);
+  const premiumField = getPremiumFieldForMonths(getEffectiveRowMonths(row));
   if (!Number.isFinite(paymentAmount) || !premiumField) {
     return null;
   }
@@ -1221,7 +1237,7 @@ async function enrichSessionRowsForPremiumReview(sessionId, policyCacheState, ce
       entries: premiumEntriesByCertificate.get(certificateKey) || [],
       preferredPolicyId: normalizePolicyId(row.manual_policy_id),
     }).entry;
-    const expectedAmount = getExpectedPremiumAmount(premiumEntry, row.months);
+    const expectedAmount = getExpectedPremiumAmount(premiumEntry, getEffectiveRowMonths(row));
     const paymentAmount = normalizeAmount(row.amount);
     const shouldLookByName =
       !premiumEntry ||
@@ -1374,12 +1390,14 @@ function revalidateSession(sessionId) {
     const policyEntry = policySelection.entry;
     const matchedPolicyId = normalizePolicyId(policyEntry?.policy_id || "");
     const matchedCertificateRecordId = normalizeSalesforceId(policyEntry?.certificate_record_id || "");
-    const hasManualMonths = row.corrected_months !== null && row.corrected_months !== undefined && String(row.corrected_months).trim() !== "";
-    const manualMonths = hasManualMonths ? String(row.corrected_months).trim() : "";
     const derivedMonths = extractLeadingMonths(row.id3);
-    row.months = manualMonths !== "" ? manualMonths : derivedMonths;
-    const expectedAmount = getExpectedPremiumAmount(policyEntry, row.months);
-    const premiumLabel = getPremiumLabelForMonths(row.months);
+    const manualMonths = getManualMonthsOverride(row);
+    const effectiveMonths = getEffectiveRowMonths(row, derivedMonths);
+    row.months = derivedMonths;
+    const expectedAmount = getExpectedPremiumAmount(policyEntry, effectiveMonths);
+    const premiumLabel = getPremiumLabelForMonths(effectiveMonths);
+    const sourceExpectedAmount = getExpectedPremiumAmount(policyEntry, derivedMonths);
+    const sourcePremiumLabel = getPremiumLabelForMonths(derivedMonths);
     const issues = [];
 
     if (!certificateNumber) {
@@ -1422,6 +1440,14 @@ function revalidateSession(sessionId) {
       issues.push({ severity: "error", code: "missing_amount", message: "Missing Amount." });
     } else if (amountValue === null) {
       issues.push({ severity: "error", code: "invalid_amount", message: "Invalid Amount." });
+    } else if (manualMonths !== "") {
+      if (Number.isFinite(sourceExpectedAmount) && !isSameAmount(amountValue, sourceExpectedAmount)) {
+        issues.push({
+          severity: "warning",
+          code: "payment_amount_mismatch",
+          message: `Payment amount ${formatCurrency(amountValue)} does not match expected ${sourcePremiumLabel} premium ${formatCurrency(sourceExpectedAmount)} for certificate ${certificateNumber || "this policy"}. Manual months override ${manualMonths} will still be used for import.`,
+        });
+      }
     } else if (Number.isFinite(expectedAmount) && !isSameAmount(amountValue, expectedAmount)) {
       issues.push({
         severity: "warning",
@@ -1823,6 +1849,7 @@ function normalizeSalesforceId(value) {
 }
 
 function buildCcPaymentSalesforceRecord(row, template) {
+  const monthsForImport = getEffectiveRowMonths(row);
   return {
     attributes: { type: template.salesforceObjectApiName },
     Name: row.payment_name,
@@ -1833,7 +1860,7 @@ function buildCcPaymentSalesforceRecord(row, template) {
     Auth_Amount__c: normalizeAmount(row.amount),
     Date_Received__c: normalizeDateText(row.transaction_date || row.date_received),
     Txn_Date_Time__c: normalizeDateTimeText(row.raw_json?.TransactionDate || row.transaction_date),
-    Months_Pay__c: Number(row.months || 0) || undefined,
+    Months_Pay__c: Number(monthsForImport || 0) || undefined,
     Auth_Code__c: normalizeText(row.auth_code),
     Gateway_Txn_ID__c: normalizeText(row.transaction_id),
     Issuer_Response_Text__c: normalizeText(row.batch_id),
@@ -1844,6 +1871,7 @@ function buildCcPaymentSalesforceRecord(row, template) {
 }
 
 function validateImportableRow(row) {
+  const monthsForImport = getEffectiveRowMonths(row);
   const issues = [];
   if (!normalizePolicyId(row.matched_policy_id)) {
     issues.push("Missing Policy__c lookup.");
@@ -1857,7 +1885,7 @@ function validateImportableRow(row) {
   if (!normalizeDateText(row.transaction_date || row.date_received)) {
     issues.push("Missing Date_Received__c.");
   }
-  if (!(Number(row.months || 0) > 0)) {
+  if (!(Number(monthsForImport || 0) > 0)) {
     issues.push("Missing Months_Pay__c.");
   }
   if (!normalizeText(row.payment_name)) {
@@ -2009,7 +2037,7 @@ function buildExportRows(sessionId) {
     "Payment Name": row.payment_name,
     Amount: normalizeAmount(row.amount),
     "Date Received": row.date_received,
-    "# of Months": row.months,
+    "# of Months": getEffectiveRowMonths(row),
     TransactionID: row.transaction_id,
     BatchID: row.batch_id,
     AuthCode: row.auth_code,
