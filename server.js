@@ -1601,7 +1601,7 @@ const server = http.createServer(async (request, response) => {
 
   if (ccPaymentImportSessionMatch && request.method === "GET") {
     try {
-      const session = getCcPaymentImportSession(ccPaymentImportSessionMatch[1]);
+      const session = revalidateSession(ccPaymentImportSessionMatch[1]);
       sendJson(response, 200, { session });
     } catch (error) {
       sendJson(response, 404, { error: error.message || "Credit card payment import session not found." });
