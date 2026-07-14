@@ -344,6 +344,10 @@ function collectRequestBody(request) {
   });
 }
 
+async function parseJsonBody(request) {
+  return collectRequestBody(request);
+}
+
 function resolveFilePath(urlPathname) {
   const sanitizedPath = urlPathname === "/" ? "/index.html" : urlPathname;
   const resolvedPath = path.normalize(path.join(rootDir, sanitizedPath));
