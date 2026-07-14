@@ -384,6 +384,34 @@ function updateBillRun(runId, changes = {}) {
   return clone(run);
 }
 
+function deleteBillRun(runId, actor = DEFAULT_ACTOR) {
+  const runs = readBillRuns();
+  const index = getRunIndex(runs, runId);
+  if (index === -1) {
+    throw new Error("Bill run not found.");
+  }
+
+  const run = runs[index];
+  const performedBy = String(actor || DEFAULT_ACTOR).trim() || DEFAULT_ACTOR;
+  const deletedRun = clone(run);
+  appendRunEvent(
+    deletedRun,
+    "run-deleted",
+    {
+      previousStatus: run.status || "",
+      newStatus: "Deleted",
+      runCode: run.runCode || "",
+    },
+    performedBy
+  );
+  runs.splice(index, 1);
+  writeBillRuns(runs);
+  return {
+    deletedRun,
+    runs: runs.map(summarizeRun),
+  };
+}
+
 function getBillDashboard() {
   const runs = readBillRuns();
   const settings = readBillSettings();
@@ -430,6 +458,7 @@ module.exports = {
   BILL_WORKFLOW_STAGES,
   buildRunCode,
   createBillRun,
+  deleteBillRun,
   getBillDashboard,
   getBillRun,
   getBillSettings,

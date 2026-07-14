@@ -610,7 +610,10 @@ const apiRequest = async (url, options = {}) => {
     },
   };
   if (!["GET", "HEAD"].includes(init.method)) {
-    init.body = JSON.stringify(options.body || {});
+    init.body =
+      typeof options.body === "string"
+        ? options.body
+        : JSON.stringify(options.body || {});
   }
 
   let res;
@@ -15982,7 +15985,10 @@ function renderBillHistory() {
           <td>${esc(run.activeStage || "")}</td>
           <td>${esc(run.createdBy || "")}</td>
           <td>${esc(formatBillTimestamp(run.updatedAt || run.createdAt || ""))}</td>
-          <td><button class="secondary-button table-action-button" data-bill-open-run="${esc(run.id || "")}">Open</button></td>
+          <td>
+            <button class="secondary-button table-action-button" data-bill-open-run="${esc(run.id || "")}">Open</button>
+            <button class="secondary-button table-action-button danger-button" data-bill-delete-run="${esc(run.id || "")}" data-bill-run-code="${esc(run.runCode || "")}">Delete</button>
+          </td>
         </tr>
       `
     )
@@ -16019,6 +16025,7 @@ function renderBillCurrentRun() {
         <p><strong>Created By:</strong> ${esc(run.createdBy || "")}</p>
         <p><strong>Updated:</strong> ${esc(formatBillTimestamp(run.updatedAt || ""))}</p>
         <p><strong>Active Section:</strong> ${esc(sectionLabel)}</p>
+        <p><button class="secondary-button danger-button" data-bill-delete-run="${esc(run.id || "")}" data-bill-run-code="${esc(run.runCode || "")}">Delete This Bill Run</button></p>
       </article>
     </div>
     <div class="bill-detail-placeholder">
@@ -16132,14 +16139,14 @@ async function handleCreateBillRun() {
   try {
     const payload = await apiRequest("/api/bills/runs", {
       method: "POST",
-      body: JSON.stringify({
+      body: {
         billMonth,
         scheduledProcessingDate,
         createdBy,
         notes,
         allowDuplicateOverride: Boolean(duplicateOverrideReason.trim()),
         duplicateOverrideReason,
-      }),
+      },
     });
     state.bills.dashboard = payload.dashboard || state.bills.dashboard;
     state.bills.history = Array.isArray(payload.runs) ? payload.runs : state.bills.history;
@@ -16160,20 +16167,47 @@ async function handleSaveBillSettings() {
   try {
     const payload = await apiRequest("/api/bills/settings", {
       method: "POST",
-      body: JSON.stringify({
+      body: {
         normalProcessingDay: Number(el("bill-setting-processing-day")?.value || 0),
         paymentDueDay: Number(el("bill-setting-payment-due-day")?.value || 0),
         lapseDeadlineDay: Number(el("bill-setting-lapse-deadline-day")?.value || 0),
         maximumTotalCoverage: Number(el("bill-setting-max-total")?.value || 0),
         requiredNonContributoryCoverage: Number(el("bill-setting-required-noncontrib")?.value || 0),
         maximumContributoryCoverage: Number(el("bill-setting-max-contrib")?.value || 0),
-      }),
+      },
     });
     state.bills.settings = payload.settings || null;
     populateBillSettings();
     setStatus("bill-settings-status", "Bill settings saved.");
   } catch (error) {
     setStatus("bill-settings-status", error.message || "Unable to save bill settings.");
+  }
+}
+
+async function handleDeleteBillRun(runId, runCode = "") {
+  const label = runCode || "this bill run";
+  if (!confirm(`Delete ${label}? This removes the saved run shell and its current history.`)) {
+    return;
+  }
+  setStatus("bill-run-status", `Deleting ${label}...`);
+  try {
+    const actor = el("bill-run-created-by")?.value || "HPA User";
+    const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(runId)}?actor=${encodeURIComponent(actor)}`, {
+      method: "DELETE",
+    });
+    state.bills.dashboard = payload.dashboard || state.bills.dashboard;
+    state.bills.history = Array.isArray(payload.runs) ? payload.runs : [];
+    if (state.bills.currentRunId === runId) {
+      state.bills.currentRunId = "";
+      state.bills.currentRun = null;
+    }
+    renderBillDashboard();
+    renderBillHistory();
+    renderBillCurrentRun();
+    setStatus("bill-run-status", `${label} deleted.`);
+    persistUiState();
+  } catch (error) {
+    setStatus("bill-run-status", error.message || "Unable to delete bill run.");
   }
 }
 
@@ -16199,8 +16233,20 @@ function bindBillActions() {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const runId = target.getAttribute("data-bill-open-run");
-    if (!runId) return;
-    await openBillRun(runId);
+    if (runId) {
+      await openBillRun(runId);
+      return;
+    }
+    const deleteRunId = target.getAttribute("data-bill-delete-run");
+    if (!deleteRunId) return;
+    await handleDeleteBillRun(deleteRunId, target.getAttribute("data-bill-run-code") || "");
+  });
+  el("bill-current-run-panel")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const deleteRunId = target.getAttribute("data-bill-delete-run");
+    if (!deleteRunId) return;
+    await handleDeleteBillRun(deleteRunId, target.getAttribute("data-bill-run-code") || "");
   });
   el("bill-run-month")?.addEventListener("change", (event) => {
     const target = event.target;

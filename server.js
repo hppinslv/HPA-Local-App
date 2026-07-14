@@ -15,6 +15,7 @@ const {
 const {
   getBillDashboard,
   createBillRun,
+  deleteBillRun,
   getBillRun,
   getBillSettings,
   listBillRuns,
@@ -1390,6 +1391,22 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 200, { run: updateBillRun(billRunMatch[1], body || {}) });
       } catch (error) {
         sendJson(response, 400, { error: error.message || "Unable to update bill run." });
+      }
+      return;
+    }
+    if (request.method === "DELETE") {
+      try {
+        const result = deleteBillRun(
+          billRunMatch[1],
+          requestUrl.searchParams.get("actor") || ""
+        );
+        sendJson(response, 200, {
+          result,
+          dashboard: getBillDashboard(),
+          runs: listBillRuns(),
+        });
+      } catch (error) {
+        sendJson(response, 400, { error: error.message || "Unable to delete bill run." });
       }
       return;
     }
