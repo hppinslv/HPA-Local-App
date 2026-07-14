@@ -16006,6 +16006,32 @@ function renderBillCurrentRun() {
   }
   renderBillStepper(run);
   const sectionLabel = normalizeBillSection(state.bills.section).replace("-", " ");
+  const nextStageButton = run.activeStage === "Create Monthly Run"
+    ? `
+      <button
+        class="primary-button"
+        data-bill-stage-action="begin-bill2-pull"
+        data-bill-run-id="${esc(run.id || "")}"
+      >
+        Begin Step 2: Pull Bill 2 Correction Records
+      </button>
+    `
+    : run.activeStage === "Pull Bill 2 Correction Records"
+      ? `
+        <button
+          class="secondary-button"
+          data-bill-stage-action="open-bill2-corrections"
+          data-bill-run-id="${esc(run.id || "")}"
+        >
+          Open Bill 2 Correction Step
+        </button>
+      `
+      : "";
+  const stepMessage = run.activeStage === "Create Monthly Run"
+    ? "Step 1 is complete once the run shell is saved. Use the button below to move into the Bill 2 pull step."
+    : run.activeStage === "Pull Bill 2 Correction Records"
+      ? "This run is now in the Bill 2 pull step. The actual Salesforce report pull is the next backend piece to wire in, but the workflow can now advance into this stage explicitly."
+      : "This foundation pass persists the run shell, dates, settings, and audit trail. The section-specific Salesforce correction and document work will attach here next.";
   panel.innerHTML = `
     <div class="bill-current-run-grid">
       <article class="bill-current-run-card">
@@ -16030,7 +16056,10 @@ function renderBillCurrentRun() {
     </div>
     <div class="bill-detail-placeholder">
       <strong>${esc(sectionLabel.replace(/\b\w/g, (char) => char.toUpperCase()))}</strong>
-      <p>This foundation pass persists the run shell, dates, settings, and audit trail. The section-specific Salesforce correction and document work will attach here next.</p>
+      <p>${esc(stepMessage)}</p>
+      <div class="action-row">
+        ${nextStageButton}
+      </div>
     </div>
     <div class="table-wrap">
       <table>
@@ -16211,6 +16240,46 @@ async function handleDeleteBillRun(runId, runCode = "") {
   }
 }
 
+async function handleBillStageAction(runId, action) {
+  if (!runId || !action) {
+    return;
+  }
+  if (action === "open-bill2-corrections") {
+    state.bills.section = "corrections";
+    renderBillCurrentRun();
+    setStatus("bill-run-status", "Bill 2 correction step is selected. The Salesforce pull action is the next piece to wire in.");
+    persistUiState();
+    return;
+  }
+
+  if (action !== "begin-bill2-pull") {
+    return;
+  }
+
+  setStatus("bill-run-status", "Moving run into Step 2...");
+  try {
+    const actor = el("bill-run-created-by")?.value || "HPA User";
+    const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(runId)}`, {
+      method: "PATCH",
+      body: {
+        actor,
+        status: "Pulling Data",
+        activeStage: "Pull Bill 2 Correction Records",
+        correctionStatus: "Pulling Data",
+      },
+    });
+    state.bills.currentRun = payload.run || state.bills.currentRun;
+    state.bills.currentRunId = payload.run?.id || state.bills.currentRunId;
+    state.bills.section = "corrections";
+    await loadBillRuns();
+    renderBillCurrentRun();
+    setStatus("bill-run-status", "Step 2 is now active for this run.");
+    persistUiState();
+  } catch (error) {
+    setStatus("bill-run-status", error.message || "Unable to update the bill run step.");
+  }
+}
+
 function openBillsSection(section) {
   state.bills.section = normalizeBillSection(section);
   setRoute("bills");
@@ -16245,8 +16314,13 @@ function bindBillActions() {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const deleteRunId = target.getAttribute("data-bill-delete-run");
-    if (!deleteRunId) return;
-    await handleDeleteBillRun(deleteRunId, target.getAttribute("data-bill-run-code") || "");
+    if (deleteRunId) {
+      await handleDeleteBillRun(deleteRunId, target.getAttribute("data-bill-run-code") || "");
+      return;
+    }
+    const stageAction = target.getAttribute("data-bill-stage-action");
+    if (!stageAction) return;
+    await handleBillStageAction(target.getAttribute("data-bill-run-id") || "", stageAction);
   });
   el("bill-run-month")?.addEventListener("change", (event) => {
     const target = event.target;
