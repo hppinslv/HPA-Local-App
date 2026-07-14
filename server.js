@@ -12,6 +12,16 @@ const {
   listRuns,
   initializeReportRunPersistence,
 } = require("./services/monthlyReportService");
+const {
+  getBillDashboard,
+  createBillRun,
+  getBillRun,
+  getBillSettings,
+  listBillRuns,
+  saveBillSettings,
+  updateBillRun,
+  initializeBillRunPersistence,
+} = require("./services/billRunService");
 const { getSupabaseConfig } = require("./services/config");
 const {
   createAuthorizationUrl,
@@ -157,6 +167,7 @@ const persistenceReadiness = {
     analysis: { ready: false, error: null },
     checkImports: { ready: false, error: null },
     monthlyReports: { ready: false, error: null },
+    bills: { ready: false, error: null },
     application: { ready: false, error: null },
     ccPayments: { ready: false, error: null },
     achReturns: { ready: false, error: null },
@@ -458,6 +469,86 @@ const server = http.createServer(async (request, response) => {
       logRouteTiming("/api/monthly-reports", request.method, requestStartedAt, 500, {
         error: sanitizedError.message,
       });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/bills/dashboard" && request.method === "GET") {
+    logRouteStart("/api/bills/dashboard", request.method);
+    if (!isPersistenceModuleReady("bills")) {
+      logRouteTiming("/api/bills/dashboard", request.method, requestStartedAt, 503, { module: "bills" });
+      return sendPersistenceNotReady(response, "bills");
+    }
+    try {
+      sendJson(response, 200, getBillDashboard());
+      logRouteTiming("/api/bills/dashboard", request.method, requestStartedAt, 200);
+    } catch (error) {
+      sendJson(response, 500, { error: error.message || "Unable to load bill dashboard." });
+      logRouteTiming("/api/bills/dashboard", request.method, requestStartedAt, 500, { error: error.message || "Unable to load bill dashboard." });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/bills/runs" && request.method === "GET") {
+    logRouteStart("/api/bills/runs", request.method);
+    if (!isPersistenceModuleReady("bills")) {
+      logRouteTiming("/api/bills/runs", request.method, requestStartedAt, 503, { module: "bills" });
+      return sendPersistenceNotReady(response, "bills");
+    }
+    try {
+      sendJson(response, 200, { runs: listBillRuns({ billMonth: requestUrl.searchParams.get("billMonth") || "" }) });
+      logRouteTiming("/api/bills/runs", request.method, requestStartedAt, 200);
+    } catch (error) {
+      sendJson(response, 500, { error: error.message || "Unable to load bill runs." });
+      logRouteTiming("/api/bills/runs", request.method, requestStartedAt, 500, { error: error.message || "Unable to load bill runs." });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/bills/settings" && request.method === "GET") {
+    if (!isPersistenceModuleReady("bills")) {
+      return sendPersistenceNotReady(response, "bills");
+    }
+    try {
+      sendJson(response, 200, { settings: getBillSettings() });
+    } catch (error) {
+      sendJson(response, 500, { error: error.message || "Unable to load bill settings." });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/bills/settings" && request.method === "POST") {
+    if (!isPersistenceModuleReady("bills")) {
+      return sendPersistenceNotReady(response, "bills");
+    }
+    try {
+      const body = await parseJsonBody(request);
+      sendJson(response, 200, { settings: saveBillSettings(body || {}) });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to save bill settings." });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/bills/runs" && request.method === "POST") {
+    logRouteStart("/api/bills/runs", request.method);
+    if (!isPersistenceModuleReady("bills")) {
+      logRouteTiming("/api/bills/runs", request.method, requestStartedAt, 503, { module: "bills" });
+      return sendPersistenceNotReady(response, "bills");
+    }
+    try {
+      const body = await parseJsonBody(request);
+      const run = createBillRun(body || {});
+      sendJson(response, 200, { run, dashboard: getBillDashboard(), runs: listBillRuns() });
+      logRouteTiming("/api/bills/runs", request.method, requestStartedAt, 200, { runId: run.id });
+    } catch (error) {
+      const statusCode = error.code === "duplicate_active_run" ? 409 : 400;
+      sendJson(response, statusCode, {
+        error: error.message || "Unable to create bill run.",
+        code: error.code || "",
+        conflict: error.conflict || null,
+      });
+      logRouteTiming("/api/bills/runs", request.method, requestStartedAt, statusCode, { error: error.message || "Unable to create bill run." });
     }
     return;
   }
@@ -1278,6 +1369,30 @@ const server = http.createServer(async (request, response) => {
     sendJson(response, 200, { run });
     logRouteTiming("/api/monthly-reports/:id", request.method, requestStartedAt, 200, { runId: runMatch[1] });
     return;
+  }
+
+  const billRunMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)$/);
+  if (billRunMatch) {
+    if (!isPersistenceModuleReady("bills")) {
+      return sendPersistenceNotReady(response, "bills");
+    }
+    if (request.method === "GET") {
+      try {
+        sendJson(response, 200, { run: getBillRun(billRunMatch[1]) });
+      } catch (error) {
+        sendJson(response, 404, { error: error.message || "Bill run not found." });
+      }
+      return;
+    }
+    if (request.method === "PATCH") {
+      try {
+        const body = await parseJsonBody(request);
+        sendJson(response, 200, { run: updateBillRun(billRunMatch[1], body || {}) });
+      } catch (error) {
+        sendJson(response, 400, { error: error.message || "Unable to update bill run." });
+      }
+      return;
+    }
   }
 
   const analysisRunMatch = requestUrl.pathname.match(/^\/api\/analysis\/runs\/([^/]+)$/);
@@ -2185,6 +2300,7 @@ async function initializeAppPersistence() {
   await initializeModule("checkImports", initializeCheckImportPersistence);
   await initializeModule("analysis", initializeAnalysisStatePersistence);
   await initializeModule("monthlyReports", initializeReportRunPersistence);
+  await initializeModule("bills", initializeBillRunPersistence);
   await initializeModule("application", initializeApplicationPersistence);
   await initializeModule("ccPayments", initializeCcPaymentImportPersistence);
   await initializeModule("achReturns", initializeAchReturnPersistence);
@@ -2195,6 +2311,7 @@ async function initializeAppPersistence() {
     && isPersistenceModuleReady("checkImports")
     && isPersistenceModuleReady("analysis")
     && isPersistenceModuleReady("monthlyReports")
+    && isPersistenceModuleReady("bills")
   );
   persistenceReadiness.finishedAt = new Date().toISOString();
 

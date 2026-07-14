@@ -1,0 +1,8 @@
+{
+  "normalProcessingDay": 14,
+  "paymentDueDay": 1,
+  "lapseDeadlineDay": 14,
+  "maximumTotalCoverage": 503000,
+  "requiredNonContributoryCoverage": 3000,
+  "maximumContributoryCoverage": 500000
+}

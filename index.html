@@ -55,6 +55,21 @@
               </button>
             </div>
           </div>
+          <div class="nav-group" data-nav-group="bills">
+            <div class="nav-group-row">
+              <button class="nav-link" data-route="bills">Bills</button>
+            </div>
+            <div class="analysis-left-submenu">
+              <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="dashboard">Bill Dashboard</button>
+              <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="new-run">New Bill Run</button>
+              <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="corrections">Bill Corrections</button>
+              <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="generate">Generate Bills</button>
+              <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="review">Review &amp; Approve</button>
+              <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="download">Download / Print</button>
+              <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="history">Bill History</button>
+              <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="settings">Settings</button>
+            </div>
+          </div>
           <button class="nav-link" data-route="mailing-data">Mailing Data</button>
           <button class="nav-link" data-route="applications">Request New Application</button>
           <button class="nav-link" data-route="cc-payment-imports">Credit Card Payment Imports</button>
@@ -171,6 +186,20 @@
 
             <article class="feature-card">
               <div>
+                <p class="card-label">Billing</p>
+                <h3>Create Monthly Bills</h3>
+                <p>
+                  Start and resume durable monthly bill runs, track correction stages,
+                  and prepare the bill package workflow inside the app.
+                </p>
+              </div>
+              <button class="primary-button" data-route="bills">
+                Open Bills
+              </button>
+            </article>
+
+            <article class="feature-card">
+              <div>
                 <p class="card-label">Mailing</p>
                 <h3>Mailing Data</h3>
                 <p>
@@ -198,6 +227,142 @@
               </button>
             </article>
 
+          </section>
+        </section>
+
+        <section class="view" data-view="bills">
+          <header class="page-header">
+            <p class="eyebrow">Billing</p>
+            <h2>Monthly Bill Processing</h2>
+            <p class="page-copy">
+              Manage durable monthly bill runs, staged corrections, approvals, and bill history.
+            </p>
+          </header>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h3>Workflow</h3>
+              <p>The bill run can be resumed later without losing progress.</p>
+            </div>
+            <div id="bill-workflow-stepper" class="bill-stepper"></div>
+          </section>
+
+          <section class="card-grid">
+            <article class="panel bill-dashboard-card">
+              <div class="panel-heading">
+                <h3>Bill Dashboard</h3>
+                <p>Track active runs, pending approvals, and the latest bill month.</p>
+              </div>
+              <div id="bill-dashboard-summary" class="bill-summary-grid">
+                <div class="empty-state-block">Loading bill dashboard...</div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <h3>New Bill Run</h3>
+                <p>Create the next monthly run and protect against duplicate processing.</p>
+              </div>
+              <div class="field-grid">
+                <label>
+                  <span class="field-label">Bill Processing Month</span>
+                  <input id="bill-run-month" class="field-input" type="month" />
+                </label>
+                <label>
+                  <span class="field-label">Scheduled Processing Date</span>
+                  <input id="bill-run-date" class="field-input" type="date" />
+                </label>
+                <label>
+                  <span class="field-label">Created By</span>
+                  <input id="bill-run-created-by" class="field-input" type="text" placeholder="Melinda Harris" />
+                </label>
+                <label>
+                  <span class="field-label">Duplicate Override Reason</span>
+                  <input id="bill-run-override-reason" class="field-input" type="text" placeholder="Only required for an authorized rerun" />
+                </label>
+                <label class="field-span-2">
+                  <span class="field-label">Notes</span>
+                  <textarea id="bill-run-notes" class="field-input" rows="3" placeholder="Optional notes for this monthly bill run"></textarea>
+                </label>
+              </div>
+              <div class="action-row">
+                <button id="bill-create-run-button" class="primary-button">Create Bill Run</button>
+                <button id="bill-refresh-dashboard-button" class="secondary-button">Refresh</button>
+              </div>
+              <p id="bill-run-status" class="inline-status"></p>
+            </article>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h3>Current Run</h3>
+              <p>Open the latest run, move between workflow sections, and review the saved audit trail.</p>
+            </div>
+            <div id="bill-current-run-panel" class="comparison-results-block">
+              <div class="empty-state-block">No bill run selected yet.</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h3>Bill History</h3>
+              <p>Searchable history and rerun-safe records start here.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Run Code</th>
+                    <th>Bill Month</th>
+                    <th>Status</th>
+                    <th>Stage</th>
+                    <th>Created By</th>
+                    <th>Updated</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="bill-history-body">
+                  <tr><td colspan="7" class="empty-cell">No bill runs yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h3>Bill Settings</h3>
+              <p>These values feed the centralized date and coverage rules.</p>
+            </div>
+            <div class="field-grid">
+              <label>
+                <span class="field-label">Processing Day</span>
+                <input id="bill-setting-processing-day" class="field-input" type="number" min="1" max="31" />
+              </label>
+              <label>
+                <span class="field-label">Payment Due Day</span>
+                <input id="bill-setting-payment-due-day" class="field-input" type="number" min="1" max="31" />
+              </label>
+              <label>
+                <span class="field-label">Lapse Deadline Day</span>
+                <input id="bill-setting-lapse-deadline-day" class="field-input" type="number" min="1" max="31" />
+              </label>
+              <label>
+                <span class="field-label">Maximum Total Coverage</span>
+                <input id="bill-setting-max-total" class="field-input" type="number" min="0" step="1" />
+              </label>
+              <label>
+                <span class="field-label">Required Non-Contributory Coverage</span>
+                <input id="bill-setting-required-noncontrib" class="field-input" type="number" min="0" step="1" />
+              </label>
+              <label>
+                <span class="field-label">Maximum Contributory Coverage</span>
+                <input id="bill-setting-max-contrib" class="field-input" type="number" min="0" step="1" />
+              </label>
+            </div>
+            <div class="action-row">
+              <button id="bill-save-settings-button" class="secondary-button">Save Bill Settings</button>
+            </div>
+            <p id="bill-settings-status" class="inline-status"></p>
           </section>
         </section>
 

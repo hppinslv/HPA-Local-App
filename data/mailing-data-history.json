@@ -1,1 +1,52 @@
-[]
+[
+  {
+    "id": "mailing_data_1783458089001_bpyw4v",
+    "outputFileName": "202607_Mailbag_HPA_AHAv2.xlsx",
+    "generatedAt": "2026-07-07T21:01:29.001Z",
+    "mailingMonth": "2026-07",
+    "mailingMonthLabel": "June 2026",
+    "uploadedZipFileNames": [
+      "NHCL_7-6-26_9,695 Records.zip",
+      "RFC_7-6-26_60,708 Records.zip"
+    ],
+    "keyCodes": [
+      "NHCL",
+      "RFC"
+    ],
+    "recordCountsByKeyCode": {
+      "NHCL": 9695,
+      "RFC": 60708
+    },
+    "totalRecords": 70403,
+    "startingSequence": 1,
+    "endingSequence": 70403,
+    "startingCaseNumber": 65782403,
+    "endingCaseNumber": 65852805,
+    "mailDate": "2026-07-24",
+    "outputFilePath": "C:\\Windows\\TEMP\\hpa-mailing-data-artifacts\\202607_Mailbag_HPA_AHAv2.xlsx",
+    "uploads": [
+      {
+        "fileName": "NHCL_7-6-26_9,695 Records.zip",
+        "sourceWorkbookFileName": "NHCL_7-6-26_9,695 Records.xlsx",
+        "keyCode": "NHCL",
+        "recordCount": 9695,
+        "startingSequence": 1,
+        "endingSequence": 9695,
+        "startingCaseNumber": 65782403,
+        "endingCaseNumber": 65792097,
+        "mailDate": "2026-07-24"
+      },
+      {
+        "fileName": "RFC_7-6-26_60,708 Records.zip",
+        "sourceWorkbookFileName": "RFC_7-6-26_60,708 Records.xlsx",
+        "keyCode": "RFC",
+        "recordCount": 60708,
+        "startingSequence": 9696,
+        "endingSequence": 70403,
+        "startingCaseNumber": 65792098,
+        "endingCaseNumber": 65852805,
+        "mailDate": "2026-07-24"
+      }
+    ]
+  }
+]

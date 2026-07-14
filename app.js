@@ -155,6 +155,14 @@ const state = {
     singleRunId: "",
     refreshOutput: null,
   },
+  bills: {
+    section: "dashboard",
+    currentRunId: "",
+    currentRun: null,
+    dashboard: null,
+    history: [],
+    settings: null,
+  },
   scoreHistory: {
     latest: null,
     rows: [],
@@ -1312,6 +1320,13 @@ function setRoute(route) {
     return;
   }
 
+  if (normalizedRoute === "bills") {
+    loadBillsWorkspace().catch((error) => {
+      setStatus("bill-run-status", `Unable to load bills: ${error.message}`);
+    });
+    return;
+  }
+
   if (normalizedRoute === "check-imports") {
     Promise.all([loadCheckImportTemplates(), loadCheckImportSessions(state.checkImports.launchSessionId || "")]).catch((error) => {
       setStatus("check-import-status", `Unable to load check imports: ${error.message}`);
@@ -1676,6 +1691,10 @@ function persistUiState() {
         achReturns: {
           currentSessionId: state.achReturns.currentSessionId || "",
         },
+        bills: {
+          section: state.bills.section || "dashboard",
+          currentRunId: state.bills.currentRunId || "",
+        },
       })
     );
   } catch {
@@ -1710,7 +1729,7 @@ function readLaunchStateFromUrl() {
     const isReviewPopup = params.get(ANALYSIS_REVIEW_POPUP_QUERY_PARAM) === "1";
     const isImportSessionPopup = params.get(IMPORT_SESSION_POPUP_QUERY_PARAM) === "1";
     return {
-      route: ["dashboard", "analysis", "mailing-data", "applications", "monthly-reports", "report-history", "score-history", "settings", "cc-payment-imports", "check-imports", "ach-returns"].includes(route)
+      route: ["dashboard", "analysis", "mailing-data", "applications", "monthly-reports", "report-history", "score-history", "settings", "cc-payment-imports", "check-imports", "ach-returns", "bills"].includes(route)
         ? route
         : "",
       importSession: {
@@ -1730,6 +1749,10 @@ function readLaunchStateFromUrl() {
         reviewScf,
         reviewSummaryMode: ["review", "summary"].includes(reviewSummaryMode) ? reviewSummaryMode : "",
         popup: isReviewPopup,
+      },
+      bills: {
+        currentRunId: String(params.get("billRunId") || "").trim(),
+        section: String(params.get("billSection") || "").trim().toLowerCase(),
       },
     };
   } catch {
@@ -15852,6 +15875,11 @@ function bindPrimaryNavigation() {
       await openAnalysisMailingList(listType);
       return;
     }
+
+    if (action === "open-bills-section") {
+      const section = actionButton.getAttribute("data-bills-section");
+      openBillsSection(section);
+    }
   });
 
   el("run-all-month-end-button")?.addEventListener("click", () => {
@@ -15873,6 +15901,314 @@ function bindDashboardActions() {
   );
   el("run-all-month-end-button")?.addEventListener("click", () => {
     setRoute("monthly-reports");
+  });
+}
+
+function normalizeBillSection(section) {
+  const normalized = String(section || "").trim().toLowerCase();
+  return ["dashboard", "new-run", "corrections", "generate", "review", "download", "history", "settings"].includes(normalized)
+    ? normalized
+    : "dashboard";
+}
+
+function formatBillTimestamp(value) {
+  const timestamp = Date.parse(value || "");
+  if (!timestamp) return "Not available";
+  return new Date(timestamp).toLocaleString("en-US");
+}
+
+function buildBillSummaryCard(label, value) {
+  return `
+    <article class="bill-summary-card">
+      <span class="bill-summary-label">${esc(label)}</span>
+      <strong class="bill-summary-value">${esc(String(value ?? ""))}</strong>
+    </article>
+  `;
+}
+
+function renderBillStepper(run = null) {
+  const container = el("bill-workflow-stepper");
+  if (!container) return;
+  const stages = Array.isArray(run?.stages)
+    ? run.stages
+    : ensureArray(state.bills.dashboard?.workflowStages).map((title, index) => ({
+        title,
+        status: index === 0 ? "current" : "pending",
+      }));
+  container.innerHTML = stages.length
+    ? stages
+        .map(
+          (stage, index) => `
+            <div class="bill-step ${esc(stage.status || "pending")}">
+              <span class="bill-step-index">${index + 1}</span>
+              <div>
+                <strong>${esc(stage.title || "")}</strong>
+                <p>${esc(String(stage.status || "pending")).replace(/^./, (char) => char.toUpperCase())}</p>
+              </div>
+            </div>
+          `
+        )
+        .join("")
+    : '<div class="empty-state-block">No workflow stages loaded yet.</div>';
+}
+
+function renderBillDashboard() {
+  const summaryRoot = el("bill-dashboard-summary");
+  if (!summaryRoot) return;
+  const summary = state.bills.dashboard?.summary || {};
+  summaryRoot.innerHTML = [
+    buildBillSummaryCard("Total Runs", summary.totalRuns ?? 0),
+    buildBillSummaryCard("Active Runs", summary.activeRuns ?? 0),
+    buildBillSummaryCard("Completed Runs", summary.completedRuns ?? 0),
+    buildBillSummaryCard("Pending Approval", summary.pendingApprovalRuns ?? 0),
+  ].join("");
+}
+
+function renderBillHistory() {
+  const tbody = el("bill-history-body");
+  if (!tbody) return;
+  const rows = ensureArray(state.bills.history);
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">No bill runs yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows
+    .map(
+      (run) => `
+        <tr>
+          <td>${esc(run.runCode || "")}</td>
+          <td>${esc(run.billMonth || "")}</td>
+          <td>${esc(run.status || "")}</td>
+          <td>${esc(run.activeStage || "")}</td>
+          <td>${esc(run.createdBy || "")}</td>
+          <td>${esc(formatBillTimestamp(run.updatedAt || run.createdAt || ""))}</td>
+          <td><button class="secondary-button table-action-button" data-bill-open-run="${esc(run.id || "")}">Open</button></td>
+        </tr>
+      `
+    )
+    .join("");
+}
+
+function renderBillCurrentRun() {
+  const panel = el("bill-current-run-panel");
+  if (!panel) return;
+  const run = state.bills.currentRun;
+  if (!run) {
+    panel.innerHTML = '<div class="empty-state-block">No bill run selected yet.</div>';
+    renderBillStepper(null);
+    return;
+  }
+  renderBillStepper(run);
+  const sectionLabel = normalizeBillSection(state.bills.section).replace("-", " ");
+  panel.innerHTML = `
+    <div class="bill-current-run-grid">
+      <article class="bill-current-run-card">
+        <p class="card-label">Run</p>
+        <h3>${esc(run.runCode || "")}</h3>
+        <p>${esc(run.billMonth || "")} · ${esc(run.status || "")}</p>
+        <p>${esc(run.activeStage || "")}</p>
+      </article>
+      <article class="bill-current-run-card">
+        <p class="card-label">Dates</p>
+        <p><strong>Processing:</strong> ${esc(run.dates?.processingDateLong || run.processingDate || "")}</p>
+        <p><strong>Bill 3 Lapse Deadline:</strong> ${esc(run.dates?.bill3LapseDeadlineDisplay || "")}</p>
+        <p><strong>Bill 4 Lapsed Effective:</strong> ${esc(run.dates?.bill4LapsedEffectiveDateDisplay || "")}</p>
+      </article>
+      <article class="bill-current-run-card">
+        <p class="card-label">Audit</p>
+        <p><strong>Created By:</strong> ${esc(run.createdBy || "")}</p>
+        <p><strong>Updated:</strong> ${esc(formatBillTimestamp(run.updatedAt || ""))}</p>
+        <p><strong>Active Section:</strong> ${esc(sectionLabel)}</p>
+      </article>
+    </div>
+    <div class="bill-detail-placeholder">
+      <strong>${esc(sectionLabel.replace(/\b\w/g, (char) => char.toUpperCase()))}</strong>
+      <p>This foundation pass persists the run shell, dates, settings, and audit trail. The section-specific Salesforce correction and document work will attach here next.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Event</th>
+            <th>Status</th>
+            <th>Performed By</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ensureArray(run.events)
+            .slice()
+            .reverse()
+            .map(
+              (entry) => `
+                <tr>
+                  <td>${esc(formatBillTimestamp(entry.performedAt || ""))}</td>
+                  <td>${esc(entry.eventType || "")}</td>
+                  <td>${esc(entry.newStatus || run.status || "")}</td>
+                  <td>${esc(entry.performedBy || "")}</td>
+                </tr>
+              `
+            )
+            .join("") || '<tr><td colspan="4" class="empty-cell">No audit events yet.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function populateBillSettings() {
+  const settings = state.bills.settings || {};
+  if (el("bill-setting-processing-day")) el("bill-setting-processing-day").value = settings.normalProcessingDay ?? "";
+  if (el("bill-setting-payment-due-day")) el("bill-setting-payment-due-day").value = settings.paymentDueDay ?? "";
+  if (el("bill-setting-lapse-deadline-day")) el("bill-setting-lapse-deadline-day").value = settings.lapseDeadlineDay ?? "";
+  if (el("bill-setting-max-total")) el("bill-setting-max-total").value = settings.maximumTotalCoverage ?? "";
+  if (el("bill-setting-required-noncontrib")) el("bill-setting-required-noncontrib").value = settings.requiredNonContributoryCoverage ?? "";
+  if (el("bill-setting-max-contrib")) el("bill-setting-max-contrib").value = settings.maximumContributoryCoverage ?? "";
+}
+
+function ensureBillFormDefaults() {
+  const monthInput = el("bill-run-month");
+  const dateInput = el("bill-run-date");
+  if (!(monthInput instanceof HTMLInputElement) || !(dateInput instanceof HTMLInputElement)) {
+    return;
+  }
+  if (!monthInput.value) {
+    const today = new Date();
+    monthInput.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  }
+  if (!dateInput.value && monthInput.value) {
+    dateInput.value = `${monthInput.value}-14`;
+  }
+}
+
+async function loadBillDashboard() {
+  const payload = await apiRequest("/api/bills/dashboard");
+  state.bills.dashboard = payload || null;
+  renderBillDashboard();
+  if (!state.bills.currentRunId && payload?.latestRun?.id) {
+    state.bills.currentRunId = payload.latestRun.id;
+  }
+}
+
+async function loadBillRuns() {
+  const payload = await apiRequest("/api/bills/runs");
+  state.bills.history = Array.isArray(payload.runs) ? payload.runs : [];
+  renderBillHistory();
+}
+
+async function loadBillSettings() {
+  const payload = await apiRequest("/api/bills/settings");
+  state.bills.settings = payload.settings || null;
+  populateBillSettings();
+}
+
+async function openBillRun(runId) {
+  if (!runId) return;
+  const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(runId)}`);
+  state.bills.currentRunId = runId;
+  state.bills.currentRun = payload.run || null;
+  renderBillCurrentRun();
+  persistUiState();
+}
+
+async function loadBillsWorkspace() {
+  await Promise.all([loadBillDashboard(), loadBillRuns(), loadBillSettings()]);
+  ensureBillFormDefaults();
+  if (state.bills.currentRunId) {
+    await openBillRun(state.bills.currentRunId);
+  } else {
+    renderBillCurrentRun();
+    renderBillStepper(null);
+  }
+}
+
+async function handleCreateBillRun() {
+  const billMonth = el("bill-run-month")?.value || "";
+  const scheduledProcessingDate = el("bill-run-date")?.value || "";
+  const createdBy = el("bill-run-created-by")?.value || "";
+  const notes = el("bill-run-notes")?.value || "";
+  const duplicateOverrideReason = el("bill-run-override-reason")?.value || "";
+  setStatus("bill-run-status", "Creating bill run...");
+  try {
+    const payload = await apiRequest("/api/bills/runs", {
+      method: "POST",
+      body: JSON.stringify({
+        billMonth,
+        scheduledProcessingDate,
+        createdBy,
+        notes,
+        allowDuplicateOverride: Boolean(duplicateOverrideReason.trim()),
+        duplicateOverrideReason,
+      }),
+    });
+    state.bills.dashboard = payload.dashboard || state.bills.dashboard;
+    state.bills.history = Array.isArray(payload.runs) ? payload.runs : state.bills.history;
+    state.bills.currentRunId = payload.run?.id || "";
+    state.bills.currentRun = payload.run || null;
+    renderBillDashboard();
+    renderBillHistory();
+    renderBillCurrentRun();
+    setStatus("bill-run-status", `Created ${payload.run?.runCode || "bill run"}.`);
+    persistUiState();
+  } catch (error) {
+    setStatus("bill-run-status", error.message || "Unable to create bill run.");
+  }
+}
+
+async function handleSaveBillSettings() {
+  setStatus("bill-settings-status", "Saving bill settings...");
+  try {
+    const payload = await apiRequest("/api/bills/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        normalProcessingDay: Number(el("bill-setting-processing-day")?.value || 0),
+        paymentDueDay: Number(el("bill-setting-payment-due-day")?.value || 0),
+        lapseDeadlineDay: Number(el("bill-setting-lapse-deadline-day")?.value || 0),
+        maximumTotalCoverage: Number(el("bill-setting-max-total")?.value || 0),
+        requiredNonContributoryCoverage: Number(el("bill-setting-required-noncontrib")?.value || 0),
+        maximumContributoryCoverage: Number(el("bill-setting-max-contrib")?.value || 0),
+      }),
+    });
+    state.bills.settings = payload.settings || null;
+    populateBillSettings();
+    setStatus("bill-settings-status", "Bill settings saved.");
+  } catch (error) {
+    setStatus("bill-settings-status", error.message || "Unable to save bill settings.");
+  }
+}
+
+function openBillsSection(section) {
+  state.bills.section = normalizeBillSection(section);
+  setRoute("bills");
+  renderBillCurrentRun();
+}
+
+function bindBillActions() {
+  el("bill-create-run-button")?.addEventListener("click", async () => {
+    await handleCreateBillRun();
+  });
+  el("bill-refresh-dashboard-button")?.addEventListener("click", async () => {
+    setStatus("bill-run-status", "Refreshing bill dashboard...");
+    await loadBillsWorkspace();
+    setStatus("bill-run-status", "Bill dashboard refreshed.");
+  });
+  el("bill-save-settings-button")?.addEventListener("click", async () => {
+    await handleSaveBillSettings();
+  });
+  el("bill-history-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const runId = target.getAttribute("data-bill-open-run");
+    if (!runId) return;
+    await openBillRun(runId);
+  });
+  el("bill-run-month")?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.value) return;
+    if (el("bill-run-date")) {
+      el("bill-run-date").value = `${target.value}-14`;
+    }
   });
 }
 
@@ -16470,6 +16806,7 @@ async function init() {
   logHpaDebugStartup();
   bindPrimaryNavigation();
   bindDashboardActions();
+  bindBillActions();
   setupAnalysisReviewSync();
   bindAnalysisButtons();
   bindAnalysisSubtabs();
@@ -16501,6 +16838,10 @@ async function init() {
     }
     if (persistedUiState?.achReturns?.currentSessionId) {
       state.achReturns.currentSessionId = String(persistedUiState.achReturns.currentSessionId || "").trim();
+    }
+    if (persistedUiState?.bills) {
+      state.bills.section = String(persistedUiState.bills.section || "dashboard").trim() || "dashboard";
+      state.bills.currentRunId = String(persistedUiState.bills.currentRunId || "").trim();
     }
     if (persistedAchReturnDraftState) {
       state.achReturns.draft = persistedAchReturnDraftState.draft || null;
@@ -16551,6 +16892,12 @@ async function init() {
 
   if (launchState?.importSession?.route === "ach-returns") {
     state.achReturns.currentSessionId = launchState.importSession.sessionId || "";
+  }
+  if (launchState?.bills?.section) {
+    state.bills.section = launchState.bills.section;
+  }
+  if (launchState?.bills?.currentRunId) {
+    state.bills.currentRunId = launchState.bills.currentRunId;
   }
 
   const initialRoute = String(launchState?.route || persistedUiState?.route || "dashboard").trim() || "dashboard";
