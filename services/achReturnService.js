@@ -354,23 +354,54 @@ function buildAchReturnCommentKeyParts(row = {}) {
   ].filter(Boolean);
 }
 
+function buildAchReturnCommentRequiredParts(row = {}) {
+  const checkNumber = normalizeComparableText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber);
+  const amount = normalizeComparableText(normalizeAmount(row.creditAmount));
+  const returnCode = normalizeComparableText(row.returnCode || row.reasonCode);
+  const returnReason = normalizeComparableText(row.returnReason);
+  const creditDateIso = normalizeComparableText(
+    normalizeDateText(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded)
+  );
+  const creditDateDisplay = normalizeComparableText(
+    formatDateMmDdYyyy(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded)
+  );
+
+  const requiredGroups = [];
+  if (checkNumber) {
+    requiredGroups.push([checkNumber]);
+  }
+  if (amount) {
+    requiredGroups.push([amount]);
+  }
+  if (returnCode) {
+    requiredGroups.push([returnCode]);
+  }
+  if (creditDateIso || creditDateDisplay) {
+    requiredGroups.push([creditDateIso, creditDateDisplay].filter(Boolean));
+  }
+  return requiredGroups;
+}
+
 function buildAchReturnCommentText(row = {}, processedAt = new Date().toISOString()) {
   const amountText = formatCurrency(normalizeAmount(row.creditAmount));
   const returnCode = normalizeText(row.returnCode || row.reasonCode).toUpperCase();
   const returnReason = normalizeText(row.returnReason);
+  const checkNumber = normalizeText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber);
   const processedOn = formatDateMmDdYyyy(processedAt) || formatDateMmDdYyyy(new Date().toISOString());
   const creditDate = formatDateMmDdYyyy(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded);
   const reasonDetail = [returnCode, returnReason].filter(Boolean).join(" - ");
   const sentences = [];
 
-  if (amountText) {
-    sentences.push(`Rcvd notice from the bank of returned check for ${amountText}.`);
+  if (returnCode) {
+    sentences.push(`Rcvd notice from the bank of ${returnCode}.`);
   } else {
     sentences.push("Rcvd notice from the bank of returned check.");
   }
-
   if (amountText) {
     sentences.push(`Processed returned check reversal/credit of ${amountText}.`);
+  }
+  if (checkNumber) {
+    sentences.push(`Check #${checkNumber}.`);
   }
   if (creditDate) {
     sentences.push(`Return date ${creditDate}.`);
@@ -550,11 +581,7 @@ function buildReturnedCheckTaskPayload(row = {}, fieldConfig, processedAt = new 
   } else {
     payload.Description = descriptionText;
   }
-  if (
-    fieldConfig.activityDateField?.name
-    && fieldConfig.activityDateField.nillable === false
-    && !fieldConfig.activityDateField.defaultValue
-  ) {
+  if (fieldConfig.activityDateField?.name) {
     payload[fieldConfig.activityDateField.name] =
       normalizeDateText(processedAt) || normalizeDateText(new Date().toISOString());
   }
@@ -582,6 +609,11 @@ function isEquivalentReturnedCheckTask(record = {}, row = {}) {
     !combinedText.includes("admin") &&
     !combinedText.includes("processed refund")
   ) {
+    return false;
+  }
+
+  const requiredGroups = buildAchReturnCommentRequiredParts(row);
+  if (requiredGroups.some((group) => !group.some((entry) => combinedText.includes(entry)))) {
     return false;
   }
 
@@ -1056,6 +1088,10 @@ function updateSessionCounts(sessionId) {
   session.error_count = rows.filter((entry) => (entry.validation_status || entry.status) === "error").length;
   session.imported_row_count = rows.filter((entry) => entry.import_result_status === "imported").length;
   session.salesforce_failed_row_count = rows.filter((entry) => entry.import_result_status === "salesforce_failed").length;
+  session.comment_added_count = rows.filter((entry) => entry.salesforce_comment_status === "added").length;
+  session.comment_existing_count = rows.filter((entry) => entry.salesforce_comment_status === "already_exists").length;
+  session.comment_failed_count = rows.filter((entry) => entry.salesforce_comment_status === "failed").length;
+  session.comment_skipped_count = rows.filter((entry) => entry.salesforce_comment_status === "skipped_no_certificate_match").length;
   session.status = session.exported_at ? "exported" : (session.row_count ? "draft" : "empty");
   session.updated_at = new Date().toISOString();
   writeSessions(sessions);

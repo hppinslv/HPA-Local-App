@@ -5500,7 +5500,7 @@ function renderAchReturnHistory() {
     ["imported", "imported_with_errors", "exported"].includes(String(session.final_status || session.status || ""))
   );
   if (!sessions.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">No imported ACH batches yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-cell">No imported ACH batches yet.</td></tr>';
     return;
   }
   tbody.innerHTML = sessions.map((session) => `
@@ -5510,6 +5510,13 @@ function renderAchReturnHistory() {
       <td>${esc(session.ready_count || 0)}</td>
       <td>${esc(session.error_count || 0)}</td>
       <td>${esc(session.imported_row_count || session.successful_import_count || 0)}</td>
+      <td>${esc(session.comment_failed_count || session.comment_skipped_count
+        ? `${Number(session.comment_failed_count || 0) + Number(session.comment_skipped_count || 0)} issue(s)`
+        : Number(session.comment_existing_count || 0)
+          ? `${Number(session.comment_existing_count || 0)} existing`
+          : Number(session.comment_added_count || 0)
+            ? `${Number(session.comment_added_count || 0)} added`
+            : "0")}</td>
       <td>${esc(session.exported_at ? formatDate(session.exported_at) : "Not exported")}</td>
       <td>${esc(session.uploaded_by || "")}</td>
       <td class="table-action-cell">

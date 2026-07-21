@@ -53,6 +53,7 @@ test("buildReturnedCheckTaskPayload maps the Certificate as Related To and sets 
   assert.equal(payload.payload.WhatId, "001ABC123");
   assert.equal(payload.payload.TaskSubtype, "Call");
   assert.equal(payload.payload.Status, "Completed");
+  assert.equal(payload.payload.ActivityDate, "2026-07-03");
   assert.equal(payload.payload.Type, "Admin");
   assert.equal(payload.payload.Comment_Reason__c, "Processed refund");
   assert.equal(payload.payload.Subject, "Admin - Processed refund");
@@ -76,4 +77,23 @@ test("isEquivalentReturnedCheckTask matches generated returned check activities 
   };
 
   assert.equal(__test.isEquivalentReturnedCheckTask(existingTask, row), true);
+});
+
+test("isEquivalentReturnedCheckTask does not treat a generic returned check task as a duplicate when the check number is missing", () => {
+  const row = {
+    certificateNumber: "203674",
+    creditAmount: 71.41,
+    checkNo: "5551",
+    returnCode: "R01",
+    returnReason: "Insufficient Funds",
+    creditDate: "2026-07-01",
+  };
+
+  const existingTask = {
+    Subject: "Admin - Processed refund",
+    Description:
+      "Rcvd notice from the bank of returned check for $71.41. Processed returned check reversal/credit of $71.41. Return date 07/01/2026. Return reason: R01 - Insufficient Funds. Processed on 07/03/2026.",
+  };
+
+  assert.equal(__test.isEquivalentReturnedCheckTask(existingTask, row), false);
 });
