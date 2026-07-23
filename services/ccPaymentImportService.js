@@ -1396,8 +1396,6 @@ function revalidateSession(sessionId) {
     row.months = derivedMonths;
     const expectedAmount = getExpectedPremiumAmount(policyEntry, effectiveMonths);
     const premiumLabel = getPremiumLabelForMonths(effectiveMonths);
-    const sourceExpectedAmount = getExpectedPremiumAmount(policyEntry, derivedMonths);
-    const sourcePremiumLabel = getPremiumLabelForMonths(derivedMonths);
     const issues = [];
 
     if (!certificateNumber) {
@@ -1440,14 +1438,6 @@ function revalidateSession(sessionId) {
       issues.push({ severity: "error", code: "missing_amount", message: "Missing Amount." });
     } else if (amountValue === null) {
       issues.push({ severity: "error", code: "invalid_amount", message: "Invalid Amount." });
-    } else if (manualMonths !== "") {
-      if (Number.isFinite(sourceExpectedAmount) && !isSameAmount(amountValue, sourceExpectedAmount)) {
-        issues.push({
-          severity: "warning",
-          code: "payment_amount_mismatch",
-          message: `Payment amount ${formatCurrency(amountValue)} does not match expected ${sourcePremiumLabel} premium ${formatCurrency(sourceExpectedAmount)} for certificate ${certificateNumber || "this policy"}. Manual months override ${manualMonths} will still be used for import.`,
-        });
-      }
     } else if (Number.isFinite(expectedAmount) && !isSameAmount(amountValue, expectedAmount)) {
       issues.push({
         severity: "warning",
@@ -1760,13 +1750,23 @@ async function updateCcPaymentImportRows(sessionId, rowUpdates = [], defaultCorr
     if (!row) {
       throw new Error("Credit card payment import row not found.");
     }
+    const previousCertificateNumber = normalizeCertificateNumber(row.certificate_number);
+    const hasCertificateUpdate = Object.prototype.hasOwnProperty.call(entry || {}, "certificate_number");
+    const hasMonthsUpdate = Object.prototype.hasOwnProperty.call(entry || {}, "months");
+    const hasManualPolicyUpdate = Object.prototype.hasOwnProperty.call(entry || {}, "manual_policy_id");
     applyCcPaymentImportRowUpdates(row, {
       ...entry,
       corrected_by: entry?.corrected_by || defaultCorrectedBy,
     });
     const correctedCertificateNumber = normalizeCertificateNumber(row.corrected_certificate_number || row.certificate_number);
-    if (correctedCertificateNumber) {
+    const certificateChanged = hasCertificateUpdate && correctedCertificateNumber !== previousCertificateNumber;
+    if (certificateChanged && correctedCertificateNumber) {
       changedCertificateNumbers.push(correctedCertificateNumber);
+    }
+    // This note is a suggestion generated for the prior certificate, policy, or
+    // month amount.  Keeping it after a manual correction creates a stale warning.
+    if (certificateChanged || hasMonthsUpdate || hasManualPolicyUpdate) {
+      row.name_amount_match_note = "";
     }
   });
 

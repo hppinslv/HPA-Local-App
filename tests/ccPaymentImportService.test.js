@@ -271,6 +271,40 @@ test("cc payment rows can be updated in bulk without saving one line at a time",
   assert.equal(session.rows[1].corrected_by, "Local User");
 });
 
+test("saving a corrected month clears stale warnings and validates against that month", async () => {
+  __setCcPaymentImportStateForTests({
+    sessions: [{
+      id: "session_month_correction", original_filename: "months.csv", import_template_key: "credit-card-payments",
+      import_template_name: "Credit Card Payment Import", salesforce_object_api_name: "Payments__c", operation_type: "insert",
+      uploaded_at: "2026-06-19T06:00:00.000Z", updated_at: "2026-06-19T06:00:00.000Z", uploaded_by: "Local User",
+      policy_lookup_refreshed_at: null, status: "pending", row_count: 1, ready_count: 0, error_count: 0, warning_count: 0,
+      missing_policy_count: 0, attempted_import_count: 0, successful_import_count: 0, salesforce_failed_row_count: 0,
+      imported_row_count: 0, failed_validation_row_count: 0, final_status: "pending_review", destination_object: "Payments__c",
+      exported_at: null, export_filename: "",
+    }],
+    rows: [{
+      id: "month_row", session_id: "session_month_correction", row_number: 1, transaction_id: "txn-month-1",
+      certificate_number: "100001", matched_policy_id: "", matched_certificate_record_id: "", manual_policy_id: "",
+      amount: "30.00", transaction_date: "2026-06-18", payment_account: "5475", months: 1, id3: "1 Month",
+      status: "pending", issue_reason: "", issue_details: [], payment_name: "",
+      name_amount_match_note: "Name and payment match found on Member 1: certificate 999999.", raw_json: {}, date_received: "",
+      type: "2", pay_type: "3", manual_payment: "Yes",
+    }],
+    policyCache: {
+      reportId: "test", refreshedAt: null, source: "test",
+      items: [{ certificate_number: "100001", policy_id: "a00f400000QB7x2AAD", certificate_record_id: "001ABCDEF123456", policy_status: "In Force", p1: 10, p3: 30 }],
+    },
+  });
+
+  const session = await updateCcPaymentImportRows("session_month_correction", [{ id: "month_row", months: 3 }]);
+
+  assert.equal(session.rows[0].corrected_months, "3");
+  assert.equal(session.rows[0].name_amount_match_note, "");
+  assert.equal(session.rows[0].status, "ready");
+  assert.equal(session.warning_count, 0);
+  assert.equal(session.rows[0].issue_details.some((issue) => issue.code === "payment_amount_mismatch"), false);
+});
+
 test("imported cc payment sessions cannot be deleted", () => {
   __setCcPaymentImportStateForTests({
     sessions: [
