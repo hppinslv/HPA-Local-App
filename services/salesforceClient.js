@@ -12,7 +12,8 @@ const {
 } = require("./reportCatalog");
 
 const SALESFORCE_API_VERSION = "v61.0";
-const DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS = 45000;
+// Salesforce report generation can legitimately take longer than a normal API request.
+const DEFAULT_SALESFORCE_REQUEST_TIMEOUT_MS = 120000;
 const salesforceDescribeCache = new Map();
 const ANALYSIS_DEBUG_FILE_PREFIX = "debug-analysis-salesforce-report";
 

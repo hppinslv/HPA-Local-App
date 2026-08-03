@@ -59,6 +59,9 @@ const FINAL_SUMMARY_SIGNATURE = [
   "American Homeowners Association",
 ];
 const STALE_RUNNING_REPORT_MS = 10 * 60 * 1000;
+// Salesforce report requests are resource-intensive. Serialize month-end jobs so a
+// Run All Reports request does not start multiple long-running report executions at once.
+let monthlyReportExecutionQueue = Promise.resolve();
 
 const FIXED_RULES = {
   amalgamatedPremiumRate: 0.41,
@@ -2273,7 +2276,10 @@ function createRun(
   runs.unshift(newRun);
   writeRuns(runs);
 
-  setTimeout(async () => {
+  setTimeout(() => {
+    monthlyReportExecutionQueue = monthlyReportExecutionQueue
+      .catch(() => {})
+      .then(async () => {
     try {
       let report = null;
 
@@ -2314,6 +2320,7 @@ function createRun(
         run.statusDetail = error.message;
       });
     }
+      });
   }, 1200);
 
   return serializeRun(newRun);
