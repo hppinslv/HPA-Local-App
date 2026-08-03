@@ -865,6 +865,41 @@ function buildTemplateFeeParagraph({
   return `<w:p w14:paraId="${paraId}" w14:textId="${textId}" w:rsidR="005150F8" w:rsidRPr="00FE6A12" w:rsidRDefault="00552FDA" w:rsidP="${rsidP}"><w:pPr><w:ind w:left="-14" w:right="0" w:firstLine="720"/><w:rPr><w:u w:val="single"/></w:rPr></w:pPr><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>${labelText}</w:t></w:r><w:r w:rsidR="005150F8" w:rsidRPr="00FE6A12"><w:rPr><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">${suffixText}</w:t></w:r><w:r w:rsidR="005150F8" w:rsidRPr="00FE6A12"><w:rPr><w:u w:val="single"/></w:rPr><w:tab/></w:r><w:r w:rsidR="005150F8" w:rsidRPr="00FE6A12"><w:rPr><w:u w:val="single"/></w:rPr><w:tab/></w:r><w:r w:rsidR="005150F8" w:rsidRPr="00FE6A12"><w:rPr><w:u w:val="single"/></w:rPr><w:tab/></w:r><w:r w:rsidR="005150F8" w:rsidRPr="00FE6A12"><w:rPr><w:u w:val="single"/></w:rPr><w:tab/></w:r><w:r w:rsidR="00735C7D" w:rsidRPr="00FE6A12"><w:rPr><w:noProof/><w:u w:val="single"/></w:rPr><w:t>$</w:t></w:r><w:r w:rsidR="006A54B9" w:rsidRPr="00FE6A12"><w:rPr><w:noProof/><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">${amountText}</w:t></w:r><w:r w:rsidR="00D358B4" w:rsidRPr="00FE6A12"><w:rPr><w:u w:val="single"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r w:rsidR="005150F8" w:rsidRPr="00FE6A12"><w:rPr><w:u w:val="single"/></w:rPr><w:t>(Taken from HPA Commissions above)</w:t></w:r></w:p>`;
 }
 
+function buildFinalSummaryLetterDistributionTable(letterData) {
+  const rows = [
+    [
+      "AMALGAMATED:",
+      `$ ${buildTemplateMoneyText(letterData.amalgamatedPremium)}`,
+      `(41% of Premium collected in ${letterData.reportMonthDashLabel})`,
+    ],
+    [
+      "HPA Commission:",
+      `$ ${buildTemplateMoneyText(letterData.hpaCommission)}`,
+      `(59% of Premium collected in ${letterData.reportMonthDashLabel})`,
+    ],
+    [
+      "AHA Dues:",
+      `$ ${buildTemplateMoneyText(letterData.ahaDues)}`,
+      `(Membership dues collected in ${letterData.reportMonthDashLabel})`,
+    ],
+    [
+      "Premier Work-Site Solutions (Fee):",
+      `$ ${buildTemplateMoneyText(letterData.ftjFee)}`,
+      "(Taken from HPA Commissions above)",
+    ],
+    ["Total:", `$ ${buildTemplateMoneyText(letterData.fundsReceived)}`, ""],
+  ];
+
+  const cell = (value, width, { align = "left", total = false } = {}) => {
+    const topBorder = total
+      ? '<w:tcBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/></w:tcBorders>'
+      : "";
+    return `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${topBorder}</w:tcPr><w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r></w:p></w:tc>`;
+  };
+
+  return `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblInd w:w="720" w:type="dxa"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="90" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="1800"/><w:gridCol w:w="4200"/></w:tblGrid>${rows.map(([label, amount, note], index) => `<w:tr>${cell(label, 3000, { total: index === rows.length - 1 })}${cell(amount, 1800, { align: "right", total: index === rows.length - 1 })}${cell(note, 4200, { total: index === rows.length - 1 })}</w:tr>`).join("")}</w:tbl>`;
+}
+
 function buildFinalSummaryLetterTemplateXml(templateXml, letterData) {
   let xml = templateXml;
 
@@ -1033,6 +1068,14 @@ function buildFinalSummaryLetterTemplateXml(templateXml, letterData) {
         "total distribution amount"
       ),
     "total distribution paragraph"
+  );
+
+  const distributionBlockPattern = /<w:p[^>]*w14:paraId="2D0918BC"[\s\S]*?<w:p[^>]*w14:paraId="0602B083"[\s\S]*?<\/w:p>/;
+  xml = replaceFirst(
+    xml,
+    distributionBlockPattern,
+    buildFinalSummaryLetterDistributionTable(letterData),
+    "distribution table"
   );
 
   replaceParagraph(
