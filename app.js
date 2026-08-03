@@ -3907,7 +3907,9 @@ function renderCcPaymentReviewTable() {
           <td><span class="cc-status-pill is-${esc(row.status || "ready")}">${esc((row.status || "ready").replace("_", " "))}</span></td>
           <td>${issueColumn}</td>
           <td class="table-action-cell">
-            ${isImportedSession ? '<span class="cc-row-note">Read only</span>' : '<span class="cc-row-note">Edit rows, then save all.</span>'}
+             ${isImportedSession
+               ? '<span class="cc-row-note">Read only</span>'
+               : `<button class="secondary-button table-action-button danger-button" data-cc-delete-row="${esc(row.id)}">Delete Row</button>`}
           </td>
         </tr>
       `;
@@ -3932,6 +3934,7 @@ function updateCcPaymentExportState() {
   const session = getCurrentCcPaymentSession();
   const saveAllButton = el("cc-payment-save-all-button");
   const exportButton = el("cc-payment-export-button");
+  const deleteSessionButton = el("cc-payment-delete-session-button");
   const hasBlockingErrors = Number(session?.error_count || 0) > 0;
   const alreadyImported = ["imported", "imported_with_errors"].includes(String(session?.final_status || ""));
   const pendingEditCount = session && !alreadyImported ? collectCcPaymentRowEdits(session).length : 0;
@@ -3941,9 +3944,13 @@ function updateCcPaymentExportState() {
       ? `Save All Corrections (${pendingEditCount})`
       : "Save All Corrections";
   }
-  if (!exportButton) return;
-  exportButton.disabled = !session || hasBlockingErrors || alreadyImported;
-  exportButton.textContent = alreadyImported ? "Import Completed" : "Confirm Import";
+  if (exportButton) {
+    exportButton.disabled = !session || hasBlockingErrors || alreadyImported;
+    exportButton.textContent = alreadyImported ? "Import Completed" : "Confirm Import";
+  }
+  if (deleteSessionButton) {
+    deleteSessionButton.disabled = !session || alreadyImported;
+  }
 }
 
 function renderCcPaymentPage() {
@@ -4011,6 +4018,20 @@ async function deleteCcPaymentImportSessionById(sessionId) {
   }
   await loadCcPaymentImportSessions("");
   setStatus("cc-payment-status", "Import session deleted.");
+}
+
+async function deleteCcPaymentImportRowById(sessionId, rowId) {
+  const normalizedSessionId = String(sessionId || "").trim();
+  const normalizedRowId = String(rowId || "").trim();
+  if (!normalizedSessionId || !normalizedRowId) return;
+
+  const payload = await apiRequest(
+    `/api/cc-payment-imports/${encodeURIComponent(normalizedSessionId)}/rows/${encodeURIComponent(normalizedRowId)}`,
+    { method: "DELETE" }
+  );
+  state.ccPayments.currentSession = payload.session || null;
+  state.ccPayments.currentSessionId = payload.session?.id || normalizedSessionId;
+  renderCcPaymentPage();
 }
 
 function bindCcPaymentImportEvents() {
@@ -4181,6 +4202,18 @@ function bindCcPaymentImportEvents() {
     }
   });
 
+  el("cc-payment-delete-session-button")?.addEventListener("click", async () => {
+    const session = getCurrentCcPaymentSession();
+    if (!session?.id) return;
+    if (!confirm("Delete this entire unimported batch and all of its rows?")) return;
+    setStatus("cc-payment-status", "Deleting import batch...");
+    try {
+      await deleteCcPaymentImportSessionById(session.id);
+    } catch (error) {
+      setStatus("cc-payment-status", `Unable to delete batch: ${error.message}`);
+    }
+  });
+
   el("cc-payment-template-select")?.addEventListener("change", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLSelectElement)) {
@@ -4234,6 +4267,22 @@ function bindCcPaymentImportEvents() {
     if (!(target instanceof HTMLInputElement)) return;
     if (!target.hasAttribute("data-cc-row-field")) return;
     updateCcPaymentExportState();
+  });
+
+  el("cc-payment-review-body")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const rowId = target.getAttribute("data-cc-delete-row");
+    const session = getCurrentCcPaymentSession();
+    if (!rowId || !session?.id) return;
+    if (!confirm("Delete this row from the unimported batch?")) return;
+    setStatus("cc-payment-status", "Deleting row...");
+    try {
+      await deleteCcPaymentImportRowById(session.id, rowId);
+      setStatus("cc-payment-status", "Row deleted.");
+    } catch (error) {
+      setStatus("cc-payment-status", `Unable to delete row: ${error.message}`);
+    }
   });
 }
 

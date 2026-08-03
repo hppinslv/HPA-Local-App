@@ -81,6 +81,7 @@ const {
 } = require("./services/applicationService");
 const {
   createCcPaymentImportSession,
+  deleteCcPaymentImportRow,
   deleteCcPaymentImportSession,
   exportCcPaymentImportSession,
   confirmCcPaymentImport,
@@ -2106,6 +2107,18 @@ const server = http.createServer(async (request, response) => {
   const ccPaymentImportRowMatch = requestUrl.pathname.match(
     /^\/api\/cc-payment-imports\/([^/]+)\/rows\/([^/]+)$/
   );
+  if (ccPaymentImportRowMatch && request.method === "DELETE") {
+    try {
+      const session = deleteCcPaymentImportRow(
+        ccPaymentImportRowMatch[1],
+        ccPaymentImportRowMatch[2]
+      );
+      sendJson(response, 200, { session });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to delete credit card payment import row." });
+    }
+    return;
+  }
   if (ccPaymentImportRowMatch && request.method === "PATCH") {
     collectRequestBody(request)
       .then(async (body) => {

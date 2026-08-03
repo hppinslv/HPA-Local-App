@@ -14,6 +14,7 @@ const originalPolicyCache = fs.readFileSync(policyCachePath, "utf8");
 
 const {
   __setCcPaymentImportStateForTests,
+  deleteCcPaymentImportRow,
   deleteCcPaymentImportSession,
   getCcPaymentImportSession,
   revalidateSession,
@@ -169,6 +170,36 @@ test("deleting a duplicate-only cc payment session revalidates the remaining ses
   assert.equal(afterDelete.ready_count, 1);
   assert.equal(afterDelete.rows[0].status, "ready");
   assert.equal(afterDelete.rows[0].issue_reason, "");
+});
+
+test("an unimported cc payment row can be removed from an active batch", () => {
+  __setCcPaymentImportStateForTests({
+    sessions: [{
+      id: "session_row_delete",
+      import_template_key: "credit-card-payments",
+      uploaded_at: "2026-06-19T06:00:00.000Z",
+      updated_at: "2026-06-19T06:00:00.000Z",
+      imported_row_count: 0,
+      successful_import_count: 0,
+      final_status: "pending_review",
+    }],
+    rows: [{
+      id: "row_remove",
+      session_id: "session_row_delete",
+      row_number: 1,
+      certificate_number: "226560",
+      amount: "75.62",
+      months: 1,
+      status: "pending",
+      issue_details: [],
+      raw_json: {},
+    }],
+    policyCache: { reportId: "test", refreshedAt: null, source: "test", items: [] },
+  });
+
+  const session = deleteCcPaymentImportRow("session_row_delete", "row_remove");
+  assert.equal(session.row_count, 0);
+  assert.deepEqual(session.rows, []);
 });
 
 test("cc payment rows can be updated in bulk without saving one line at a time", async () => {

@@ -1594,6 +1594,33 @@ function deleteCcPaymentImportSession(sessionId) {
   };
 }
 
+function deleteCcPaymentImportRow(sessionId, rowId) {
+  const normalizedSessionId = normalizeText(sessionId);
+  const normalizedRowId = normalizeText(rowId);
+  if (!normalizedSessionId || !normalizedRowId) {
+    throw new Error("Credit card payment import row not found.");
+  }
+
+  const sessions = readSessions();
+  const session = sessions.find((entry) => entry.id === normalizedSessionId);
+  if (!session) {
+    throw new Error("Credit card payment import session not found.");
+  }
+  const importedRowCount = Number(session.imported_row_count || session.successful_import_count || 0);
+  if (importedRowCount > 0 || ["imported", "imported_with_errors"].includes(String(session.final_status || ""))) {
+    throw new Error("Imported rows cannot be deleted from history.");
+  }
+
+  const rows = readRows();
+  const row = rows.find((entry) => entry.session_id === normalizedSessionId && entry.id === normalizedRowId);
+  if (!row) {
+    throw new Error("Credit card payment import row not found.");
+  }
+
+  writeRows(rows.filter((entry) => entry !== row));
+  return revalidateSession(normalizedSessionId);
+}
+
 function buildImportRow(sessionId, sourceRow) {
   const rowNumber = Number(sourceRow.__rowNumber || 0);
   const certificateNumber = normalizeCertificateNumber(sourceRow.ID1);
@@ -2105,6 +2132,7 @@ module.exports = {
   __setCcPaymentImportStateForTests,
   confirmCcPaymentImport,
   createCcPaymentImportSession,
+  deleteCcPaymentImportRow,
   deleteCcPaymentImportSession,
   exportCcPaymentImportSession,
   getCcPaymentImportSession,
