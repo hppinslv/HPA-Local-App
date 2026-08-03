@@ -235,6 +235,21 @@ function normalizeStoredRuns(runs) {
   };
 }
 
+function markInterruptedRunsFailed(runs) {
+  const restartAt = new Date().toISOString();
+  return compactRunsForStorage(Array.isArray(runs) ? clone(runs) : []).map((run) => {
+    if (String(run?.status || "").trim().toLowerCase() !== "running") {
+      return run;
+    }
+    return {
+      ...run,
+      status: "failed",
+      updatedAt: restartAt,
+      statusDetail: "The server restarted before this report finished. Start a fresh report run.",
+    };
+  });
+}
+
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
@@ -354,7 +369,9 @@ async function initializeReportRunPersistence() {
     }
   }
 
-  reportRunsInMemory = compactRunsForStorage(resolvedRuns);
+  // A Node process cannot resume in-flight report work after a restart. Mark
+  // only those interrupted runs as failed so they cannot leave the UI stuck.
+  reportRunsInMemory = markInterruptedRunsFailed(resolvedRuns);
 
   writeRuns(reportRunsInMemory);
 }
