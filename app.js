@@ -3826,11 +3826,7 @@ function renderCcPaymentHistory() {
         <td>${esc(session.uploaded_by || "")}</td>
         <td class="table-action-cell">
           <button class="secondary-button table-action-button" data-cc-open-session="${esc(session.id)}">Open</button>
-          ${
-            Number(session.imported_row_count || session.successful_import_count || 0) > 0
-              ? ""
-              : `<button class="secondary-button table-action-button danger-button" data-cc-delete-session="${esc(session.id)}">Delete</button>`
-          }
+          <button class="secondary-button table-action-button danger-button" data-cc-delete-session="${esc(session.id)}">Delete</button>
         </td>
       </tr>
     `)
@@ -3949,7 +3945,7 @@ function updateCcPaymentExportState() {
     exportButton.textContent = alreadyImported ? "Import Completed" : "Confirm Import";
   }
   if (deleteSessionButton) {
-    deleteSessionButton.disabled = !session || alreadyImported;
+    deleteSessionButton.disabled = !session;
   }
 }
 
@@ -4205,8 +4201,8 @@ function bindCcPaymentImportEvents() {
   el("cc-payment-delete-session-button")?.addEventListener("click", async () => {
     const session = getCurrentCcPaymentSession();
     if (!session?.id) return;
-    if (!confirm("Delete this entire unimported batch and all of its rows?")) return;
-    setStatus("cc-payment-status", "Deleting import batch...");
+    if (!confirm("Remove this batch and all of its rows from the local CC import queue? This does not delete any payments already created in Salesforce.")) return;
+    setStatus("cc-payment-status", "Removing import batch from the local queue...");
     try {
       await deleteCcPaymentImportSessionById(session.id);
     } catch (error) {
@@ -4251,7 +4247,7 @@ function bindCcPaymentImportEvents() {
 
     const deleteSessionId = target.getAttribute("data-cc-delete-session");
     if (!deleteSessionId) return;
-    if (!confirm("Delete this import session and remove its rows from import history?")) {
+    if (!confirm("Remove this batch and its rows from the local CC import queue? This does not delete any payments already created in Salesforce.")) {
       return;
     }
     setStatus("cc-payment-status", "Deleting import session...");

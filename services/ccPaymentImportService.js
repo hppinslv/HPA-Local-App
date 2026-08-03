@@ -1573,11 +1573,6 @@ function deleteCcPaymentImportSession(sessionId) {
     throw new Error("Credit card payment import session not found.");
   }
 
-  const importedRowCount = Number(session.imported_row_count || session.successful_import_count || 0);
-  if (importedRowCount > 0) {
-    throw new Error("Imported sessions cannot be deleted from history.");
-  }
-
   const remainingSessions = sessions.filter((entry) => entry.id !== normalizedSessionId);
   const remainingRows = readRows().filter((entry) => entry.session_id !== normalizedSessionId);
 

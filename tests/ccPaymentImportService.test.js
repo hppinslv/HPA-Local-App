@@ -336,7 +336,7 @@ test("saving a corrected month clears stale warnings and validates against that 
   assert.equal(session.rows[0].issue_details.some((issue) => issue.code === "payment_amount_mismatch"), false);
 });
 
-test("imported cc payment sessions cannot be deleted", () => {
+test("an imported cc payment session can be purged from the local queue without affecting Salesforce", () => {
   __setCcPaymentImportStateForTests({
     sessions: [
     {
@@ -370,10 +370,9 @@ test("imported cc payment sessions cannot be deleted", () => {
     rows: [],
   });
 
-  assert.throws(
-    () => deleteCcPaymentImportSession("session_imported"),
-    /cannot be deleted/i
-  );
+  const result = deleteCcPaymentImportSession("session_imported");
+  assert.equal(result.deletedSessionId, "session_imported");
+  assert.deepEqual(result.sessions, []);
 });
 
 test("cc payment revalidation prefers the active policy status for a certificate", () => {
