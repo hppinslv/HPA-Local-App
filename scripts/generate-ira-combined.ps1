@@ -13,6 +13,22 @@ $excel.DisplayAlerts = $false
 
 try {
   $template = $excel.Workbooks.Open($TemplatePath, $false, $true)
+  if ($Style -eq 'combined-pdf') {
+    $book = $excel.Workbooks.Add()
+    $sheet = $book.Worksheets.Item(1)
+    $sheet.Name = 'Combined IRA'
+    $sheet.Cells.Font.Name = 'Arial'; $sheet.Cells.Font.Size = 10; $sheet.Cells.Font.Color = 0
+    $sheet.Columns.Item(1).ColumnWidth = 29; $sheet.Columns.Item(2).ColumnWidth = 16; $sheet.Columns.Item(3).ColumnWidth = 18; $sheet.Columns.Item(4).ColumnWidth = 16
+    $template.Worksheets.Item('February 2025').Shapes.Item(1).Copy(); $sheet.Paste()
+    $currency = '$#,##0.00;[Red]($#,##0.00)'; $dash = [char]0x2013
+    $people = @(@{key='araceli';name='Araceli Gandara '+$dash+' 2236-4498'},@{key='melanie';name='Melanie Gardas '+$dash+' 2344-9181'})
+    function PdfNumber($cell,[double]$value){$cell.Formula='='+$value.ToString([Globalization.CultureInfo]::InvariantCulture);$cell.NumberFormat=$currency}
+    function PdfBorders($range){foreach($cell in $range.Cells){foreach($edge in 7..10){$cell.Borders.Item($edge).LineStyle=1;$cell.Borders.Item($edge).Weight=2;$cell.Borders.Item($edge).Color=0}}}
+    $i=0
+    foreach($month in $payload.months){$base=1+(8*$i);foreach($r in $base..($base+7)){$sheet.Rows.Item($r).RowHeight=15};$sheet.Cells.Item($base,2).Value2='Employee - EMPL';$sheet.Cells.Item($base,3).Value2='Employer - SMPRC';$sheet.Cells.Item($base,4).Value2='Amount Due';$sheet.Cells.Item($base+1,1).Value2="$($month.label) Totals";$sheet.Cells.Item($base+1,1).Font.Bold=$true;$subtotal=0.0;foreach($person in $people){$row=$base+2+[array]::IndexOf($people,$person);$item=$month.people.($person.key);$sheet.Cells.Item($row,1).Value2=$person.name;PdfNumber $sheet.Cells.Item($row,2) ([double]$item.employee);PdfNumber $sheet.Cells.Item($row,3) ([double]$item.employer);PdfNumber $sheet.Cells.Item($row,4) ([double]$item.due);$subtotal+=[double]$item.due};PdfNumber $sheet.Cells.Item($base+5,4) $subtotal;$sheet.Cells.Item($base+5,4).Font.Bold=$true;PdfBorders $sheet.Range("A$base:D$($base+5)");$i++}
+    $grand=2+(8*$i);foreach($r in $grand..($grand+7)){$sheet.Rows.Item($r).RowHeight=15};$sheet.Cells.Item($grand,1).Value2='Grand total';$sheet.Cells.Item($grand,1).Font.Bold=$true;$sheet.Cells.Item($grand+1,2).Value2='Employee - EMPL';$sheet.Cells.Item($grand+1,3).Value2='Employer - SMPRC';$sheet.Cells.Item($grand+1,4).Value2='Amount Due';$sheet.Cells.Item($grand+2,1).Value2='Grand total';$sheet.Cells.Item($grand+2,1).Font.Bold=$true;$allDue=0.0;foreach($person in $people){$row=$grand+3+[array]::IndexOf($people,$person);$employee=0.0;$employer=0.0;$due=0.0;foreach($month in $payload.months){$item=$month.people.($person.key);$employee+=[double]$item.employee;$employer+=[double]$item.employer;$due+=[double]$item.due};$sheet.Cells.Item($row,1).Value2=$person.name;PdfNumber $sheet.Cells.Item($row,2) $employee;PdfNumber $sheet.Cells.Item($row,3) $employer;PdfNumber $sheet.Cells.Item($row,4) $due;$sheet.Range("A$row:D$row").Font.Bold=$true;$allDue+=$due};PdfNumber $sheet.Cells.Item($grand+6,4) $allDue;$sheet.Range("A$grand:D$($grand+6)").Font.Bold=$true;PdfBorders $sheet.Range("A$grand:D$($grand+6)")
+    $shape=$sheet.Shapes.Item(1);$shape.Top=$sheet.Cells.Item($grand+10,3).Top;$shape.Left=$sheet.Cells.Item($grand+10,3).Left;$sheet.PageSetup.PrintArea='$A$1:$D$'+($grand+13);$sheet.PageSetup.Zoom=$false;$sheet.PageSetup.FitToPagesWide=1;$sheet.PageSetup.FitToPagesTall=1;[void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($OutputPath));$book.ExportAsFixedFormat(0,$OutputPath);$book.Close($false);$template.Close($false);return
+  }
   # The historical summary sheets supply the exact HPA layouts.
   $baseSheet = if ($Style -eq 'monthly') { 'Sheet4' } else { 'Sheet6' }
   $template.Worksheets.Item($baseSheet).Copy()

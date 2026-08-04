@@ -1161,11 +1161,12 @@ const server = http.createServer(async (request, response) => {
       const months = Array.isArray(body?.months) ? body.months : [];
       if (!months.length) throw new Error("Choose at least one completed month.");
       const label = String(body?.label || "Combined IRA").replace(/[^a-z0-9 -]/gi, "").trim() || "Combined IRA";
-      const outputPath = path.join(rootDir, "generated-reports", `IRA ${label}-${Date.now()}.xlsx`);
+      const isPdf = String(body?.style || "") === "combined-pdf";
+      const outputPath = path.join(rootDir, "generated-reports", `IRA ${label}-${Date.now()}.${isPdf ? "pdf" : "xlsx"}`);
       const payload = Buffer.from(JSON.stringify({ months }), "utf8").toString("base64");
       await new Promise((resolve, reject) => execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(rootDir, "scripts", "generate-ira-combined.ps1"), "-PayloadBase64", payload, "-Style", String(body?.style || "combined"), "-TemplatePath", path.join(rootDir, "templates", "IRA Combined Report Template.xlsx"), "-OutputPath", outputPath], { windowsHide: true, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
       const workbook = fs.readFileSync(outputPath);
-      response.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${label} IRA Combined Report.xlsx"`, "Content-Length": workbook.length });
+      response.writeHead(200, { "Content-Type": isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${label} IRA Combined Report.${isPdf ? "pdf" : "xlsx"}"`, "Content-Length": workbook.length });
       response.end(workbook);
       fs.unlink(outputPath, () => {});
     }).catch((error) => sendJson(response, 400, { error: error.message || "Unable to create the combined report." }));
