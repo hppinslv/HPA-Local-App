@@ -13,10 +13,14 @@ $excel.DisplayAlerts = $false
 
 try {
   $template = $excel.Workbooks.Open($TemplatePath, $false, $true)
-  # This signed historical sheet supplies the exact HPA layout and signature image.
-  $template.Worksheets.Item('February 2025').Copy()
+  # The historical summary sheets supply the exact HPA layouts.
+  $baseSheet = if ($Style -eq 'monthly') { 'Sheet4' } else { 'Sheet6' }
+  $template.Worksheets.Item($baseSheet).Copy()
   $book = $excel.ActiveWorkbook
   $sheet = $book.ActiveSheet
+  # Copy the signature image from the signed historical sheet.
+  $template.Worksheets.Item('February 2025').Shapes.Item(1).Copy()
+  $sheet.Paste()
   $sheet.Name = 'Combined IRA'
   $sheet.Cells.ClearContents()
 
@@ -31,8 +35,10 @@ try {
     )
     $currencyFormat = '$#,##0.00;[Red]($#,##0.00)'
     function PutNumber($cell, [double]$number) { $cell.Formula = '=' + $number.ToString([Globalization.CultureInfo]::InvariantCulture) }
-    $template.Worksheets.Item('February 2025').Range('A3:D8').Copy()
-    $sheet.Range('A2:D7').PasteSpecial(-4122)
+    $template.Worksheets.Item('Sheet4').Range('A1:D5').Copy()
+    $sheet.Range('A1:D5').PasteSpecial(-4122)
+    $template.Worksheets.Item('Sheet4').Range('A24:D27').Copy()
+    $sheet.Range('A8:D11').PasteSpecial(-4122)
     $sheet.Cells.Item(1, 1).NumberFormat = '@'; $sheet.Cells.Item(1, 1).Value2 = $month.label
     $sheet.Cells.Item(2, 2).Value2 = $employeeHeading; $sheet.Cells.Item(2, 3).Value2 = $employerHeading; $sheet.Cells.Item(2, 4).Value2 = 'Amount Due'
     $employeeTotal = 0.0; $employerTotal = 0.0; $dueTotal = 0.0
@@ -76,7 +82,7 @@ try {
   foreach ($month in $payload.months) {
     $base = 1 + (8 * $index)
     # Reuse the original payroll-block formatting from the signed workbook.
-    $template.Worksheets.Item('February 2025').Range('A3:D8').Copy()
+    $template.Worksheets.Item('Sheet6').Range('A1:D6').Copy()
     $sheet.Range("A$base:D$($base + 5)").PasteSpecial(-4122)
     $sheet.Cells.Item($base, 2).Value2 = 'Employee – EMPL'
     $sheet.Cells.Item($base, 3).Value2 = 'Employer – SMPRC'
@@ -108,7 +114,9 @@ try {
   }
 
   $grand = 2 + (8 * $index)
-  $sheet.Range("A$grand:D$($grand + 6)").Interior.Color = 65535
+  $template.Worksheets.Item('Sheet6').Range('A26:D32').Copy()
+  $sheet.Range("A$grand:D$($grand + 6)").PasteSpecial(-4122)
+  $sheet.Range("A$grand:D$($grand + 6)").Interior.ColorIndex = -4142
   $sheet.Cells.Item($grand, 1).Value2 = 'Grand total'
   $sheet.Cells.Item($grand, 1).Font.Bold = $true
   $sheet.Cells.Item($grand + 1, 2).Value2 = 'Employee – EMPL'
