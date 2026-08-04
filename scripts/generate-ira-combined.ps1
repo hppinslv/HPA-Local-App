@@ -1,0 +1,116 @@
+param(
+  [Parameter(Mandatory = $true)][string]$PayloadBase64,
+  [Parameter(Mandatory = $true)][string]$TemplatePath,
+  [Parameter(Mandatory = $true)][string]$OutputPath
+)
+
+$ErrorActionPreference = 'Stop'
+$payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($PayloadBase64)) | ConvertFrom-Json
+$excel = New-Object -ComObject Excel.Application
+$excel.Visible = $false
+$excel.DisplayAlerts = $false
+
+try {
+  $template = $excel.Workbooks.Open($TemplatePath, $false, $true)
+  # This signed historical sheet supplies the exact HPA layout and signature image.
+  $template.Worksheets.Item('February 2025').Copy()
+  $book = $excel.ActiveWorkbook
+  $sheet = $book.ActiveSheet
+  $sheet.Name = 'Combined IRA'
+  $sheet.Cells.ClearContents()
+
+  $currencyFormat = '$#,##0.00;[Red]($#,##0.00)'
+  function Set-CellNumber($cell, [double]$number) { $cell.Formula = '=' + $number.ToString([Globalization.CultureInfo]::InvariantCulture) }
+  $dash = [char]0x2013
+  $employeeHeading = 'Employee ' + $dash + ' EMPL'
+  $employerHeading = 'Employer ' + $dash + ' SMPRC'
+  $nameRows = @(
+    @{ key = 'araceli'; name = 'Araceli Gandara – 2236-4498' },
+    @{ key = 'melanie'; name = 'Melanie Gardas – 2344-9181' }
+  )
+  $nameRows = @(
+    @{ key = 'araceli'; name = 'Araceli Gandara ' + $dash + ' 2236-4498' },
+    @{ key = 'melanie'; name = 'Melanie Gardas ' + $dash + ' 2344-9181' }
+  )
+  $monthTotals = @()
+  $index = 0
+  foreach ($month in $payload.months) {
+    $base = 1 + (8 * $index)
+    # Reuse the original payroll-block formatting from the signed workbook.
+    $template.Worksheets.Item('February 2025').Range('A3:D8').Copy()
+    $sheet.Range("A$base:D$($base + 5)").PasteSpecial(-4122)
+    $sheet.Cells.Item($base, 2).Value2 = 'Employee – EMPL'
+    $sheet.Cells.Item($base, 3).Value2 = 'Employer – SMPRC'
+    $sheet.Cells.Item($base, 4).Value2 = 'Amount Due'
+    $sheet.Cells.Item($base, 2).Value2 = $employeeHeading
+    $sheet.Cells.Item($base, 3).Value2 = $employerHeading
+    $sheet.Cells.Item($base + 1, 1).Value2 = "$($month.label) Totals"
+    $sheet.Cells.Item($base + 1, 1).Font.Bold = $true
+
+    $employeeTotal = 0.0; $employerTotal = 0.0; $dueTotal = 0.0
+    foreach ($person in $nameRows) {
+      $item = $month.people.($person.key)
+      $row = $base + 2 + [array]::IndexOf($nameRows, $person)
+      $employee = [double]$item.employee
+      $employer = [double]$item.employer
+      $due = [double]$item.due
+      $sheet.Cells.Item($row, 1).Value2 = $person.name
+      Set-CellNumber $sheet.Cells.Item($row, 2) $employee
+      Set-CellNumber $sheet.Cells.Item($row, 3) $employer
+      Set-CellNumber $sheet.Cells.Item($row, 4) $due
+      $sheet.Range("B$row:D$row").NumberFormat = $currencyFormat
+      $employeeTotal += $employee; $employerTotal += $employer; $dueTotal += $due
+    }
+    $subtotalRow = $base + 5
+    Set-CellNumber $sheet.Cells.Item($subtotalRow, 4) $dueTotal
+    $sheet.Cells.Item($subtotalRow, 4).NumberFormat = $currencyFormat
+    $monthTotals += @{ employee = $employeeTotal; employer = $employerTotal; due = $dueTotal }
+    $index++
+  }
+
+  $grand = 2 + (8 * $index)
+  $sheet.Range("A$grand:D$($grand + 6)").Interior.Color = 65535
+  $sheet.Cells.Item($grand, 1).Value2 = 'Grand total'
+  $sheet.Cells.Item($grand, 1).Font.Bold = $true
+  $sheet.Cells.Item($grand + 1, 2).Value2 = 'Employee – EMPL'
+  $sheet.Cells.Item($grand + 1, 3).Value2 = 'Employer – SMPRC'
+  $sheet.Cells.Item($grand + 1, 4).Value2 = 'Amount Due'
+  $sheet.Cells.Item($grand + 1, 2).Value2 = $employeeHeading
+  $sheet.Cells.Item($grand + 1, 3).Value2 = $employerHeading
+  $sheet.Cells.Item($grand + 2, 1).Value2 = 'Grand total'
+  $sheet.Cells.Item($grand + 2, 1).Font.Bold = $true
+  $allEmployee = 0.0; $allEmployer = 0.0; $allDue = 0.0
+  foreach ($person in $nameRows) {
+    $row = $grand + 3 + [array]::IndexOf($nameRows, $person)
+    $employee = 0.0; $employer = 0.0; $due = 0.0
+    foreach ($month in $payload.months) { $item = $month.people.($person.key); $employee += [double]$item.employee; $employer += [double]$item.employer; $due += [double]$item.due }
+    $sheet.Cells.Item($row, 1).Value2 = $person.name
+    Set-CellNumber $sheet.Cells.Item($row, 2) $employee
+    Set-CellNumber $sheet.Cells.Item($row, 3) $employer
+    Set-CellNumber $sheet.Cells.Item($row, 4) $due
+    $sheet.Range("B$row:D$row").NumberFormat = $currencyFormat
+    $allEmployee += $employee; $allEmployer += $employer; $allDue += $due
+  }
+  Set-CellNumber $sheet.Cells.Item($grand + 6, 4) $allDue
+  $sheet.Cells.Item($grand + 6, 4).NumberFormat = $currencyFormat
+  $sheet.Range("A$grand:D$($grand + 6)").Font.Bold = $true
+
+  if ($sheet.Shapes.Count -gt 0) {
+    $signatureRow = $grand + 10
+    $shape = $sheet.Shapes.Item(1)
+    $shape.Top = $sheet.Cells.Item($signatureRow, 3).Top
+    $shape.Left = $sheet.Cells.Item($signatureRow, 3).Left
+  }
+  $sheet.PageSetup.PrintArea = '$A$1:$D$' + ($grand + 12)
+  $sheet.PageSetup.Orientation = 1
+  $sheet.PageSetup.Zoom = $false
+  $sheet.PageSetup.FitToPagesWide = 1
+  $sheet.PageSetup.FitToPagesTall = 1
+  [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($OutputPath))
+  $book.SaveAs($OutputPath, 51)
+  $book.Close($false)
+  $template.Close($false)
+} finally {
+  $excel.Quit()
+  [void][Runtime.InteropServices.Marshal]::ReleaseComObject($excel)
+}
