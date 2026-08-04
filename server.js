@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const querystring = require("querystring");
 const {
   clearRunsForMonth,
@@ -161,6 +162,27 @@ const {
 const port = process.env.PORT || 4173;
 const rootDir = __dirname;
 const serverStartedAt = new Date().toISOString();
+const adminSessions = new Map();
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "melinda@hppins.com";
+const ADMIN_PASSWORD_HASH = String(process.env.ADMIN_PASSWORD_SHA256 || "").trim().toLowerCase();
+
+function parseCookies(request) {
+  return Object.fromEntries(String(request.headers.cookie || "").split(";").map((part) => {
+    const index = part.indexOf("=");
+    return index > 0 ? [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1).trim())] : [];
+  }).filter((entry) => entry.length));
+}
+function hasAdminSession(request) {
+  const token = parseCookies(request).hpa_admin_session;
+  const expiresAt = adminSessions.get(token);
+  if (!expiresAt || expiresAt < Date.now()) { adminSessions.delete(token); return false; }
+  return true;
+}
+function verifyAdminPassword(password) {
+  if (!/^[a-f0-9]{64}$/.test(ADMIN_PASSWORD_HASH)) return false;
+  const hash = crypto.createHash("sha256").update(String(password || "")).digest("hex");
+  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(ADMIN_PASSWORD_HASH, "hex"));
+}
 const persistenceReadiness = {
   ready: false,
   startedAt: null,
@@ -1096,6 +1118,25 @@ const server = http.createServer(async (request, response) => {
         protocol: getRequestProtocol(request),
       }),
     });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin/login" && request.method === "POST") {
+    collectRequestBody(request).then((body) => {
+      if (String(body?.email || "").trim().toLowerCase() !== ADMIN_EMAIL || !verifyAdminPassword(body?.password)) {
+        sendJson(response, 401, { error: "Invalid email or password." }); return;
+      }
+      const token = crypto.randomBytes(32).toString("base64url");
+      adminSessions.set(token, Date.now() + (8 * 60 * 60 * 1000));
+      response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Set-Cookie": `hpa_admin_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800` });
+      response.end(JSON.stringify({ ok: true }));
+    }).catch(() => sendJson(response, 400, { error: "Unable to sign in." }));
+    return;
+  }
+
+  if (requestUrl.pathname === "/admin") {
+    if (!hasAdminSession(request)) { sendText(response, 200, fs.readFileSync(path.join(rootDir, "admin.html"), "utf8"), "text/html; charset=utf-8"); return; }
+    sendText(response, 200, fs.readFileSync(path.join(rootDir, "admin.html"), "utf8"), "text/html; charset=utf-8");
     return;
   }
 
