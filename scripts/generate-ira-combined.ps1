@@ -1,5 +1,6 @@
 param(
   [Parameter(Mandatory = $true)][string]$PayloadBase64,
+  [string]$Style = 'combined',
   [Parameter(Mandatory = $true)][string]$TemplatePath,
   [Parameter(Mandatory = $true)][string]$OutputPath
 )
@@ -18,6 +19,44 @@ try {
   $sheet = $book.ActiveSheet
   $sheet.Name = 'Combined IRA'
   $sheet.Cells.ClearContents()
+
+  if ($Style -eq 'monthly') {
+    $month = $payload.months[0]
+    $dash = [char]0x2013
+    $employeeHeading = 'Employee ' + $dash + ' EMPL'
+    $employerHeading = 'Employer ' + $dash + ' SMPRC'
+    $people = @(
+      @{ key = 'araceli'; name = 'Araceli Gandara ' + $dash + ' 2236-4498' },
+      @{ key = 'melanie'; name = 'Melanie Gardas ' + $dash + ' 2344-9181' }
+    )
+    $currencyFormat = '$#,##0.00;[Red]($#,##0.00)'
+    function PutNumber($cell, [double]$number) { $cell.Formula = '=' + $number.ToString([Globalization.CultureInfo]::InvariantCulture) }
+    $template.Worksheets.Item('February 2025').Range('A3:D8').Copy()
+    $sheet.Range('A2:D7').PasteSpecial(-4122)
+    $sheet.Cells.Item(1, 1).NumberFormat = '@'; $sheet.Cells.Item(1, 1).Value2 = $month.label
+    $sheet.Cells.Item(2, 2).Value2 = $employeeHeading; $sheet.Cells.Item(2, 3).Value2 = $employerHeading; $sheet.Cells.Item(2, 4).Value2 = 'Amount Due'
+    $employeeTotal = 0.0; $employerTotal = 0.0; $dueTotal = 0.0
+    foreach ($person in $people) {
+      $row = 3 + [array]::IndexOf($people, $person); $item = $month.people.($person.key)
+      $employee = [double]$item.employee; $employer = [double]$item.employer; $due = [double]$item.due
+      $sheet.Cells.Item($row, 1).Value2 = $person.name
+      PutNumber $sheet.Cells.Item($row, 2) $employee; PutNumber $sheet.Cells.Item($row, 3) $employer; PutNumber $sheet.Cells.Item($row, 4) $due
+      $sheet.Range("B$row:D$row").NumberFormat = $currencyFormat
+      $employeeTotal += $employee; $employerTotal += $employer; $dueTotal += $due
+    }
+    $sheet.Cells.Item(5, 1).Value2 = "$(($month.label -split ' ')[0]) Subtotal"; PutNumber $sheet.Cells.Item(5, 4) $dueTotal; $sheet.Cells.Item(5, 4).NumberFormat = $currencyFormat; $sheet.Range('A5:D5').Font.Bold = $true
+    $sheet.Cells.Item(8, 1).Value2 = 'Totals'; $sheet.Cells.Item(8, 1).Font.Bold = $true
+    foreach ($person in $people) {
+      $row = 9 + [array]::IndexOf($people, $person); $item = $month.people.($person.key)
+      $sheet.Cells.Item($row, 1).Value2 = $person.name
+      PutNumber $sheet.Cells.Item($row, 2) ([double]$item.employee); PutNumber $sheet.Cells.Item($row, 3) ([double]$item.employer); PutNumber $sheet.Cells.Item($row, 4) ([double]$item.due)
+      $sheet.Range("A$row:D$row").Font.Bold = $true; $sheet.Range("B$row:D$row").NumberFormat = $currencyFormat
+    }
+    $sheet.Cells.Item(11, 1).Value2 = 'Grand total'; PutNumber $sheet.Cells.Item(11, 4) $dueTotal; $sheet.Range('A11:D11').Font.Bold = $true; $sheet.Cells.Item(11, 4).NumberFormat = $currencyFormat
+    if ($sheet.Shapes.Count -gt 0) { $shape = $sheet.Shapes.Item(1); $shape.Top = $sheet.Cells.Item(13, 3).Top; $shape.Left = $sheet.Cells.Item(13, 3).Left }
+    $sheet.PageSetup.PrintArea = '$A$1:$D$16'; $sheet.PageSetup.Orientation = 1; $sheet.PageSetup.Zoom = $false; $sheet.PageSetup.FitToPagesWide = 1; $sheet.PageSetup.FitToPagesTall = 1
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($OutputPath)); $book.SaveAs($OutputPath, 51); $book.Close($false); $template.Close($false); return
+  }
 
   $currencyFormat = '$#,##0.00;[Red]($#,##0.00)'
   function Set-CellNumber($cell, [double]$number) { $cell.Formula = '=' + $number.ToString([Globalization.CultureInfo]::InvariantCulture) }
