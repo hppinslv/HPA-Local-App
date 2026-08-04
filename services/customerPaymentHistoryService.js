@@ -7,7 +7,7 @@ const { getConnectedSalesforceToken, fetchReportDescribe, salesforceRequest } = 
 const PAYMENT_REPORT_ID = "00Of40000083rUIEAY";
 const CREDIT_REPORT_ID = "00Of4000008Ds2PEAS";
 const TEMPLATE_PATH = process.env.CUSTOMER_PAYMENT_HISTORY_TEMPLATE_PATH ||
-  "C:\\Users\\MelindaH\\OneDrive - Home Protection Plan\\Desktop\\Customer Payment History In with Check Numbers.xlsx";
+  path.join(__dirname, "..", "templates", "Customer Payment History In with Check Numbers.xlsx");
 
 function escapeXml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
