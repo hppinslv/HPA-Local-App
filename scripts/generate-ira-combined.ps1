@@ -66,6 +66,7 @@ try {
 
   $currencyFormat = '$#,##0.00;[Red]($#,##0.00)'
   function Set-CellNumber($cell, [double]$number) { $cell.Formula = '=' + $number.ToString([Globalization.CultureInfo]::InvariantCulture) }
+  function Format-CombinedBlock($range) { $range.UnMerge(); $range.Font.Color = 0; $range.Interior.ColorIndex = -4142; $range.BorderAround(1, 2, 0); foreach ($edge in 11..12) { $range.Borders.Item($edge).LineStyle = 1; $range.Borders.Item($edge).Weight = 2; $range.Borders.Item($edge).Color = 0 } }
   $dash = [char]0x2013
   $employeeHeading = 'Employee ' + $dash + ' EMPL'
   $employerHeading = 'Employer ' + $dash + ' SMPRC'
@@ -109,6 +110,10 @@ try {
     $subtotalRow = $base + 5
     Set-CellNumber $sheet.Cells.Item($subtotalRow, 4) $dueTotal
     $sheet.Cells.Item($subtotalRow, 4).NumberFormat = $currencyFormat
+    Format-CombinedBlock $sheet.Range("A$base:D$subtotalRow")
+    $sheet.Range("A$base:D$subtotalRow").Font.Bold = $false
+    $sheet.Cells.Item($base + 1, 1).Font.Bold = $true
+    $sheet.Cells.Item($subtotalRow, 4).Font.Bold = $true
     $monthTotals += @{ employee = $employeeTotal; employer = $employerTotal; due = $dueTotal }
     $index++
   }
@@ -140,6 +145,7 @@ try {
   }
   Set-CellNumber $sheet.Cells.Item($grand + 6, 4) $allDue
   $sheet.Cells.Item($grand + 6, 4).NumberFormat = $currencyFormat
+  Format-CombinedBlock $sheet.Range("A$grand:D$($grand + 6)")
   $sheet.Range("A$grand:D$($grand + 6)").Font.Bold = $true
 
   if ($sheet.Shapes.Count -gt 0) {
