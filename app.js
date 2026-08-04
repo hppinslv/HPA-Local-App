@@ -15986,15 +15986,46 @@ function bindDashboardActions() {
 function bindPaymentHistoryActions() {
   const certificateInput = el("payment-history-certificate");
   const downloadButton = el("payment-history-download");
-  downloadButton?.addEventListener("click", () => {
+  downloadButton?.addEventListener("click", async () => {
     const certificateNumber = String(certificateInput?.value || "").trim();
     if (!certificateNumber) {
       setStatus("payment-history-status", "Enter a certificate number first.");
       certificateInput?.focus();
       return;
     }
-    setStatus("payment-history-status", "Creating payment history from Salesforce. Your download will begin shortly.");
-    window.location.assign(`/api/customer-payment-history?certificate=${encodeURIComponent(certificateNumber)}`);
+    downloadButton.disabled = true;
+    setStatus("payment-history-status", "Creating payment history from Salesforce...");
+    try {
+      const response = await fetch(`/api/customer-payment-history?certificate=${encodeURIComponent(certificateNumber)}`);
+      if (!response.ok) {
+        let message = "Unable to create payment history.";
+        try {
+          const payload = await response.json();
+          message = payload.error || payload.message || message;
+        } catch {
+          // Keep the safe fallback message when the server did not return JSON.
+        }
+        throw new Error(message);
+      }
+      const workbook = await response.blob();
+      if (!workbook.size) throw new Error("The payment-history workbook was empty.");
+      const downloadUrl = URL.createObjectURL(workbook);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = getFilenameFromDisposition(
+        response.headers.get("content-disposition"),
+        `${certificateNumber} - Customer Payment History.xlsx`
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      setStatus("payment-history-status", "Payment history is ready and downloading.");
+    } catch (error) {
+      setStatus("payment-history-status", error instanceof Error ? error.message : "Unable to create payment history.");
+    } finally {
+      downloadButton.disabled = false;
+    }
   });
   certificateInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") downloadButton?.click();
