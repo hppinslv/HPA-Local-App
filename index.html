@@ -58,8 +58,11 @@
           <div class="nav-group" data-nav-group="bills">
             <div class="nav-group-row">
               <button class="nav-link" data-route="bills">Bills</button>
+              <button class="nav-submenu-toggle" type="button" data-action="toggle-bills-submenu" aria-expanded="true" aria-controls="bills-left-submenu" aria-label="Toggle Bills menu">
+                <span class="nav-submenu-toggle-icon" aria-hidden="true"></span>
+              </button>
             </div>
-            <div class="analysis-left-submenu">
+            <div class="analysis-left-submenu" id="bills-left-submenu">
               <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="dashboard">Bill Dashboard</button>
               <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="new-run">New Bill Run</button>
               <button class="analysis-left-submenu-link" data-action="open-bills-section" data-bills-section="corrections">Bill Corrections</button>
@@ -77,6 +80,7 @@
           <button class="nav-link" data-route="ach-returns">ACH Returns</button>
           <button class="nav-link" data-route="score-history">SCORE History</button>
           <button class="nav-link" data-route="monthly-reports">Monthly Reports</button>
+          <button class="nav-link" data-route="payment-history">Payment History</button>
           <button class="nav-link" data-route="report-history">Report History</button>
           <button class="nav-link" data-route="settings">Settings</button>
         </nav>
@@ -1574,6 +1578,24 @@
               </table>
             </div>
           </article>
+        </section>
+
+        <section class="view" data-view="payment-history">
+          <header class="page-header">
+            <p class="eyebrow">Customer Service</p>
+            <h2>Customer Payment History</h2>
+            <p class="page-copy">Enter a certificate number to download its complete payment and credit history, including check numbers.</p>
+          </header>
+          <section class="panel" style="max-width: 680px;">
+            <div class="field-stack">
+              <label class="field-label" for="payment-history-certificate">Certificate Number</label>
+              <input id="payment-history-certificate" class="field-input" inputmode="numeric" autocomplete="off" placeholder="Example: 237566" />
+            </div>
+            <div class="action-row">
+              <button id="payment-history-download" class="primary-button" type="button">Create Payment History</button>
+            </div>
+            <p id="payment-history-status" class="status-detail">The workbook includes all payments, credits, totals, and check numbers.</p>
+          </section>
         </section>
 
         <section class="view" data-view="monthly-reports">

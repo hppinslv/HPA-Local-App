@@ -1,0 +1,321 @@
+{
+  "generatedAt": "2026-08-04T15:20:04.948Z",
+  "reportId": "00Of4000008Ds2PEAS",
+  "filters": {
+    "dateRange": null
+  },
+  "reportMetadata": {
+    "aggregates": [
+      "s!Refund__c.Settlement_Amount__c",
+      "RowCount"
+    ],
+    "chart": null,
+    "crossFilters": [],
+    "currency": null,
+    "dashboardSetting": null,
+    "description": null,
+    "detailColumns": [
+      "CUST_NAME",
+      "Refund__c.Date_Refunded__c",
+      "Refund__c.Settlement_Amount__c",
+      "ACCOUNT.NAME",
+      "ACCOUNT_ID",
+      "Refund__c.Rollback_Months__c"
+    ],
+    "developerName": "Credits_with_Certificate_Name_Yci",
+    "division": null,
+    "folderId": "00lf4000000W9ZaAAK",
+    "groupingsAcross": [],
+    "groupingsDown": [],
+    "hasDetailRows": true,
+    "hasRecordCount": true,
+    "historicalSnapshotDates": [],
+    "id": "00Of4000008Ds2PEAS",
+    "name": "Credits with Certificate Name",
+    "presentationOptions": {
+      "hasStackedSummaries": true
+    },
+    "reportBooleanFilter": null,
+    "reportFilters": [
+      {
+        "column": "ACCOUNT_ID",
+        "filterType": "fieldValue",
+        "isRunPageEditable": true,
+        "operator": "equals",
+        "value": ""
+      }
+    ],
+    "reportFormat": "TABULAR",
+    "reportType": {
+      "label": "Certificates with Credits and Policy",
+      "type": "AccountCustomEntity$Refund__c@Refund__c.Policy__c"
+    },
+    "scope": "organization",
+    "showGrandTotal": true,
+    "showSubtotals": true,
+    "sortBy": [
+      {
+        "sortColumn": "ACCOUNT.NAME",
+        "sortOrder": "Asc"
+      }
+    ],
+    "standardDateFilter": {
+      "column": "Refund__c.Date_Refunded__c",
+      "durationValue": "CUSTOM",
+      "endDate": null,
+      "startDate": null
+    },
+    "standardFilters": null,
+    "supportsRoleHierarchy": false,
+    "userOrHierarchyFilterId": null
+  },
+  "describeReportMetadata": {
+    "aggregates": [
+      "s!Refund__c.Settlement_Amount__c",
+      "RowCount"
+    ],
+    "chart": null,
+    "crossFilters": [],
+    "currency": null,
+    "dashboardSetting": null,
+    "description": null,
+    "detailColumns": [
+      "CUST_NAME",
+      "Refund__c.Date_Refunded__c",
+      "Refund__c.Settlement_Amount__c",
+      "ACCOUNT.NAME",
+      "ACCOUNT_ID",
+      "Refund__c.Rollback_Months__c"
+    ],
+    "developerName": "Credits_with_Certificate_Name_Yci",
+    "division": null,
+    "folderId": "00lf4000000W9ZaAAK",
+    "groupingsAcross": [],
+    "groupingsDown": [],
+    "hasDetailRows": true,
+    "hasRecordCount": true,
+    "historicalSnapshotDates": [],
+    "id": "00Of4000008Ds2PEAS",
+    "name": "Credits with Certificate Name",
+    "presentationOptions": {
+      "hasStackedSummaries": true
+    },
+    "reportBooleanFilter": null,
+    "reportFilters": [
+      {
+        "column": "ACCOUNT_ID",
+        "filterType": "fieldValue",
+        "isRunPageEditable": true,
+        "operator": "equals",
+        "value": ""
+      }
+    ],
+    "reportFormat": "TABULAR",
+    "reportType": {
+      "label": "Certificates with Credits and Policy",
+      "type": "AccountCustomEntity$Refund__c@Refund__c.Policy__c"
+    },
+    "scope": "organization",
+    "showGrandTotal": true,
+    "showSubtotals": true,
+    "sortBy": [
+      {
+        "sortColumn": "ACCOUNT.NAME",
+        "sortOrder": "Asc"
+      }
+    ],
+    "standardDateFilter": {
+      "column": "Refund__c.Date_Refunded__c",
+      "durationValue": "CUSTOM",
+      "endDate": null,
+      "startDate": null
+    },
+    "standardFilters": null,
+    "supportsRoleHierarchy": false,
+    "userOrHierarchyFilterId": null
+  },
+  "detailColumns": [
+    "CUST_NAME",
+    "Refund__c.Date_Refunded__c",
+    "Refund__c.Settlement_Amount__c",
+    "ACCOUNT.NAME",
+    "ACCOUNT_ID",
+    "Refund__c.Rollback_Months__c"
+  ],
+  "detailColumnInfo": {
+    "CUST_NAME": {
+      "dataType": "string",
+      "entityColumnName": "Account.Refund__c.Name",
+      "filterValues": [],
+      "filterable": true,
+      "fullyQualifiedName": "Account.Refund__c.Name",
+      "inactiveFilterValues": [],
+      "isLookup": true,
+      "label": "Credit: Refund Name",
+      "uniqueCountable": true
+    },
+    "Refund__c.Date_Refunded__c": {
+      "dataType": "date",
+      "entityColumnName": "Refund__c.Date_Refunded__c",
+      "filterValues": [],
+      "filterable": true,
+      "fullyQualifiedName": "Account.Refund__c.Date_Refunded__c",
+      "inactiveFilterValues": [],
+      "isLookup": false,
+      "label": "Date Refunded",
+      "uniqueCountable": true
+    },
+    "Refund__c.Settlement_Amount__c": {
+      "dataType": "currency",
+      "entityColumnName": "Refund__c.Settlement_Amount__c",
+      "filterValues": [],
+      "filterable": true,
+      "fullyQualifiedName": "Account.Refund__c.Settlement_Amount__c",
+      "inactiveFilterValues": [],
+      "isLookup": false,
+      "label": "Amount",
+      "uniqueCountable": true
+    },
+    "ACCOUNT.NAME": {
+      "dataType": "string",
+      "entityColumnName": "Account.Name",
+      "filterValues": [],
+      "filterable": true,
+      "fullyQualifiedName": "Account.Name",
+      "inactiveFilterValues": [],
+      "isLookup": true,
+      "label": "Certificate Name",
+      "uniqueCountable": true
+    },
+    "ACCOUNT_ID": {
+      "dataType": "id",
+      "entityColumnName": "Account.Id",
+      "filterValues": [],
+      "filterable": true,
+      "fullyQualifiedName": "Account.Id",
+      "inactiveFilterValues": [],
+      "isLookup": false,
+      "label": "Account ID",
+      "uniqueCountable": true
+    },
+    "Refund__c.Rollback_Months__c": {
+      "dataType": "picklist",
+      "entityColumnName": "Refund__c.Rollback_Months__c",
+      "filterValues": [
+        {
+          "apiName": "0",
+          "label": "0",
+          "name": "0"
+        },
+        {
+          "apiName": "01",
+          "label": "01",
+          "name": "01"
+        },
+        {
+          "apiName": "02",
+          "label": "02",
+          "name": "02"
+        },
+        {
+          "apiName": "03",
+          "label": "03",
+          "name": "03"
+        },
+        {
+          "apiName": "04",
+          "label": "04",
+          "name": "04"
+        },
+        {
+          "apiName": "05",
+          "label": "05",
+          "name": "05"
+        },
+        {
+          "apiName": "06",
+          "label": "06",
+          "name": "06"
+        },
+        {
+          "apiName": "07",
+          "label": "07",
+          "name": "07"
+        },
+        {
+          "apiName": "08",
+          "label": "08",
+          "name": "08"
+        },
+        {
+          "apiName": "09",
+          "label": "09",
+          "name": "09"
+        },
+        {
+          "apiName": "10",
+          "label": "10",
+          "name": "10"
+        },
+        {
+          "apiName": "11",
+          "label": "11",
+          "name": "11"
+        },
+        {
+          "apiName": "12",
+          "label": "12",
+          "name": "12"
+        },
+        {
+          "apiName": "00",
+          "label": "00",
+          "name": "00"
+        }
+      ],
+      "filterable": true,
+      "fullyQualifiedName": "Account.Refund__c.Rollback_Months__c",
+      "inactiveFilterValues": [],
+      "isLookup": false,
+      "label": "Rollback Months",
+      "uniqueCountable": true
+    }
+  },
+  "aggregateColumns": [
+    "s!Refund__c.Settlement_Amount__c",
+    "RowCount"
+  ],
+  "aggregateColumnInfo": {
+    "RowCount": {
+      "dataType": "int",
+      "label": "Record Count"
+    },
+    "s!Refund__c.Settlement_Amount__c": {
+      "dataType": "currency",
+      "label": "Sum of Amount"
+    }
+  },
+  "groupingColumnInfo": {},
+  "groupingsDown": {
+    "groupings": []
+  },
+  "groupingsAcross": {
+    "groupings": []
+  },
+  "factMap": {
+    "T!T": {
+      "aggregates": [
+        {
+          "label": "$0.00",
+          "value": 0
+        },
+        {
+          "label": "0",
+          "value": 0
+        }
+      ],
+      "rows": []
+    }
+  },
+  "firstTenRows": []
+}

@@ -156,6 +156,7 @@ const state = {
     refreshOutput: null,
   },
   bills: {
+    navExpanded: true,
     section: "dashboard",
     currentRunId: "",
     currentRun: null,
@@ -1695,6 +1696,7 @@ function persistUiState() {
           currentSessionId: state.achReturns.currentSessionId || "",
         },
         bills: {
+          navExpanded: state.bills.navExpanded !== false,
           section: state.bills.section || "dashboard",
           currentRunId: state.bills.currentRunId || "",
         },
@@ -1732,7 +1734,7 @@ function readLaunchStateFromUrl() {
     const isReviewPopup = params.get(ANALYSIS_REVIEW_POPUP_QUERY_PARAM) === "1";
     const isImportSessionPopup = params.get(IMPORT_SESSION_POPUP_QUERY_PARAM) === "1";
     return {
-      route: ["dashboard", "analysis", "mailing-data", "applications", "monthly-reports", "report-history", "score-history", "settings", "cc-payment-imports", "check-imports", "ach-returns", "bills"].includes(route)
+      route: ["dashboard", "analysis", "mailing-data", "applications", "monthly-reports", "payment-history", "report-history", "score-history", "settings", "cc-payment-imports", "check-imports", "ach-returns", "bills"].includes(route)
         ? route
         : "",
       importSession: {
@@ -2248,6 +2250,22 @@ function resolveAnalysisLandingFromEntry(entry = {}) {
   }
 
   return { panel: "previous", summaryMode: "review" };
+}
+
+function toggleBillsLeftSubmenu() {
+  state.bills.navExpanded = !state.bills.navExpanded;
+  persistUiState();
+  updateBillsLeftSubmenuExpandedUi();
+}
+
+function updateBillsLeftSubmenuExpandedUi() {
+  const expanded = state.bills.navExpanded !== false;
+  document.querySelector('[data-nav-group="bills"]')?.classList.toggle("is-collapsed", !expanded);
+  const toggle = document.querySelector('[data-action="toggle-bills-submenu"]');
+  if (toggle instanceof HTMLElement) {
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggle.title = expanded ? "Collapse Bills menu" : "Expand Bills menu";
+  }
 }
 
 function getAnalysisSetupComparisonCount(setup = {}) {
@@ -15912,6 +15930,12 @@ function bindPrimaryNavigation() {
       return;
     }
 
+    if (action === "toggle-bills-submenu") {
+      event.preventDefault();
+      toggleBillsLeftSubmenu();
+      return;
+    }
+
     if (action === "open-analysis") {
       openAnalysisLanding().catch((error) => {
         setStatus("analysis-setup-status", `Unable to open analysis: ${error.message}`);
@@ -15956,6 +15980,24 @@ function bindDashboardActions() {
   );
   el("run-all-month-end-button")?.addEventListener("click", () => {
     setRoute("monthly-reports");
+  });
+}
+
+function bindPaymentHistoryActions() {
+  const certificateInput = el("payment-history-certificate");
+  const downloadButton = el("payment-history-download");
+  downloadButton?.addEventListener("click", () => {
+    const certificateNumber = String(certificateInput?.value || "").trim();
+    if (!certificateNumber) {
+      setStatus("payment-history-status", "Enter a certificate number first.");
+      certificateInput?.focus();
+      return;
+    }
+    setStatus("payment-history-status", "Creating payment history from Salesforce. Your download will begin shortly.");
+    window.location.assign(`/api/customer-payment-history?certificate=${encodeURIComponent(certificateNumber)}`);
+  });
+  certificateInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") downloadButton?.click();
   });
 }
 
@@ -16989,6 +17031,7 @@ async function init() {
   bindAchReturnEvents();
   bindMailingDataEvents();
   bindMonthlyActions();
+  bindPaymentHistoryActions();
   bindScoreHistoryEvents();
   if (!state.applications.current) {
     state.applications.current = createEmptyApplication();
@@ -17012,6 +17055,7 @@ async function init() {
       state.achReturns.currentSessionId = String(persistedUiState.achReturns.currentSessionId || "").trim();
     }
     if (persistedUiState?.bills) {
+      state.bills.navExpanded = persistedUiState.bills.navExpanded !== false;
       state.bills.section = String(persistedUiState.bills.section || "dashboard").trim() || "dashboard";
       state.bills.currentRunId = String(persistedUiState.bills.currentRunId || "").trim();
     }
@@ -17092,6 +17136,7 @@ async function init() {
   }
   setRoute(initialRoute);
   updateAnalysisLeftSubmenuExpandedUi();
+  updateBillsLeftSubmenuExpandedUi();
   if (initialRoute === "analysis") {
     const requestedAnalysisPanel = state.analysis.panel || "home";
     if (["home", "compare", "compare-review"].includes(requestedAnalysisPanel) || launchState?.analysis?.setupId) {

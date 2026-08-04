@@ -1,5 +1,55 @@
 [
   {
+    "id": "mailing_data_1785781158064_ngws9r",
+    "outputFileName": "202608_Mailbag_HPA_AHAv2.xlsx",
+    "generatedAt": "2026-08-03T18:19:18.064Z",
+    "mailingMonth": "2026-08",
+    "mailingMonthLabel": "July 2026",
+    "uploadedZipFileNames": [
+      "NHCL_2026-08-03_12253records.zip",
+      "RFC_2026-08-03_65940records.zip"
+    ],
+    "keyCodes": [
+      "NHCL",
+      "RFC"
+    ],
+    "recordCountsByKeyCode": {
+      "NHCL": 12253,
+      "RFC": 65940
+    },
+    "totalRecords": 78193,
+    "startingSequence": 1,
+    "endingSequence": 78193,
+    "startingCaseNumber": 65852806,
+    "endingCaseNumber": 65930998,
+    "mailDate": "2026-08-24",
+    "outputFilePath": "C:\\Users\\carl\\AppData\\Local\\Temp\\hpa-mailing-data-artifacts\\202608_Mailbag_HPA_AHAv2.xlsx",
+    "uploads": [
+      {
+        "fileName": "NHCL_2026-08-03_12253records.zip",
+        "sourceWorkbookFileName": "NHCL_2026-08-03_12253records.xlsx",
+        "keyCode": "NHCL",
+        "recordCount": 12253,
+        "startingSequence": 1,
+        "endingSequence": 12253,
+        "startingCaseNumber": 65852806,
+        "endingCaseNumber": 65865058,
+        "mailDate": "2026-08-24"
+      },
+      {
+        "fileName": "RFC_2026-08-03_65940records.zip",
+        "sourceWorkbookFileName": "RFC_2026-08-03_65940records.xlsx",
+        "keyCode": "RFC",
+        "recordCount": 65940,
+        "startingSequence": 12254,
+        "endingSequence": 78193,
+        "startingCaseNumber": 65865059,
+        "endingCaseNumber": 65930998,
+        "mailDate": "2026-08-24"
+      }
+    ]
+  },
+  {
     "id": "mailing_data_1783458089001_bpyw4v",
     "outputFileName": "202607_Mailbag_HPA_AHAv2.xlsx",
     "generatedAt": "2026-07-07T21:01:29.001Z",

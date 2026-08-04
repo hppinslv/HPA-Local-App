@@ -138,6 +138,7 @@ const {
   getAllConfiguredSalesforceReports,
   getMonthlyReportTypes,
 } = require("./services/reportCatalog");
+const { buildCustomerPaymentHistory } = require("./services/customerPaymentHistoryService");
 const {
   initializeCertificateLookupPersistence,
   maybeRunStartupCertificateLookupRefresh,
@@ -1374,6 +1375,16 @@ const server = http.createServer(async (request, response) => {
 
     sendJson(response, 200, { run });
     logRouteTiming("/api/monthly-reports/:id", request.method, requestStartedAt, 200, { runId: runMatch[1] });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/customer-payment-history" && request.method === "GET") {
+    const certificateNumber = String(requestUrl.searchParams.get("certificate") || "").trim();
+    if (!certificateNumber) { sendJson(response, 400, { error: "A certificate number is required." }); return; }
+    buildCustomerPaymentHistory(certificateNumber).then((result) => {
+      response.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${result.fileName}"` });
+      response.end(result.buffer);
+    }).catch((error) => sendJson(response, 400, { error: error.message || "Unable to build payment history." }));
     return;
   }
 

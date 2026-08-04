@@ -1,5 +1,575 @@
 [
   {
+    "id": "2026-08-04::scoreReport::applicationsReceived::Last Month::::record_count",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "applicationsReceived",
+    "report_label": "Applications Received",
+    "score_period": "Last Month",
+    "payment_type": "",
+    "metric_key": "record_count",
+    "metric_label": "Record Count",
+    "metric_value": 12,
+    "raw_value": "12",
+    "raw_json": {
+      "reportId": "00OQm000001y6efMAA",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "2. Last Month"
+      ],
+      "aggregateLabel": "Record Count",
+      "rawAggregates": [
+        "12"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::applicationsReceived::::::__report_capture__",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:19:11.370Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "applicationsReceived",
+    "report_label": "Applications Received",
+    "score_period": "",
+    "payment_type": "",
+    "metric_key": "__report_capture__",
+    "metric_label": "Capture Error",
+    "metric_value": null,
+    "raw_value": null,
+    "raw_json": {
+      "reportId": "00OQm000001y6efMAA",
+      "expectedGroupings": [
+        "Score Period"
+      ],
+      "expectedMetrics": [
+        "Record Count"
+      ]
+    },
+    "capture_status": "failed",
+    "error_message": "expired access/refresh token",
+    "created_at": "2026-08-04T15:19:11.370Z",
+    "updated_at": "2026-08-04T15:19:11.370Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::applicationsReceived::2 Years Ago::::record_count",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "applicationsReceived",
+    "report_label": "Applications Received",
+    "score_period": "2 Years Ago",
+    "payment_type": "",
+    "metric_key": "record_count",
+    "metric_label": "Record Count",
+    "metric_value": 1,
+    "raw_value": "1",
+    "raw_json": {
+      "reportId": "00OQm000001y6efMAA",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "4. 2 Years Ago"
+      ],
+      "aggregateLabel": "Record Count",
+      "rawAggregates": [
+        "1"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::moneyReceived::Current Month::::amount",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "moneyReceived",
+    "report_label": "Money Received",
+    "score_period": "Current Month",
+    "payment_type": "",
+    "metric_key": "amount",
+    "metric_label": "Amount",
+    "metric_value": 61839.66,
+    "raw_value": "$61,839.66",
+    "raw_json": {
+      "reportId": "00OQm000001xzA9MAI",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "1. Current Month"
+      ],
+      "aggregateLabel": "Sum of Amount",
+      "rawAggregates": [
+        "$61,839.66",
+        "982"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::moneyReceived::Last Month::::amount",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "moneyReceived",
+    "report_label": "Money Received",
+    "score_period": "Last Month",
+    "payment_type": "",
+    "metric_key": "amount",
+    "metric_label": "Amount",
+    "metric_value": 84749.98,
+    "raw_value": "$84,749.98",
+    "raw_json": {
+      "reportId": "00OQm000001xzA9MAI",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "2. Last Month"
+      ],
+      "aggregateLabel": "Sum of Amount",
+      "rawAggregates": [
+        "$84,749.98",
+        "1,244"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::moneyReceived::::::__report_capture__",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:19:11.370Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "moneyReceived",
+    "report_label": "Money Received",
+    "score_period": "",
+    "payment_type": "",
+    "metric_key": "__report_capture__",
+    "metric_label": "Capture Error",
+    "metric_value": null,
+    "raw_value": null,
+    "raw_json": {
+      "reportId": "00OQm000001xzA9MAI",
+      "expectedGroupings": [
+        "Score Period"
+      ],
+      "expectedMetrics": [
+        "Amount"
+      ]
+    },
+    "capture_status": "failed",
+    "error_message": "expired access/refresh token",
+    "created_at": "2026-08-04T15:19:11.370Z",
+    "updated_at": "2026-08-04T15:19:11.370Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::moneyReceivedByPayType::Current Month::ACH::amount",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "moneyReceivedByPayType",
+    "report_label": "Money Received by Payment Type",
+    "score_period": "Current Month",
+    "payment_type": "ACH",
+    "metric_key": "amount",
+    "metric_label": "Amount",
+    "metric_value": 47706.72,
+    "raw_value": "$47,706.72",
+    "raw_json": {
+      "reportId": "00OQm000001xzDNMAY",
+      "groupingColumns": [
+        "Payment Type",
+        "Score Period"
+      ],
+      "groupPath": [
+        "ACH",
+        "1. Current Month"
+      ],
+      "aggregateLabel": "Sum of Amount",
+      "rawAggregates": [
+        "$47,706.72",
+        "786"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::moneyReceivedByPayType::Last Month::ACH::amount",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "moneyReceivedByPayType",
+    "report_label": "Money Received by Payment Type",
+    "score_period": "Last Month",
+    "payment_type": "ACH",
+    "metric_key": "amount",
+    "metric_label": "Amount",
+    "metric_value": 48831.36,
+    "raw_value": "$48,831.36",
+    "raw_json": {
+      "reportId": "00OQm000001xzDNMAY",
+      "groupingColumns": [
+        "Payment Type",
+        "Score Period"
+      ],
+      "groupPath": [
+        "ACH",
+        "2. Last Month"
+      ],
+      "aggregateLabel": "Sum of Amount",
+      "rawAggregates": [
+        "$48,831.36",
+        "803"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::moneyReceivedByPayType::Last Year::ACH::amount",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "moneyReceivedByPayType",
+    "report_label": "Money Received by Payment Type",
+    "score_period": "Last Year",
+    "payment_type": "ACH",
+    "metric_key": "amount",
+    "metric_label": "Amount",
+    "metric_value": 50456.95,
+    "raw_value": "$50,456.95",
+    "raw_json": {
+      "reportId": "00OQm000001xzDNMAY",
+      "groupingColumns": [
+        "Payment Type",
+        "Score Period"
+      ],
+      "groupPath": [
+        "ACH",
+        "3. Last Year"
+      ],
+      "aggregateLabel": "Sum of Amount",
+      "rawAggregates": [
+        "$50,456.95",
+        "833"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::moneyReceivedByPayType::::::__report_capture__",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:19:11.370Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "moneyReceivedByPayType",
+    "report_label": "Money Received by Payment Type",
+    "score_period": "",
+    "payment_type": "",
+    "metric_key": "__report_capture__",
+    "metric_label": "Capture Error",
+    "metric_value": null,
+    "raw_value": null,
+    "raw_json": {
+      "reportId": "00OQm000001xzDNMAY",
+      "expectedGroupings": [
+        "Payment Type",
+        "Score Period"
+      ],
+      "expectedMetrics": [
+        "Amount"
+      ]
+    },
+    "capture_status": "failed",
+    "error_message": "expired access/refresh token",
+    "created_at": "2026-08-04T15:19:11.370Z",
+    "updated_at": "2026-08-04T15:19:11.370Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::score::Current Month::::active_clients",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "score",
+    "report_label": "SCORE",
+    "score_period": "Current Month",
+    "payment_type": "",
+    "metric_key": "active_clients",
+    "metric_label": "Active Clients",
+    "metric_value": 4969,
+    "raw_value": "4,969",
+    "raw_json": {
+      "reportId": "00OQm000001y7MDMAY",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "1. Current Month"
+      ],
+      "aggregateLabel": "Sum of Active_Clients",
+      "rawAggregates": [
+        "$291,888.99",
+        "4,969",
+        "1"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::score::Current Month::::total_premium_with_dues",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "score",
+    "report_label": "SCORE",
+    "score_period": "Current Month",
+    "payment_type": "",
+    "metric_key": "total_premium_with_dues",
+    "metric_label": "Total Premium With Dues",
+    "metric_value": 291888.99,
+    "raw_value": "$291,888.99",
+    "raw_json": {
+      "reportId": "00OQm000001y7MDMAY",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "1. Current Month"
+      ],
+      "aggregateLabel": "Sum of Total_Premium_With_Dues",
+      "rawAggregates": [
+        "$291,888.99",
+        "4,969",
+        "1"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::score::Last Month::::active_clients",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "score",
+    "report_label": "SCORE",
+    "score_period": "Last Month",
+    "payment_type": "",
+    "metric_key": "active_clients",
+    "metric_label": "Active Clients",
+    "metric_value": 5014,
+    "raw_value": "5,014",
+    "raw_json": {
+      "reportId": "00OQm000001y7MDMAY",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "2. Last Month"
+      ],
+      "aggregateLabel": "Sum of Active_Clients",
+      "rawAggregates": [
+        "$295,015.07",
+        "5,014",
+        "1"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::score::Last Month::::total_premium_with_dues",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "score",
+    "report_label": "SCORE",
+    "score_period": "Last Month",
+    "payment_type": "",
+    "metric_key": "total_premium_with_dues",
+    "metric_label": "Total Premium With Dues",
+    "metric_value": 295015.07,
+    "raw_value": "$295,015.07",
+    "raw_json": {
+      "reportId": "00OQm000001y7MDMAY",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "2. Last Month"
+      ],
+      "aggregateLabel": "Sum of Total_Premium_With_Dues",
+      "rawAggregates": [
+        "$295,015.07",
+        "5,014",
+        "1"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::score::Last Year::::active_clients",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "score",
+    "report_label": "SCORE",
+    "score_period": "Last Year",
+    "payment_type": "",
+    "metric_key": "active_clients",
+    "metric_label": "Active Clients",
+    "metric_value": 5272,
+    "raw_value": "5,272",
+    "raw_json": {
+      "reportId": "00OQm000001y7MDMAY",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "3. Last Year"
+      ],
+      "aggregateLabel": "Sum of Active_Clients",
+      "rawAggregates": [
+        "$306,585.74",
+        "5,272",
+        "1"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::score::Last Year::::total_premium_with_dues",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:31:46.887Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "score",
+    "report_label": "SCORE",
+    "score_period": "Last Year",
+    "payment_type": "",
+    "metric_key": "total_premium_with_dues",
+    "metric_label": "Total Premium With Dues",
+    "metric_value": 306585.74,
+    "raw_value": "$306,585.74",
+    "raw_json": {
+      "reportId": "00OQm000001y7MDMAY",
+      "groupingColumns": [
+        "Score Period"
+      ],
+      "groupPath": [
+        "3. Last Year"
+      ],
+      "aggregateLabel": "Sum of Total_Premium_With_Dues",
+      "rawAggregates": [
+        "$306,585.74",
+        "5,272",
+        "1"
+      ]
+    },
+    "capture_status": "success",
+    "error_message": "",
+    "created_at": "2026-08-04T15:31:46.887Z",
+    "updated_at": "2026-08-04T15:31:46.887Z"
+  },
+  {
+    "id": "2026-08-04::scoreReport::score::::::__report_capture__",
+    "snapshot_date": "2026-08-04",
+    "captured_at": "2026-08-04T15:19:11.370Z",
+    "salesforce_as_of_text": "",
+    "dashboard_key": "scoreReport",
+    "dashboard_name": "SCORE Report",
+    "report_key": "score",
+    "report_label": "SCORE",
+    "score_period": "",
+    "payment_type": "",
+    "metric_key": "__report_capture__",
+    "metric_label": "Capture Error",
+    "metric_value": null,
+    "raw_value": null,
+    "raw_json": {
+      "reportId": "00OQm000001y7MDMAY",
+      "expectedGroupings": [
+        "Score Period"
+      ],
+      "expectedMetrics": [
+        "Active Clients",
+        "Total Premium With Dues"
+      ]
+    },
+    "capture_status": "failed",
+    "error_message": "expired access/refresh token",
+    "created_at": "2026-08-04T15:19:11.370Z",
+    "updated_at": "2026-08-04T15:19:11.370Z"
+  },
+  {
     "id": "2026-07-14::scoreReport::applicationsReceived::::::__report_capture__",
     "snapshot_date": "2026-07-14",
     "captured_at": "2026-07-14T15:08:04.297Z",

@@ -1,6 +1,6 @@
 {
-  "state": "91c76550d0528cc1a7cee7b526fa5393",
-  "codeVerifier": "SIdL-y2iaqXvirystuhjEyR4bDHCqF85ST0E4dAOJkk",
-  "redirectUri": "https://hpa-office.local:8443/oauth/salesforce/callback",
-  "createdAt": "2026-07-01T16:18:40.782Z"
+  "state": "96ded4d6df300848b9a5a39fcb1eb4a8",
+  "codeVerifier": "N4_iIR_OCSYn8CAQzaRxuz76yWP5UReU2jUmd9YzWH4",
+  "redirectUri": "http://localhost:4173/oauth/salesforce/callback",
+  "createdAt": "2026-08-04T15:19:25.240Z"
 }

@@ -4904,6 +4904,7 @@ module.exports = {
   normalizeLabel,
   normalizeScf,
   parseConvertedNumber,
+  salesforceRequest,
   parseDateValue,
   parseNumber,
   overrideSummaryDatasetConvertedCount,
@@ -4914,6 +4915,5 @@ module.exports = {
   resolveAnalysisSoldOpportunityCount,
   mergeAnalysisSummaryDatasets,
   runSoqlQuery,
-  salesforceRequest,
   shouldFallbackToSoqlForReportPayload,
 };
