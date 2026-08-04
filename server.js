@@ -1144,9 +1144,10 @@ const server = http.createServer(async (request, response) => {
       await parser.destroy();
       const extract = (name, nextName) => {
         const block = text.slice(text.indexOf(name), text.indexOf(nextName));
-        const regular = block.match(/REGULAR PAY\s+[\d.]+\s+[\d.]+\s+([\d,.]+)/);
-        const ira = block.match(/CLIENT IRA[\s\S]{0,220}?\n([\d,.]+)\n/);
-        return { regularPay: Number((regular?.[1] || "0").replaceAll(",", "")), clientIra: Number((ira?.[1] || "0").replaceAll(",", "")) };
+        const regularSection = block.match(/REGULAR PAY([\s\S]{0,180}?)(?:FEDERAL INCOME TAX|FICA|CLIENT IRA)/);
+        const regularValues = regularSection?.[1]?.match(/\d[\d,]*\.\d{2}/g) || [];
+        const ira = block.match(/CLIENT IRA[\s\S]*?Deduction Total:\s*\n(?:[\d,.]+\s*\n){3}([\d,.]+)\s*\n/);
+        return { regularPay: Number((regularValues.at(-1) || "0").replaceAll(",", "")), clientIra: Number((ira?.[1] || "0").replaceAll(",", "")) };
       };
       sendJson(response, 200, { araceli: extract("GANDARA ARACELI", "GARDAS MELANIE"), melanie: extract("GARDAS MELANIE", "HARRIS MELINDA") });
     }).catch((error) => sendJson(response, 400, { error: error.message || "Unable to read payroll PDF." }));
