@@ -8,5 +8,8 @@
     "start": "node server.js",
     "validate:transaction-detail": "node scripts/validate-transaction-detail-report.js",
     "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "pdf-parse": "^2.4.5"
   }
 }

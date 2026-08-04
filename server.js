@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { PDFParse } = require("pdf-parse");
 const querystring = require("querystring");
 const {
   clearRunsForMonth,
@@ -163,7 +164,8 @@ const port = process.env.PORT || 4173;
 const rootDir = __dirname;
 const serverStartedAt = new Date().toISOString();
 const adminSessions = new Map();
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "melinda@hppins.com";
+const ADMIN_EMAILS = [process.env.ADMIN_EMAIL || "melinda@hppins.com", "melinda@melindaharrisconsulting.com"]
+  .map((email) => String(email || "").trim().toLowerCase());
 const ADMIN_PASSWORD_HASH = String(process.env.ADMIN_PASSWORD_SHA256 || "").trim().toLowerCase();
 
 function parseCookies(request) {
@@ -1123,7 +1125,7 @@ const server = http.createServer(async (request, response) => {
 
   if (requestUrl.pathname === "/api/admin/login" && request.method === "POST") {
     collectRequestBody(request).then((body) => {
-      if (String(body?.email || "").trim().toLowerCase() !== ADMIN_EMAIL || !verifyAdminPassword(body?.password)) {
+      if (!ADMIN_EMAILS.includes(String(body?.email || "").trim().toLowerCase()) || !verifyAdminPassword(body?.password)) {
         sendJson(response, 401, { error: "Invalid email or password." }); return;
       }
       const token = crypto.randomBytes(32).toString("base64url");
@@ -1131,6 +1133,23 @@ const server = http.createServer(async (request, response) => {
       response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Set-Cookie": `hpa_admin_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800` });
       response.end(JSON.stringify({ ok: true }));
     }).catch(() => sendJson(response, 400, { error: "Unable to sign in." }));
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin/ira/parse-payroll" && request.method === "POST") {
+    if (!hasAdminSession(request)) { sendJson(response, 401, { error: "Admin login required." }); return; }
+    collectRequestBody(request).then(async (body) => {
+      const parser = new PDFParse({ data: Buffer.from(String(body?.base64 || ""), "base64") });
+      const text = (await parser.getText()).text || "";
+      await parser.destroy();
+      const extract = (name, nextName) => {
+        const block = text.slice(text.indexOf(name), text.indexOf(nextName));
+        const regular = block.match(/REGULAR PAY\s+[\d.]+\s+[\d.]+\s+([\d,.]+)/);
+        const ira = block.match(/CLIENT IRA[\s\S]{0,220}?\n([\d,.]+)\n/);
+        return { regularPay: Number((regular?.[1] || "0").replaceAll(",", "")), clientIra: Number((ira?.[1] || "0").replaceAll(",", "")) };
+      };
+      sendJson(response, 200, { araceli: extract("GANDARA ARACELI", "GARDAS MELANIE"), melanie: extract("GARDAS MELANIE", "HARRIS MELINDA") });
+    }).catch((error) => sendJson(response, 400, { error: error.message || "Unable to read payroll PDF." }));
     return;
   }
 
