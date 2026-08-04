@@ -23,6 +23,11 @@ try {
   $sheet.Paste()
   $sheet.Name = 'Combined IRA'
   $sheet.Cells.ClearContents()
+  $sheet.Cells.FormatConditions.Delete()
+  $sheet.Columns.Item(1).ColumnWidth = 28
+  $sheet.Columns.Item(2).ColumnWidth = 16
+  $sheet.Columns.Item(3).ColumnWidth = 18
+  $sheet.Columns.Item(4).ColumnWidth = 16
 
   if ($Style -eq 'monthly') {
     $month = $payload.months[0]
@@ -66,7 +71,7 @@ try {
 
   $currencyFormat = '$#,##0.00;[Red]($#,##0.00)'
   function Set-CellNumber($cell, [double]$number) { $cell.Formula = '=' + $number.ToString([Globalization.CultureInfo]::InvariantCulture) }
-  function Format-CombinedBlock($range) { $range.UnMerge(); $range.Font.Color = 0; $range.Interior.ColorIndex = -4142; $range.BorderAround(1, 2, 0); foreach ($edge in 11..12) { $range.Borders.Item($edge).LineStyle = 1; $range.Borders.Item($edge).Weight = 2; $range.Borders.Item($edge).Color = 0 } }
+  function Format-CombinedBlock($range) { $range.Font.Color = 0; $range.Interior.ColorIndex = -4142 }
   $dash = [char]0x2013
   $employeeHeading = 'Employee ' + $dash + ' EMPL'
   $employerHeading = 'Employer ' + $dash + ' SMPRC'
@@ -111,6 +116,7 @@ try {
     Set-CellNumber $sheet.Cells.Item($subtotalRow, 4) $dueTotal
     $sheet.Cells.Item($subtotalRow, 4).NumberFormat = $currencyFormat
     Format-CombinedBlock $sheet.Range("A$base:D$subtotalRow")
+    foreach ($rowNumber in $base..($base + 7)) { $sheet.Rows.Item($rowNumber).RowHeight = 15 }
     $sheet.Range("A$base:D$subtotalRow").Font.Bold = $false
     $sheet.Cells.Item($base + 1, 1).Font.Bold = $true
     $sheet.Cells.Item($subtotalRow, 4).Font.Bold = $true
@@ -146,6 +152,7 @@ try {
   Set-CellNumber $sheet.Cells.Item($grand + 6, 4) $allDue
   $sheet.Cells.Item($grand + 6, 4).NumberFormat = $currencyFormat
   Format-CombinedBlock $sheet.Range("A$grand:D$($grand + 6)")
+  foreach ($rowNumber in $grand..($grand + 7)) { $sheet.Rows.Item($rowNumber).RowHeight = 15 }
   $sheet.Range("A$grand:D$($grand + 6)").Font.Bold = $true
 
   if ($sheet.Shapes.Count -gt 0) {
