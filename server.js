@@ -164,6 +164,7 @@ const {
 
 const port = process.env.PORT || 4173;
 const rootDir = __dirname;
+const IRA_STATE_PATH = path.join(rootDir, "data", "ira-admin-state.json");
 const serverStartedAt = new Date().toISOString();
 const adminSessions = new Map();
 const ADMIN_EMAILS = [process.env.ADMIN_EMAIL || "melinda@hppins.com", "melinda@melindaharrisconsulting.com"]
@@ -1153,6 +1154,29 @@ const server = http.createServer(async (request, response) => {
       };
       sendJson(response, 200, { araceli: extract("GANDARA ARACELI", "GARDAS MELANIE"), melanie: extract("GARDAS MELANIE", "HARRIS MELINDA") });
     }).catch((error) => sendJson(response, 400, { error: error.message || "Unable to read payroll PDF." }));
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin/ira/state" && request.method === "GET") {
+    if (!hasAdminSession(request)) { sendJson(response, 401, { error: "Admin login required." }); return; }
+    let state = { uploadedReports: {}, iraReports: {}, paidMonths: {} };
+    try { if (fs.existsSync(IRA_STATE_PATH)) state = { ...state, ...JSON.parse(fs.readFileSync(IRA_STATE_PATH, "utf8")) }; } catch { /* use empty state */ }
+    sendJson(response, 200, state);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin/ira/state" && request.method === "PUT") {
+    if (!hasAdminSession(request)) { sendJson(response, 401, { error: "Admin login required." }); return; }
+    collectRequestBody(request).then((body) => {
+      const state = {
+        uploadedReports: body?.uploadedReports && typeof body.uploadedReports === "object" ? body.uploadedReports : {},
+        iraReports: body?.iraReports && typeof body.iraReports === "object" ? body.iraReports : {},
+        paidMonths: body?.paidMonths && typeof body.paidMonths === "object" ? body.paidMonths : {},
+      };
+      fs.mkdirSync(path.dirname(IRA_STATE_PATH), { recursive: true });
+      fs.writeFileSync(IRA_STATE_PATH, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+      sendJson(response, 200, { ok: true });
+    }).catch((error) => sendJson(response, 400, { error: error.message || "Unable to save IRA state." }));
     return;
   }
 
