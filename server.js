@@ -26,6 +26,7 @@ const {
   updateBillRun,
   initializeBillRunPersistence,
 } = require("./services/billRunService");
+const { applyBill2Corrections, pullBill2Corrections } = require("./services/billCorrectionService");
 const { getSupabaseConfig } = require("./services/config");
 const {
   createAuthorizationUrl,
@@ -1506,6 +1507,44 @@ const server = http.createServer(async (request, response) => {
       }
       return;
     }
+  }
+
+  const bill2PullMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/bill2\/pull$/);
+  if (bill2PullMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("bills")) return sendPersistenceNotReady(response, "bills");
+    try {
+      const run = getBillRun(bill2PullMatch[1]);
+      updateBillRun(run.id, { actor: "HPA User", status: "Pulling Data", activeStage: "Pull Bill 2 Correction Records", correctionStatus: "Pulling Data" });
+      const pulled = await pullBill2Corrections(run.billMonth);
+      const updated = updateBillRun(run.id, {
+        actor: "HPA User", status: "Correction Review Required", activeStage: "Correct Bill 2 Payment Method", correctionStatus: "Review Required",
+        corrections: { bill2: pulled.rows }, counts: { bill2: pulled.rows.length },
+      });
+      sendJson(response, 200, { run: updated, report: pulled });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to pull Bill 2 correction records." });
+    }
+    return;
+  }
+
+  const bill2ApplyMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/bill2\/apply$/);
+  if (bill2ApplyMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("bills")) return sendPersistenceNotReady(response, "bills");
+    try {
+      const run = getBillRun(bill2ApplyMatch[1]);
+      updateBillRun(run.id, { actor: "HPA User", status: "Updating Salesforce", activeStage: "Upload Bill 2 Corrections to Salesforce" });
+      const results = await applyBill2Corrections(run.corrections?.bill2 || []);
+      const failed = results.filter((row) => row.status === "Failed").length;
+      const updated = updateBillRun(run.id, {
+        actor: "HPA User", status: failed ? "Salesforce Update Partially Failed" : "Corrections Complete",
+        activeStage: failed ? "Upload Bill 2 Corrections to Salesforce" : "Pull Bill 4 Correction Records",
+        correctionStatus: failed ? "Partially Failed" : "Complete", corrections: { bill2: results },
+      });
+      sendJson(response, 200, { run: updated, results });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to update Bill 2 corrections in Salesforce." });
+    }
+    return;
   }
 
   const analysisRunMatch = requestUrl.pathname.match(/^\/api\/analysis\/runs\/([^/]+)$/);

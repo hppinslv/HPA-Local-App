@@ -368,6 +368,12 @@ function updateBillRun(runId, changes = {}) {
   if (changes.correctionStatus) {
     run.correctionStatus = String(changes.correctionStatus).trim();
   }
+  if (changes.corrections && typeof changes.corrections === "object") {
+    run.corrections = { ...run.corrections, ...clone(changes.corrections) };
+  }
+  if (changes.counts && typeof changes.counts === "object") {
+    run.counts = { ...run.counts, ...clone(changes.counts) };
+  }
   run.updatedAt = new Date().toISOString();
   appendRunEvent(
     run,

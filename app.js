@@ -16144,18 +16144,22 @@ function renderBillCurrentRun() {
     : run.activeStage === "Pull Bill 2 Correction Records"
       ? `
         <button
-          class="secondary-button"
-          data-bill-stage-action="open-bill2-corrections"
+          class="primary-button"
+          data-bill-stage-action="pull-bill2"
           data-bill-run-id="${esc(run.id || "")}"
         >
-          Open Bill 2 Correction Step
+          Pull Bill 2 Correction Report
         </button>
       `
-      : "";
+      : run.activeStage === "Correct Bill 2 Payment Method" && ensureArray(run.corrections?.bill2).length
+        ? `<button class="primary-button" data-bill-stage-action="apply-bill2" data-bill-run-id="${esc(run.id || "")}">Change CC to Monthly Bill (${ensureArray(run.corrections.bill2).length})</button>`
+        : "";
   const stepMessage = run.activeStage === "Create Monthly Run"
     ? "Step 1 is complete once the run shell is saved. Use the button below to move into the Bill 2 pull step."
     : run.activeStage === "Pull Bill 2 Correction Records"
-      ? "This run is now in the Bill 2 pull step. The actual Salesforce report pull is the next backend piece to wire in, but the workflow can now advance into this stage explicitly."
+      ? "Pull the Salesforce Bill 2 report to load policies currently marked CC."
+      : run.activeStage === "Correct Bill 2 Payment Method"
+        ? `Found ${ensureArray(run.corrections?.bill2).length} Bill 2 policy record(s) marked CC. The correction will set Pay_Type__c to Monthly Bill.`
       : "This foundation pass persists the run shell, dates, settings, and audit trail. The section-specific Salesforce correction and document work will attach here next.";
   panel.innerHTML = `
     <div class="bill-current-run-grid">
@@ -16186,6 +16190,7 @@ function renderBillCurrentRun() {
         ${nextStageButton}
       </div>
     </div>
+    ${ensureArray(run.corrections?.bill2).length ? `<div class="table-wrap"><table><thead><tr><th>Policy</th><th>Billing Name</th><th>Current Pay Type</th><th>Correction</th><th>Status</th></tr></thead><tbody>${ensureArray(run.corrections.bill2).map((row) => `<tr><td>${esc(row.policyName || row.policyId || "")}</td><td>${esc(row.billingName || "")}</td><td>${esc(row.payType || "")}</td><td>${esc(row.targetPayType || "Monthly Bill")}</td><td>${esc(row.status || "Ready")}</td></tr>`).join("")}</tbody></table></div>` : ""}
     <div class="table-wrap">
       <table>
         <thead>
@@ -16369,11 +16374,31 @@ async function handleBillStageAction(runId, action) {
   if (!runId || !action) {
     return;
   }
-  if (action === "open-bill2-corrections") {
-    state.bills.section = "corrections";
-    renderBillCurrentRun();
-    setStatus("bill-run-status", "Bill 2 correction step is selected. The Salesforce pull action is the next piece to wire in.");
-    persistUiState();
+  if (action === "pull-bill2") {
+    setStatus("bill-run-status", "Pulling Bill 2 correction report from Salesforce...");
+    try {
+      const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(runId)}/bill2/pull`, { method: "POST" });
+      state.bills.currentRun = payload.run || state.bills.currentRun;
+      state.bills.section = "corrections";
+      await loadBillRuns();
+      renderBillCurrentRun();
+      setStatus("bill-run-status", `Bill 2 report pulled. ${ensureArray(payload.report?.rows).length} CC record(s) are ready to change to Monthly Bill.`);
+      persistUiState();
+    } catch (error) { setStatus("bill-run-status", error.message || "Unable to pull Bill 2 correction report."); }
+    return;
+  }
+
+  if (action === "apply-bill2") {
+    if (!confirm("Change the pulled Bill 2 CC policies to Monthly Bill in Salesforce?")) return;
+    setStatus("bill-run-status", "Updating Bill 2 pay types in Salesforce...");
+    try {
+      const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(runId)}/bill2/apply`, { method: "POST" });
+      state.bills.currentRun = payload.run || state.bills.currentRun;
+      await loadBillRuns();
+      renderBillCurrentRun();
+      setStatus("bill-run-status", `Bill 2 update finished. ${ensureArray(payload.results).filter((row) => row.status === "Updated").length} updated, ${ensureArray(payload.results).filter((row) => row.status === "Failed").length} failed.`);
+      persistUiState();
+    } catch (error) { setStatus("bill-run-status", error.message || "Unable to update Bill 2 pay types."); }
     return;
   }
 
