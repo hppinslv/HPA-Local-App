@@ -170,4 +170,9 @@
     margin: 0;
     border: none;
   }
+
+  /* The application form is printing about half an inch too high on the paper. */
+  .application-print-page {
+    transform: translateY(0.5in);
+  }
 }
