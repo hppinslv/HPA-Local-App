@@ -171,8 +171,8 @@
     border: none;
   }
 
-  /* Move the application form down 1.25 inches total for paper alignment. */
+  /* Move the application form down 1.75 inches total for paper alignment. */
   .application-print-page {
-    transform: translateY(1.25in);
+    transform: translateY(1.75in);
   }
 }
