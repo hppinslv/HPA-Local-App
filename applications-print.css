@@ -95,7 +95,7 @@
 }
 
 .print-field-one-person-premium {
-  top: var(--print-one-person-top);
+  top: calc(var(--print-one-person-top) - 2mm);
   left: var(--print-one-person-left);
   width: var(--print-one-person-width);
   min-height: var(--print-one-person-height);
@@ -103,7 +103,7 @@
 }
 
 .print-field-two-person-premium {
-  top: var(--print-two-person-top);
+  top: calc(var(--print-two-person-top) - 2mm);
   left: var(--print-two-person-left);
   width: var(--print-two-person-width);
   min-height: var(--print-two-person-height);
