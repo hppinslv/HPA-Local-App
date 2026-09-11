@@ -224,6 +224,15 @@ function hasOwnValue(value) {
   return String(value).trim() !== "";
 }
 
+function deriveDuesFromPaymentAmounts(paymentAmount, premium) {
+  const amount = normalizeAmount(paymentAmount);
+  const premiumAmount = normalizeAmount(premium);
+  if (amount === null || premiumAmount === null) return null;
+  const dues = amount - premiumAmount;
+  if (dues < 0) return null;
+  return Math.round((dues + Number.EPSILON) * 100) / 100;
+}
+
 function coalesceAmount(...values) {
   for (const value of values) {
     const parsed = normalizeAmount(value);
@@ -264,7 +273,7 @@ function resolveDuesFromPaymentMatch(row) {
     const parsed = normalizeAmount(candidate);
     if (parsed !== null) return parsed;
   }
-  return "";
+  return deriveDuesFromPaymentAmounts(row.paymentAmount ?? row.amount ?? row.amount_received ?? row.raw_json?.Amount_Received__c ?? row.raw_json?.["Amount Received"], row.premium ?? row.premium_amount ?? row.premiumAmount ?? row.raw_json?.Premium__c ?? row.raw_json?.Premium) ?? "";
 }
 
 function resolvePremiumFromPaymentMatch(row) {
@@ -1784,6 +1793,11 @@ async function findPaymentMatches(identifier1) {
   [...localMatches, ...remoteMatches].forEach((entry) => {
     const reportDetail = findReportDetailForPaymentMatch(reportDetailMap, entry, needle);
     const nextEntry = mergePaymentMatchDetail(entry, reportDetail, needle);
+    if (normalizeAmount(nextEntry.dues) === null) {
+      const derivedDues = deriveDuesFromPaymentAmounts(nextEntry.paymentAmount, nextEntry.premium);
+      if (derivedDues !== null) nextEntry.dues = derivedDues;
+    }
+    nextEntry.duesCollected = nextEntry.dues;
     const key = normalizeText(entry.salesforcePaymentId || entry.transactionReference || entry.matchKey);
     if (!key || merged.has(key)) return;
     merged.set(key, nextEntry);
@@ -2180,6 +2194,7 @@ module.exports = {
     buildAchReturnCommentText,
     buildReturnedCheckTaskPayload,
     isEquivalentReturnedCheckTask,
+    resolveDuesFromPaymentMatch,
   },
   clearCurrentAchReturnSession,
   confirmAchReturnImport,

@@ -97,3 +97,8 @@ test("isEquivalentReturnedCheckTask does not treat a generic returned check task
 
   assert.equal(__test.isEquivalentReturnedCheckTask(existingTask, row), false);
 });
+
+
+test("derives dues when the matched payment has amount and premium but no dues field", () => {
+  assert.equal(__test.resolveDuesFromPaymentMatch({ paymentAmount: 8.08, premium: 5.08 }), 3);
+});

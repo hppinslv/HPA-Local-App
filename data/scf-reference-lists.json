@@ -1,12 +1,1082 @@
 {
-  "updatedAt": "2026-07-01T16:01:35.592Z",
-  "history": [],
+  "updatedAt": "2026-08-11T14:45:36.574Z",
+  "history": [
+    {
+      "id": "ref_history_1786459536581_dc20qq",
+      "listType": "dnm",
+      "actionType": "manual-add",
+      "actor": "Local User",
+      "sourceName": "manual-list-manager",
+      "reason": "",
+      "changedAt": "2026-08-11T14:45:36.574Z",
+      "beforeItems": [
+        {
+          "scf": "010",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "011",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "012",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "013",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "014",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "015",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "016",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "017",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "018",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "019",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "020",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "021",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "022",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "023",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "024",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "025",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "026",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "027",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "030",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "031",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "032",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "033",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "034",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "035",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "036",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "037",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "038",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "050",
+          "state": "Vermont"
+        },
+        {
+          "scf": "051",
+          "state": "Vermont"
+        },
+        {
+          "scf": "052",
+          "state": "Vermont"
+        },
+        {
+          "scf": "053",
+          "state": "Vermont"
+        },
+        {
+          "scf": "054",
+          "state": "Vermont"
+        },
+        {
+          "scf": "055",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "056",
+          "state": "Vermont"
+        },
+        {
+          "scf": "057",
+          "state": "Vermont"
+        },
+        {
+          "scf": "058",
+          "state": "Vermont"
+        },
+        {
+          "scf": "059",
+          "state": "Vermont"
+        },
+        {
+          "scf": "206",
+          "state": "Maryland"
+        },
+        {
+          "scf": "207",
+          "state": "Maryland"
+        },
+        {
+          "scf": "208",
+          "state": "Maryland"
+        },
+        {
+          "scf": "209",
+          "state": "Maryland"
+        },
+        {
+          "scf": "210",
+          "state": "Maryland"
+        },
+        {
+          "scf": "211",
+          "state": "Maryland"
+        },
+        {
+          "scf": "212",
+          "state": "Maryland"
+        },
+        {
+          "scf": "214",
+          "state": "Maryland"
+        },
+        {
+          "scf": "215",
+          "state": "Maryland"
+        },
+        {
+          "scf": "216",
+          "state": "Maryland"
+        },
+        {
+          "scf": "217",
+          "state": "Maryland"
+        },
+        {
+          "scf": "218",
+          "state": "Maryland"
+        },
+        {
+          "scf": "219",
+          "state": "Maryland"
+        },
+        {
+          "scf": "270",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "271",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "272",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "273",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "274",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "275",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "276",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "277",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "278",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "279",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "280",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "281",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "282",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "283",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "284",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "285",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "286",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "287",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "288",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "289",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "570",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "571",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "572",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "573",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "574",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "575",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "576",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "577",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "590",
+          "state": "Montana"
+        },
+        {
+          "scf": "591",
+          "state": "Montana"
+        },
+        {
+          "scf": "592",
+          "state": "Montana"
+        },
+        {
+          "scf": "593",
+          "state": "Montana"
+        },
+        {
+          "scf": "594",
+          "state": "Montana"
+        },
+        {
+          "scf": "595",
+          "state": "Montana"
+        },
+        {
+          "scf": "596",
+          "state": "Montana"
+        },
+        {
+          "scf": "597",
+          "state": "Montana"
+        },
+        {
+          "scf": "598",
+          "state": "Montana"
+        },
+        {
+          "scf": "599",
+          "state": "Montana"
+        },
+        {
+          "scf": "700",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "701",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "703",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "704",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "705",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "706",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "707",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "708",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "710",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "711",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "712",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "713",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "714",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "840",
+          "state": "Utah"
+        },
+        {
+          "scf": "841",
+          "state": "Utah"
+        },
+        {
+          "scf": "842",
+          "state": "Utah"
+        },
+        {
+          "scf": "843",
+          "state": "Utah"
+        },
+        {
+          "scf": "844",
+          "state": "Utah"
+        },
+        {
+          "scf": "845",
+          "state": "Utah"
+        },
+        {
+          "scf": "846",
+          "state": "Utah"
+        },
+        {
+          "scf": "847",
+          "state": "Utah"
+        },
+        {
+          "scf": "870",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "871",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "873",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "874",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "875",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "877",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "878",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "879",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "880",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "881",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "882",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "883",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "884",
+          "state": "New Mexico"
+        }
+      ],
+      "afterItems": [
+        {
+          "scf": "010",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "011",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "012",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "013",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "014",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "015",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "016",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "017",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "018",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "019",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "020",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "021",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "022",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "023",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "024",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "025",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "026",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "027",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "030",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "031",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "032",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "033",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "034",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "035",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "036",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "037",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "038",
+          "state": "New Hampshire"
+        },
+        {
+          "scf": "050",
+          "state": "Vermont"
+        },
+        {
+          "scf": "051",
+          "state": "Vermont"
+        },
+        {
+          "scf": "052",
+          "state": "Vermont"
+        },
+        {
+          "scf": "053",
+          "state": "Vermont"
+        },
+        {
+          "scf": "054",
+          "state": "Vermont"
+        },
+        {
+          "scf": "055",
+          "state": "Massachusetts"
+        },
+        {
+          "scf": "056",
+          "state": "Vermont"
+        },
+        {
+          "scf": "057",
+          "state": "Vermont"
+        },
+        {
+          "scf": "058",
+          "state": "Vermont"
+        },
+        {
+          "scf": "059",
+          "state": "Vermont"
+        },
+        {
+          "scf": "206",
+          "state": "Maryland"
+        },
+        {
+          "scf": "207",
+          "state": "Maryland"
+        },
+        {
+          "scf": "208",
+          "state": "Maryland"
+        },
+        {
+          "scf": "209",
+          "state": "Maryland"
+        },
+        {
+          "scf": "210",
+          "state": "Maryland"
+        },
+        {
+          "scf": "211",
+          "state": "Maryland"
+        },
+        {
+          "scf": "212",
+          "state": "Maryland"
+        },
+        {
+          "scf": "214",
+          "state": "Maryland"
+        },
+        {
+          "scf": "215",
+          "state": "Maryland"
+        },
+        {
+          "scf": "216",
+          "state": "Maryland"
+        },
+        {
+          "scf": "217",
+          "state": "Maryland"
+        },
+        {
+          "scf": "218",
+          "state": "Maryland"
+        },
+        {
+          "scf": "219",
+          "state": "Maryland"
+        },
+        {
+          "scf": "270",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "271",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "272",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "273",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "274",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "275",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "276",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "277",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "278",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "279",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "280",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "281",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "282",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "283",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "284",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "285",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "286",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "287",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "288",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "289",
+          "state": "North Carolina"
+        },
+        {
+          "scf": "570",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "571",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "572",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "573",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "574",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "575",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "576",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "577",
+          "state": "South Dakota"
+        },
+        {
+          "scf": "590",
+          "state": "Montana"
+        },
+        {
+          "scf": "591",
+          "state": "Montana"
+        },
+        {
+          "scf": "592",
+          "state": "Montana"
+        },
+        {
+          "scf": "593",
+          "state": "Montana"
+        },
+        {
+          "scf": "594",
+          "state": "Montana"
+        },
+        {
+          "scf": "595",
+          "state": "Montana"
+        },
+        {
+          "scf": "596",
+          "state": "Montana"
+        },
+        {
+          "scf": "597",
+          "state": "Montana"
+        },
+        {
+          "scf": "598",
+          "state": "Montana"
+        },
+        {
+          "scf": "599",
+          "state": "Montana"
+        },
+        {
+          "scf": "700",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "701",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "703",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "704",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "705",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "706",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "707",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "708",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "710",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "711",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "712",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "713",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "714",
+          "state": "Louisiana - just the AD&D"
+        },
+        {
+          "scf": "840",
+          "state": "Utah"
+        },
+        {
+          "scf": "841",
+          "state": "Utah"
+        },
+        {
+          "scf": "842",
+          "state": "Utah"
+        },
+        {
+          "scf": "843",
+          "state": "Utah"
+        },
+        {
+          "scf": "844",
+          "state": "Utah"
+        },
+        {
+          "scf": "845",
+          "state": "Utah"
+        },
+        {
+          "scf": "846",
+          "state": "Utah"
+        },
+        {
+          "scf": "847",
+          "state": "Utah"
+        },
+        {
+          "scf": "870",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "871",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "873",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "874",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "875",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "877",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "878",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "879",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "880",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "881",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "882",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "883",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "884",
+          "state": "New Mexico"
+        },
+        {
+          "scf": "995",
+          "state": "Alaska"
+        },
+        {
+          "scf": "996",
+          "state": "Alaska"
+        },
+        {
+          "scf": "997",
+          "state": "Alaska"
+        },
+        {
+          "scf": "998",
+          "state": "Alaska"
+        },
+        {
+          "scf": "999",
+          "state": "Alaska"
+        }
+      ],
+      "metadata": {
+        "addedScfs": [
+          "995",
+          "996",
+          "997",
+          "998",
+          "999"
+        ],
+        "skippedCount": 0
+      }
+    }
+  ],
   "lists": [
     {
       "type": "dnm",
       "name": "Do Not Mail",
-      "sourceName": "Seeded from 2025.10 instructions",
+      "sourceName": "manual-list-manager",
       "items": [
+        {
+          "scf": "999",
+          "scope": "Alaska",
+          "state": "Alaska",
+          "stateKey": "alaska",
+          "addedAt": "2026-08-11T14:45:36.574Z",
+          "addedBy": "Local User",
+          "reason": "",
+          "sourceAnalysis": "manual-list-manager"
+        },
+        {
+          "scf": "998",
+          "scope": "Alaska",
+          "state": "Alaska",
+          "stateKey": "alaska",
+          "addedAt": "2026-08-11T14:45:36.574Z",
+          "addedBy": "Local User",
+          "reason": "",
+          "sourceAnalysis": "manual-list-manager"
+        },
+        {
+          "scf": "997",
+          "scope": "Alaska",
+          "state": "Alaska",
+          "stateKey": "alaska",
+          "addedAt": "2026-08-11T14:45:36.574Z",
+          "addedBy": "Local User",
+          "reason": "",
+          "sourceAnalysis": "manual-list-manager"
+        },
+        {
+          "scf": "996",
+          "scope": "Alaska",
+          "state": "Alaska",
+          "stateKey": "alaska",
+          "addedAt": "2026-08-11T14:45:36.574Z",
+          "addedBy": "Local User",
+          "reason": "",
+          "sourceAnalysis": "manual-list-manager"
+        },
+        {
+          "scf": "995",
+          "scope": "Alaska",
+          "state": "Alaska",
+          "stateKey": "alaska",
+          "addedAt": "2026-08-11T14:45:36.574Z",
+          "addedBy": "Local User",
+          "reason": "",
+          "sourceAnalysis": "manual-list-manager"
+        },
         {
           "scf": "700",
           "state": "Louisiana - just the AD&D",

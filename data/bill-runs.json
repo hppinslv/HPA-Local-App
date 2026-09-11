@@ -1,1 +1,170 @@
-[]
+[
+  {
+    "id": "bill_run_1786716497519_zs9qii",
+    "runCode": "BILL-2026-08",
+    "billMonth": "2026-08",
+    "processingDate": "2026-08-14",
+    "scheduledProcessingDate": "2026-08-14",
+    "createdBy": "HPA User",
+    "notes": "",
+    "status": "Pulling Data",
+    "correctionStatus": "Pulling Data",
+    "generationStatus": "Draft",
+    "approvalStatus": "Draft",
+    "versionNumber": 1,
+    "duplicateOverrideReason": "",
+    "activeStage": "Pull Bill 2 Correction Records",
+    "stages": [
+      {
+        "key": "stage_1",
+        "title": "Create Monthly Run",
+        "status": "complete"
+      },
+      {
+        "key": "stage_2",
+        "title": "Pull Bill 2 Correction Records",
+        "status": "current"
+      },
+      {
+        "key": "stage_3",
+        "title": "Correct Bill 2 Payment Method",
+        "status": "pending"
+      },
+      {
+        "key": "stage_4",
+        "title": "Upload Bill 2 Corrections to Salesforce",
+        "status": "pending"
+      },
+      {
+        "key": "stage_5",
+        "title": "Pull Bill 4 Correction Records",
+        "status": "pending"
+      },
+      {
+        "key": "stage_6",
+        "title": "Correct Bill 4 Coverage Values",
+        "status": "pending"
+      },
+      {
+        "key": "stage_7",
+        "title": "Upload Bill 4 Corrections to Salesforce",
+        "status": "pending"
+      },
+      {
+        "key": "stage_8",
+        "title": "Pull Bill 1-4 Report Data",
+        "status": "pending"
+      },
+      {
+        "key": "stage_9",
+        "title": "Validate Bill Data",
+        "status": "pending"
+      },
+      {
+        "key": "stage_10",
+        "title": "Generate Bill Documents",
+        "status": "pending"
+      },
+      {
+        "key": "stage_11",
+        "title": "Review and Approve",
+        "status": "pending"
+      },
+      {
+        "key": "stage_12",
+        "title": "Download / Print",
+        "status": "pending"
+      },
+      {
+        "key": "stage_13",
+        "title": "Complete Run",
+        "status": "pending"
+      }
+    ],
+    "dates": {
+      "processingDate": "2026-08-14",
+      "processingDateDisplay": "8/14/2026",
+      "processingDateLong": "August 14, 2026",
+      "processingDateOrdinalLong": "August 14th, 2026",
+      "bill1DueDate": "2026-08-01",
+      "bill1DueDateDisplay": "8/1/2026",
+      "bill2OriginalOverdueMonth": "JULY, 2026",
+      "bill2UpcomingMonth": "SEPTEMBER, 2026",
+      "bill3FirstOverdueMonth": "JUNE, 2026",
+      "bill3SecondOverdueMonth": "JULY, 2026",
+      "bill3NextDueDate": "2026-09-01",
+      "bill3NextDueDateDisplay": "September 1, 2026",
+      "bill3LapseDeadline": "2026-09-14",
+      "bill3LapseDeadlineDisplay": "September 14, 2026",
+      "bill3LapseDeadlineOrdinalDisplay": "September 14th, 2026",
+      "bill4LapsedEffectiveDate": "2026-07-01",
+      "bill4LapsedEffectiveDateDisplay": "July 1, 2026",
+      "bill4ReinstatementReferenceDate": "2026-09-01",
+      "bill4ReinstatementReferenceDateDisplay": "September 1, 2026",
+      "documentMonthLabel": "AUGUST, 2026",
+      "documentMonthShortLabel": "AUGUST",
+      "processingMonthLabel": "August 2026",
+      "billMonth": "2026-08",
+      "settings": {
+        "normalProcessingDay": 14,
+        "paymentDueDay": 1,
+        "lapseDeadlineDay": 14,
+        "maximumTotalCoverage": 503000,
+        "requiredNonContributoryCoverage": 3000,
+        "maximumContributoryCoverage": 500000
+      }
+    },
+    "counts": {
+      "bill1": 0,
+      "bill2": 0,
+      "bill3": 0,
+      "bill4": 0,
+      "bill3Notices": 0,
+      "bill4Notices": 0,
+      "totalDocuments": 0,
+      "totalRecipients": 0,
+      "validationErrors": 0
+    },
+    "corrections": {
+      "bill2": [],
+      "bill4": []
+    },
+    "validations": [],
+    "documents": [],
+    "approvals": [],
+    "sourceSnapshotTimestamp": "2026-08-14T14:08:17.519Z",
+    "createdAt": "2026-08-14T14:08:17.519Z",
+    "updatedAt": "2026-08-14T14:08:32.818Z",
+    "events": [
+      {
+        "id": "bill_event_1786716497519_dvkjou",
+        "eventType": "run-created",
+        "previousStatus": "",
+        "newStatus": "Draft",
+        "details": {
+          "previousStatus": "",
+          "newStatus": "Draft",
+          "billMonth": "2026-08",
+          "runCode": "BILL-2026-08",
+          "duplicateOverrideReason": ""
+        },
+        "performedBy": "HPA User",
+        "performedAt": "2026-08-14T14:08:17.519Z"
+      },
+      {
+        "id": "bill_event_1786716512818_8fd6rp",
+        "eventType": "run-updated",
+        "previousStatus": "Draft",
+        "newStatus": "Pulling Data",
+        "details": {
+          "previousStatus": "Draft",
+          "newStatus": "Pulling Data",
+          "activeStage": "Pull Bill 2 Correction Records",
+          "notesUpdated": false
+        },
+        "performedBy": "HPA User",
+        "performedAt": "2026-08-14T14:08:32.819Z"
+      }
+    ]
+  }
+]
