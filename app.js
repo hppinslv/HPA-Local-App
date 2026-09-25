@@ -4696,8 +4696,7 @@ async function loadCheckImportSessions(preferredSessionId = "") {
   const canonicalSessionIds = new Set(sessions.map((session) => String(session.id || "").trim()).filter(Boolean));
   const preferredId = String(preferredSessionId || "").trim();
   const currentId = String(state.checkImports.currentSessionId || "").trim();
-  const nextActiveSession = sessions.find((session) => !["imported", "imported_with_errors"].includes(String(session.final_status || ""))) || null;
-  const targetSessionId = [preferredId, currentId, String(nextActiveSession?.id || "").trim()].find((id) => id && canonicalSessionIds.has(id)) || "";
+  const targetSessionId = preferredId && canonicalSessionIds.has(preferredId) ? preferredId : "";
 
   if (window?.HPA_DEBUG) {
     console.debug("[HPA_DEBUG] canonical list loaded", {
