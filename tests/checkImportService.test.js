@@ -178,6 +178,32 @@ test("check import list sessions stay lightweight while detail keeps policy look
   assert.equal(Object.prototype.hasOwnProperty.call(detail, "policyLookup"), true);
 });
 
+test("check import list hides a pending batch whose transactions were already imported", () => {
+  __setCheckImportStateForTests({
+    sessions: [
+      buildSession({ id: "duplicate_pending", uploaded_at: "2026-06-25T15:45:00.000Z" }),
+      buildSession({ id: "partially_new", uploaded_at: "2026-06-25T14:45:00.000Z" }),
+      buildSession({
+        id: "completed_import",
+        imported_row_count: 1,
+        successful_import_count: 1,
+        final_status: "imported",
+      }),
+    ],
+    rows: [
+      buildRow("pending", "duplicate_pending", { transaction_id: "TX-1", excluded: true }),
+      buildRow("overlap", "partially_new", { transaction_id: "TX-1" }),
+      buildRow("new", "partially_new", { transaction_id: "TX-NEW", row_number: 2 }),
+      buildRow("imported", "completed_import", {
+        transaction_id: "TX-1",
+        import_result_status: "imported",
+      }),
+    ],
+  });
+
+  assert.deepEqual(listCheckImportSessions().map((entry) => entry.id), ["partially_new", "completed_import"]);
+});
+
 test("revalidateSession accepts a matched policy even when certificate record id is blank", () => {
   __setCheckImportStateForTests({
     sessions: [buildSession({ row_count: 1, active_row_count: 1 })],

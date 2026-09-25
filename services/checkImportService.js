@@ -1455,9 +1455,46 @@ function serializeSession(session, includeRows = false, includePolicyLookup = in
   };
 }
 
+function isRedundantUnimportedSession(session, sessions, rows) {
+  if (isCheckImportSessionImported(session)) {
+    return false;
+  }
+
+  const transactionIds = rows
+    .filter((row) => row.session_id === session.id)
+    .map((row) => normalizeText(row.transaction_id).toLowerCase())
+    .filter(Boolean);
+  if (!transactionIds.length) {
+    return false;
+  }
+
+  const importedSessionsById = new Map(
+    sessions
+      .filter((entry) => isCheckImportSessionImported(entry))
+      .map((entry) => [entry.id, entry])
+  );
+  const importedTransactionIds = new Set(
+    rows
+      .filter((row) => {
+        const importedSession = importedSessionsById.get(row.session_id);
+        if (!importedSession || row.excluded) return false;
+        const resultStatus = normalizeText(row.import_result_status).toLowerCase();
+        return resultStatus === "imported"
+          || (!resultStatus && String(importedSession.final_status || "") === "imported");
+      })
+      .map((row) => normalizeText(row.transaction_id).toLowerCase())
+      .filter(Boolean)
+  );
+
+  return transactionIds.every((transactionId) => importedTransactionIds.has(transactionId));
+}
+
 function listCheckImportSessions() {
-  return readSessions()
+  const sessions = readSessions();
+  const rows = readRows();
+  return sessions
     .slice()
+    .filter((entry) => !isRedundantUnimportedSession(entry, sessions, rows))
     .sort((a, b) => (Date.parse(b.uploaded_at || 0) || 0) - (Date.parse(a.uploaded_at || 0) || 0))
     .map((entry) => serializeSession(entry, false));
 }
