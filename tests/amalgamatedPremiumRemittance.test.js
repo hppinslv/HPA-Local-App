@@ -279,10 +279,34 @@ test("final summary letter data is derived from summary totals", () => {
   assert.equal(letterData.reportMonthLabel, "May-2026");
   assert.equal(letterData.fundsReceived, 314278.36);
   assert.equal(letterData.amalgamatedPremium, 126547.29);
-  assert.equal(letterData.hpaCommission, 182231.07);
+  assert.equal(letterData.hpaCommission, 177031.07);
   assert.equal(letterData.ahaDues, 5500);
   assert.equal(letterData.ftjFee, 5200);
   assert.equal(letterData.bankFee, 0);
+  assert.equal(
+    letterData.amalgamatedPremium +
+      letterData.hpaCommission +
+      letterData.ahaDues +
+      letterData.ftjFee,
+    letterData.fundsReceived
+  );
+});
+
+test("final summary letter uses the spreadsheet net HPA commission", () => {
+  const letterData = buildFinalSummaryLetterData({
+    reportMonth: "2026-09",
+    totals: {
+      totalSubmitted: 279862.98,
+      amalgamatedPremium: 87984.06,
+      hpaCommission: 126611.22,
+      netHpaCommission: 121411.22,
+      ahaDues: 65267.7,
+      ftjFee: 5200,
+    },
+  });
+
+  assert.equal(letterData.hpaCommission, 121411.22);
+  assert.doesNotThrow(() => validateFinalSummaryLetterData(letterData));
 });
 
 test("final summary letter validation rejects non-reconciling totals", () => {

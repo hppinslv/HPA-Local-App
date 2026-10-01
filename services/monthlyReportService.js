@@ -618,6 +618,16 @@ function buildFinalSummaryLetterData(report) {
   const fundsReceived = roundCurrency(Number(totals.totalSubmitted || 0));
   const amalgamatedPremium = roundCurrency(Number(totals.amalgamatedPremium || 0));
   const ahaDues = roundCurrency(Number(totals.ahaDues || 0));
+  const ftjFee = roundCurrency(Number(totals.ftjFee ?? FIXED_RULES.ftjFee ?? 0));
+  const grossHpaCommission = roundCurrency(
+    fundsReceived - amalgamatedPremium - ahaDues
+  );
+  const storedNetHpaCommission = Number(totals.netHpaCommission);
+  const netHpaCommission = roundCurrency(
+    Number.isFinite(storedNetHpaCommission)
+      ? storedNetHpaCommission
+      : grossHpaCommission - ftjFee
+  );
   const monthParts = buildLetterMonthParts(report?.reportMonth);
   const letterData = {
     letterDate: formatLetterDate(),
@@ -628,9 +638,9 @@ function buildFinalSummaryLetterData(report) {
     reportMonthDashLabel: monthParts.dashLabel,
     fundsReceived,
     amalgamatedPremium,
-    hpaCommission: roundCurrency(fundsReceived - amalgamatedPremium - ahaDues),
+    hpaCommission: netHpaCommission,
     ahaDues,
-    ftjFee: roundCurrency(Number(FIXED_RULES.ftjFee || 0)),
+    ftjFee,
     bankFee: roundCurrency(Number(FIXED_RULES.estimatedBankFee || 0)),
   };
 
@@ -660,7 +670,8 @@ function validateFinalSummaryLetterData(letterData) {
   const expectedFundsReceived = roundCurrency(
     Number(letterData.amalgamatedPremium || 0) +
       Number(letterData.hpaCommission || 0) +
-      Number(letterData.ahaDues || 0)
+      Number(letterData.ahaDues || 0) +
+      Number(letterData.ftjFee || 0)
   );
 
   if (roundCurrency(Number(letterData.fundsReceived || 0)) !== expectedFundsReceived) {
