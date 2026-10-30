@@ -3455,11 +3455,6 @@ function buildNormalizedDnmExportItems(listItems = []) {
 }
 
 function validateDnmExportItems(entries = []) {
-  const requiredExamples = [
-    "030", "031", "032", "033", "034", "035", "036", "037", "038",
-    "050", "051", "052", "053", "054", "055", "056", "057", "058", "059",
-  ];
-
   entries.forEach((entry, index) => {
     const scf = String(entry.scf || "");
     if (!scf || scf.includes(",")) {
@@ -3476,12 +3471,6 @@ function validateDnmExportItems(entries = []) {
     }
   });
 
-  const scfSet = new Set(entries.map((entry) => String(entry.scf || "")));
-  requiredExamples.forEach((scf) => {
-    if (!scfSet.has(scf)) {
-      throw new Error(`DNM export validation failed: required SCF ${scf} is missing.`);
-    }
-  });
 }
 
 function writeReferenceListExport(listType, options = {}) {

@@ -979,6 +979,28 @@ test("existing Maryland DNM state groups are auto-repaired to include missing SC
   assert.deepEqual(marylandGroup.extraScfs, []);
 });
 
+test("DNM export succeeds after Massachusetts is removed and SCF 055 is no longer active", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  service.addDnmStateGroup({ stateKey: "new-hampshire" });
+  service.addDnmStateGroup({ stateKey: "vermont" });
+  service.addDnmStateGroup({ stateKey: "massachusetts" });
+  const listAfterRemoval = service.removeDnmStateGroup("massachusetts");
+
+  assert.equal(listAfterRemoval.items.some((entry) => entry.scf === "055"), false);
+  assert.equal(listAfterRemoval.items.some((entry) => entry.scf === "050"), true);
+
+  const artifact = service.writeReferenceListExport("dnm");
+  assert.equal(fs.existsSync(artifact.filePath), true);
+  assert.equal(artifact.listType, "dnm");
+});
+
 test("review working-list changes persist before completion and reload with the setup", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);
