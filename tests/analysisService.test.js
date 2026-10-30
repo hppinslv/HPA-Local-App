@@ -597,6 +597,49 @@ test("saving a comparison setup writes it to persistent storage and reload survi
   assert.equal(reloaded.reviewState.reviewCompletedByName, "Melinda Harris");
 });
 
+test("individual-report analysis override persists with a single selected report", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir);
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  let service = loadAnalysisServiceWithTempDir(tempDir);
+  const payload = createComparisonPayload({
+    comparisonRequests: [
+      {
+        id: "individual_report_a",
+        comparisonName: "NHCL Individual Review",
+        individualReportMode: true,
+        keyCodeGroup: "NHCL",
+        selectedReportIds: ["report_a"],
+        reportIds: ["report_a"],
+        reportAId: "report_a",
+        reportBId: "",
+      },
+    ],
+    reviewState: {
+      selectedComparisonId: "individual_report_a",
+      lastEditedComparisonId: "individual_report_a",
+      reviewPrimaryReportIds: { individual_report_a: "report_a" },
+      reviewSelectedScfs: { individual_report_a: "010" },
+    },
+  });
+
+  const saved = service.saveAnalysisSetup(payload);
+  assert.equal(saved.comparisonRequests[0].individualReportMode, true);
+  assert.deepEqual(saved.comparisonRequests[0].selectedReportIds, ["report_a"]);
+  assert.equal(saved.comparisonRequests[0].reportBId, "");
+  assert.equal(saved.comparisonSetups[0].individualReportMode, true);
+
+  service = loadAnalysisServiceWithTempDir(tempDir);
+  const reloaded = service.getAnalysisSetup(saved.id);
+  assert.equal(reloaded.comparisonRequests[0].individualReportMode, true);
+  assert.deepEqual(reloaded.comparisonRequests[0].selectedReportIds, ["report_a"]);
+  assert.equal(reloaded.comparisonSetups[0].individualReportMode, true);
+});
+
 test("older saved setups recover comparison groups from report pulls and backfill saved report ids", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);

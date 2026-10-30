@@ -2389,6 +2389,7 @@ function buildPersistedComparisonSetups(
       id: comparisonId,
       analysisSetupId: String(setupId || "").trim(),
       comparisonName,
+      individualReportMode: entry?.individualReportMode === true,
       selectedReportIds,
       primaryReportId: String(normalizedReviewState.reviewPrimaryReportIds?.[comparisonId] || "").trim(),
       keyCodeGroup: String(entry?.keyCodeGroup || entry?.key_code_group || "NHCL").trim(),
@@ -2464,6 +2465,7 @@ function recoverComparisonRequestsFromSetup(setup = {}) {
         id: String(entry?.id || `comparison_${index + 1}`).trim() || `comparison_${index + 1}`,
         name: comparisonName,
         comparisonName,
+        individualReportMode: entry?.individualReportMode === true,
         keyCodeGroup: String(entry?.keyCodeGroup || "NHCL").trim().toUpperCase() === "RFC" ? "RFC" : "NHCL",
         reportIds: selectedReportIds,
         selectedReportIds,
@@ -2503,6 +2505,7 @@ function recoverComparisonRequestsFromSetup(setup = {}) {
         id: `comparison_${String(keyCodeGroup || index + 1).trim().toLowerCase()}`,
         name: comparisonName,
         comparisonName,
+        individualReportMode: false,
         keyCodeGroup,
         reportIds: selectedReportIds,
         selectedReportIds,
@@ -2605,6 +2608,10 @@ function normalizeAnalysisRequest(body = {}) {
         id: entry.id || `comparison_${index + 1}`,
         name: comparisonName,
         comparisonName,
+        individualReportMode:
+          entry.individualReportMode === true
+          || entry.individual_report_mode === true
+          || String(entry.analysisMode || entry.analysis_mode || "").trim().toLowerCase() === "individual",
         keyCodeGroup: String(entry.keyCodeGroup || entry.key_code_group || "NHCL").trim().toUpperCase() === "RFC"
           ? "RFC"
           : "NHCL",

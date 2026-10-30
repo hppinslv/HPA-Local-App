@@ -6450,7 +6450,10 @@ function getPreferredComparisonId(comparisons = []) {
 }
 
 function hasUsableComparisonSelection(entries = []) {
-  return ensureArray(entries).some((entry) => getComparisonSelectedReportIds(entry).length >= 2);
+  return ensureArray(entries).some((entry) => {
+    const minimumReports = entry?.individualReportMode === true ? 1 : 2;
+    return getComparisonSelectedReportIds(entry).length >= minimumReports;
+  });
 }
 
 function buildRecoveredComparisonLinksFromWorkspace() {
@@ -7624,6 +7627,10 @@ function createComparisonLink(index = 0, source = {}) {
     selectedReportIds: reportIds,
     reportAId: reportIds[0] || "",
     reportBId: reportIds[1] || "",
+    individualReportMode:
+      source.individualReportMode === true
+      || source.individual_report_mode === true
+      || String(source.analysisMode || source.analysis_mode || "").trim().toLowerCase() === "individual",
     matchField: String(source.matchField || "SCF Grouping").trim() || "SCF Grouping",
     metricColumns: Array.isArray(source.metricColumns) && source.metricColumns.length
       ? source.metricColumns
@@ -10565,8 +10572,8 @@ function validateAnalysisComparisonSetup() {
   const readyReports = reports.filter((report) => report.status === "ready");
   const links = Array.isArray(state.analysis.comparisonLinks) ? state.analysis.comparisonLinks : [];
 
-  if (readyReports.length < 2) {
-    summaryErrors.push("At least two ready reports are required to build a comparison.");
+  if (readyReports.length < 1) {
+    summaryErrors.push("At least one ready report is required to set up analysis review.");
   }
 
   if (!links.length) {
@@ -10576,19 +10583,22 @@ function validateAnalysisComparisonSetup() {
   links.forEach((link, index) => {
     const errors = [];
     const selectedIds = pruneComparisonSelectedReportIds(link, availableReportIds);
+    const individualReportMode = link.individualReportMode === true;
 
-    if (selectedIds.length < 2) {
+    if (individualReportMode && selectedIds.length !== 1) {
+      errors.push("Select exactly 1 report for this individual-report workspace.");
+    } else if (!individualReportMode && selectedIds.length < 2) {
       errors.push("Select 2 to 5 reports for this comparison.");
     }
 
-    if (selectedIds.length > 5) {
+    if (!individualReportMode && selectedIds.length > 5) {
       errors.push("A comparison can include up to 5 reports.");
     }
 
     const derivedKeyCodeGroup = deriveComparisonKeyCodeGroupFromReportIds(selectedIds);
-    if (selectedIds.length >= 2 && derivedKeyCodeGroup === "MIXED") {
+    if (!individualReportMode && selectedIds.length >= 2 && derivedKeyCodeGroup === "MIXED") {
       errors.push("Select reports from only one key code list for each comparison.");
-    } else if (selectedIds.length >= 2 && !derivedKeyCodeGroup) {
+    } else if (selectedIds.length >= (individualReportMode ? 1 : 2) && !derivedKeyCodeGroup) {
       errors.push("Selected reports must have an NHCL or RFC key code list.");
     }
 
@@ -10684,6 +10694,7 @@ function renderAnalysisSetupHome() {
       const selectedIds = pruneComparisonSelectedReportIds(link);
       logComparisonDebug("render comparison picker", link.id, selectedIds);
       const comparisonName = resolveComparisonName(link.comparisonName || "", index);
+      const individualReportMode = link.individualReportMode === true;
       const readyReportCount = validation.reports.filter((report) => report.status === "ready").length;
       const reportCards = validation.reports.length
         ? validation.reports
@@ -10732,26 +10743,34 @@ function renderAnalysisSetupHome() {
         <article class="analysis-pull-card analysis-comparison-card ${errors.length ? "is-invalid" : ""}" data-comparison-id="${esc(link.id)}">
           <div class="analysis-comparison-card-head">
             <div>
-              <span class="field-label">Comparison ${index + 1}</span>
+              <span class="field-label">${individualReportMode ? "Individual Report" : "Comparison"} ${index + 1}</span>
               <strong>${esc(comparisonName)}</strong>
-              <p class="analysis-comparison-helper">Choose the reports that should be compared together.</p>
+              <p class="analysis-comparison-helper">${individualReportMode
+                ? "Work from this report by itself to make analysis-list changes."
+                : "Choose the reports that should be compared together."}</p>
             </div>
-            <button class="secondary-button table-action-button" data-action="remove-comparison-link" data-comparison-id="${esc(link.id)}"${readOnly || state.analysis.comparisonLinks.length === 1 ? " disabled" : ""}>Remove Comparison</button>
+            <button class="secondary-button table-action-button" data-action="remove-comparison-link" data-comparison-id="${esc(link.id)}"${readOnly || state.analysis.comparisonLinks.length === 1 ? " disabled" : ""}>Remove ${individualReportMode ? "Report" : "Comparison"}</button>
           </div>
           <div class="analysis-comparison-grid">
             <div class="field-stack">
-              <label class="field-label">Comparison Name</label>
-              <input class="field-input" data-comparison-field="comparisonName" data-comparison-id="${esc(link.id)}" type="text" value="${esc(comparisonName)}" placeholder="Example: NHCL October vs November"${readOnly ? " disabled" : ""} />
+              <label class="field-label">${individualReportMode ? "Workspace Name" : "Comparison Name"}</label>
+              <input class="field-input" data-comparison-field="comparisonName" data-comparison-id="${esc(link.id)}" type="text" value="${esc(comparisonName)}" placeholder="${individualReportMode ? "Example: October NHCL Review" : "Example: NHCL October vs November"}"${readOnly ? " disabled" : ""} />
+              <label class="analysis-comparison-helper">
+                <input type="checkbox" data-comparison-individual-mode="true" data-comparison-id="${esc(link.id)}"${individualReportMode ? " checked" : ""}${readOnly ? " disabled" : ""} />
+                Individual-report override (do not compare reports)
+              </label>
             </div>
             <div class="field-stack analysis-comparison-wide">
               <div class="analysis-comparison-selection-head">
                 <div>
-                  <span class="field-label">Reports In This Comparison</span>
-                  <p class="analysis-selection-count">${selectedIds.length} of 5 selected</p>
+                  <span class="field-label">${individualReportMode ? "Report For This Workspace" : "Reports In This Comparison"}</span>
+                  <p class="analysis-selection-count">${individualReportMode ? `${selectedIds.length} of 1 selected` : `${selectedIds.length} of 5 selected`}</p>
                 </div>
                 <p class="analysis-selection-count">${readyReportCount} ready report pull${readyReportCount === 1 ? "" : "s"} available</p>
               </div>
-              <p class="analysis-comparison-helper">Select 2 to 5 reports for this comparison. Only ready report pulls can be added unless they are already selected.</p>
+              <p class="analysis-comparison-helper">${individualReportMode
+                ? "Select exactly 1 ready report. Add another workspace for the second individual report."
+                : "Select 2 to 5 reports for this comparison. Only ready report pulls can be added unless they are already selected."}</p>
               <div class="analysis-report-picker">
                 ${reportCards}
               </div>
@@ -10795,15 +10814,19 @@ function toggleComparisonReportSelection(comparisonId, reportId, shouldSelect) {
 
   const currentIds = getComparisonSelectedReportIds(link);
   if (shouldSelect) {
-    if (currentIds.length >= 5 && !currentIds.includes(reportId)) {
-      setStatus("analysis-comparison-status", "A comparison can include up to 5 reports.");
-      renderAnalysisSetupHome();
-      return false;
+    if (link.individualReportMode === true) {
+      setComparisonSelectedReportIds(link, [reportId]);
+    } else {
+      if (currentIds.length >= 5 && !currentIds.includes(reportId)) {
+        setStatus("analysis-comparison-status", "A comparison can include up to 5 reports.");
+        renderAnalysisSetupHome();
+        return false;
+      }
+      if (!currentIds.includes(reportId)) {
+        currentIds.push(reportId);
+      }
+      setComparisonSelectedReportIds(link, currentIds);
     }
-    if (!currentIds.includes(reportId)) {
-      currentIds.push(reportId);
-    }
-    setComparisonSelectedReportIds(link, currentIds);
   } else {
     setComparisonSelectedReportIds(
       link,
@@ -11521,6 +11544,7 @@ function renderAnalysisComparisonReviewPanel() {
   }
 
   const { comparison, reports, primaryReport, primaryRows, selectedScf } = context;
+  const individualReportMode = comparison.individualReportMode === true;
   if (
     primaryReport
     && !reportHasReviewScfData(primaryReport)
@@ -11884,7 +11908,7 @@ function renderAnalysisComparisonReviewPanel() {
       <article class="panel analysis-review-toolbar-panel">
         <div class="analysis-review-toolbar">
           <div class="field-stack">
-            <label class="field-label" for="analysis-review-comparison-select">Comparison</label>
+            <label class="field-label" for="analysis-review-comparison-select">${individualReportMode ? "Report Workspace" : "Comparison"}</label>
             <select id="analysis-review-comparison-select" class="field-input">
               ${comparisons.map((entry, index) => `
                 <option value="${esc(entry.id)}"${entry.id === comparison.id ? " selected" : ""}>
@@ -11894,7 +11918,7 @@ function renderAnalysisComparisonReviewPanel() {
             </select>
           </div>
           <div class="field-stack">
-            <label class="field-label" for="analysis-review-primary-report">Primary Report</label>
+            <label class="field-label" for="analysis-review-primary-report">${individualReportMode ? "Individual Report" : "Primary Report"}</label>
             <select id="analysis-review-primary-report" class="field-input">
               ${reports.map((report) => `
                 <option value="${esc(report.id)}"${report.id === primaryReport?.id ? " selected" : ""}>
@@ -12810,6 +12834,7 @@ function syncComparisonRequestsFromLinks() {
       reportIds,
       reportAId: reportIds[0] || "",
       reportBId: reportIds[1] || "",
+      individualReportMode: link.individualReportMode === true,
       createdAt,
       updatedAt: new Date().toISOString(),
       matchField: String(link.matchField || "SCF Grouping").trim() || "SCF Grouping",
@@ -14503,19 +14528,27 @@ function bindAnalysisButtons() {
       setStatus("analysis-comparison-status", "Completed analyses are read-only until you undo the completion.");
       return;
     }
-    if (getAvailableAnalysisReports().filter((report) => report.status === "ready").length < 2) {
+    if (getAvailableAnalysisReports().filter((report) => report.status === "ready").length < 1) {
       setStatus(
         "analysis-comparison-status",
-        "At least two ready reports are required to build a comparison."
+        "At least one ready report is required to add an analysis workspace."
       );
       return;
     }
+    const useIndividualReportMode = state.analysis.comparisonLinks.some(
+      (entry) => entry.individualReportMode === true
+    );
     state.analysis.comparisonLinks.push(
-      createComparisonLink(state.analysis.comparisonLinks.length)
+      createComparisonLink(state.analysis.comparisonLinks.length, {
+        individualReportMode: useIndividualReportMode,
+      })
     );
     persistAnalysisSetupDraft();
     renderAnalysisComparePanel();
-    setStatus("analysis-comparison-status", "Comparison row added.");
+    setStatus(
+      "analysis-comparison-status",
+      useIndividualReportMode ? "Individual-report workspace added." : "Comparison row added."
+    );
     scheduleComparisonSetupAutosave({ immediate: true });
   });
 
@@ -14710,6 +14743,53 @@ function bindAnalysisButtons() {
     persistAnalysisSetupDraft();
     refreshAnalysisSetupValidationUi();
     scheduleComparisonSetupAutosave({ delayMs: 600 });
+  });
+
+  compareContainer?.addEventListener("change", (event) => {
+    if (isCurrentAnalysisReadOnly()) return;
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || !target.hasAttribute("data-comparison-individual-mode")) {
+      return;
+    }
+    const comparisonId = String(target.getAttribute("data-comparison-id") || "").trim();
+    const comparisonIndex = state.analysis.comparisonLinks.findIndex((entry) => entry.id === comparisonId);
+    if (comparisonIndex < 0) return;
+
+    const link = state.analysis.comparisonLinks[comparisonIndex];
+    const selectedIds = getComparisonSelectedReportIds(link);
+    link.individualReportMode = target.checked;
+    link.updatedAt = new Date().toISOString();
+    state.analysis.lastEditedComparisonId = comparisonId;
+
+    let createdWorkspaceCount = 0;
+    if (target.checked && selectedIds.length > 1) {
+      setComparisonSelectedReportIds(link, [selectedIds[0]]);
+      const reportMap = getAvailableAnalysisReportMap();
+      const additionalLinks = selectedIds.slice(1).map((reportId, offset) => {
+        const report = reportMap.get(reportId);
+        const reportName = report ? getAnalysisReportDisplayName(report) : `Individual Report ${comparisonIndex + offset + 2}`;
+        return createComparisonLink(comparisonIndex + offset + 1, {
+          comparisonName: reportName,
+          individualReportMode: true,
+          selectedReportIds: [reportId],
+          keyCodeGroup: getAnalysisReportKeyCodeGroup(report),
+        });
+      });
+      state.analysis.comparisonLinks.splice(comparisonIndex + 1, 0, ...additionalLinks);
+      createdWorkspaceCount = additionalLinks.length;
+    }
+
+    persistAnalysisSetupDraft();
+    renderAnalysisComparePanel();
+    setStatus(
+      "analysis-comparison-status",
+      target.checked
+        ? createdWorkspaceCount
+          ? `Individual-report override enabled. The selected reports were separated into ${createdWorkspaceCount + 1} workspaces.`
+          : "Individual-report override enabled. Select one report for this workspace."
+        : "Standard report comparison restored for this workspace."
+    );
+    scheduleComparisonSetupAutosave({ immediate: true });
   });
 
   compareContainer?.addEventListener("click", (event) => {
