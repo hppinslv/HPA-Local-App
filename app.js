@@ -6314,7 +6314,8 @@ function getAnalysisReportKeyCodeGroup(report) {
     report.name,
     report.report_name,
     report.reportName,
-    getAnalysisReportDisplayName(report),
+    report.analysisLabel,
+    report.analysis_label,
   ];
   for (const source of nameSources) {
     const match = String(source || "").trim().match(/^(NHCL|RFC)\b/i);
