@@ -10230,10 +10230,22 @@ function syncAnalysisPullFromForm(pullId) {
     return pull || null;
   }
 
+  const reportIdField = card.querySelector('[data-pull-field="reportId"]');
+  if (reportIdField instanceof HTMLInputElement) {
+    pull.reportId = String(reportIdField.value || "").trim();
+  }
+
   const keyCodeField = card.querySelector('[data-pull-field="keyCodes"]');
   if (keyCodeField instanceof HTMLSelectElement || keyCodeField instanceof HTMLInputElement) {
     pull.keyCodes = splitCsvValue(keyCodeField.value);
     syncAnalysisPullClientTypeWithKeyCodes(pull);
+  }
+
+  const yearsField = card.querySelector('[data-pull-field="years"]');
+  if (yearsField instanceof HTMLInputElement) {
+    pull.years = splitCsvValue(yearsField.value)
+      .map((entry) => Number.parseInt(entry, 10))
+      .filter((entry) => Number.isInteger(entry));
   }
 
   const startDateField = card.querySelector('[data-pull-field="startDate"]');
@@ -10250,7 +10262,24 @@ function syncAnalysisPullFromForm(pullId) {
       ? { ...currentDateRange }
       : null;
 
+  const scfField = card.querySelector('[data-pull-field="scf"]');
+  if (scfField instanceof HTMLInputElement) {
+    pull.scf = scfField.value;
+  }
+
+  const notesField = card.querySelector('[data-pull-field="notes"]');
+  if (notesField instanceof HTMLTextAreaElement || notesField instanceof HTMLInputElement) {
+    pull.notes = notesField.value;
+  }
+
   return pull;
+}
+
+function syncAllAnalysisPullsFromForm() {
+  ensureArray(state.analysis.reportPulls).forEach((pull) => {
+    syncAnalysisPullFromForm(pull?.id);
+  });
+  return state.analysis.reportPulls;
 }
 
 function legacyCreateComparisonLink(index = 0) {
@@ -13397,6 +13426,7 @@ function loadRunIntoWorkspace(run) {
 }
 
 function buildAnalysisPayload(statusOverride) {
+  syncAllAnalysisPullsFromForm();
   syncComparisonRequestsFromLinks();
   const runName = String(el("analysis-run-name")?.value || state.analysis.runName || "").trim() || getDefaultAnalysisName();
   const notes = String(el("analysis-run-notes")?.value || state.analysis.runNotes || "").trim();
@@ -13460,6 +13490,7 @@ function buildAnalysisPayload(statusOverride) {
 }
 
 function validateAnalysisPulls() {
+  syncAllAnalysisPullsFromForm();
   if (!state.analysis.reportPulls.length) {
     return "Add at least one report pull first.";
   }
@@ -14404,18 +14435,36 @@ function bindAnalysisButtons() {
     }
     runAnalysisButton.disabled = true;
     setStatus("analysis-status-text", "Running");
-    setStatus("analysis-status-detail", "Starting analysis...");
+    setStatus("analysis-status-detail", "Checking Salesforce connection...");
     try {
+      const authResponse = await apiRequest("/api/salesforce/auth-status");
+      const auth = authResponse.auth || {};
+      if (!auth.isConfigured) {
+        throw new Error("Salesforce is not configured on this server.");
+      }
+      if (!auth.isAuthenticated) {
+        throw new Error("Salesforce is not connected. Reconnect Salesforce in Settings, then run the reports again.");
+      }
+
+      setStatus("analysis-status-detail", "Saving the configured report pulls...");
       const savePayload = buildAnalysisPayload("draft");
       const saveResponse = await apiRequest("/api/analysis/setups", {
         method: "POST",
         body: savePayload,
       });
       const savedSetup = saveResponse.setup || {};
+      const expectedPullCount = ensureArray(savePayload.reportPulls).length;
+      const savedPullCount = ensureArray(savedSetup.reportPulls).length;
+      if (savedPullCount !== expectedPullCount) {
+        throw new Error(
+          `The server saved ${savedPullCount} of ${expectedPullCount} configured report pulls. The Salesforce run was not started.`
+        );
+      }
       state.analysis.currentSetupId = savedSetup.id || state.analysis.currentSetupId;
       syncAnalysisReadOnlyState(savedSetup);
       persistAnalysisSetupId(state.analysis.currentSetupId);
       persistAnalysisSetupDraft();
+      setStatus("analysis-status-detail", `Starting ${savedPullCount} Salesforce report pull${savedPullCount === 1 ? "" : "s"}...`);
       const runResponse = await apiRequest("/api/analysis/runs", {
         method: "POST",
         body: {
