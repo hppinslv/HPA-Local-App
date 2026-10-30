@@ -740,6 +740,7 @@ function createDefaultReferenceLists() {
   return {
     updatedAt: new Date().toISOString(),
     history: [],
+    removedDnmStateKeys: [],
     lists: [
       {
         type: "dnm",
@@ -839,6 +840,13 @@ function normalizeReferenceListsPayload(payload = null) {
   return {
     updatedAt: source.updatedAt || new Date().toISOString(),
     history: normalizeReferenceListHistoryEntries(source.history || []),
+    removedDnmStateKeys: Array.from(
+      new Set(
+        ensureArray(source.removedDnmStateKeys)
+          .map((entry) => String(entry || "").trim())
+          .filter((entry) => DNM_SEED_GROUPS.some((group) => group.key === entry))
+      )
+    ),
     lists: normalizedLists,
   };
 }
@@ -854,6 +862,7 @@ function rebuildActiveDnmStateGroups(payload = null) {
   }
 
   let items = ensureArray(dnmList.items);
+  const removedStateKeys = new Set(ensureArray(payload.removedDnmStateKeys));
   const now = new Date().toISOString();
   let changed = false;
 
@@ -872,6 +881,14 @@ function rebuildActiveDnmStateGroups(payload = null) {
     };
 
     const activeItems = items.filter(isEntryInGroup);
+
+    if (removedStateKeys.has(group.key)) {
+      if (activeItems.length) {
+        items = items.filter((entry) => !isEntryInGroup(entry));
+        changed = true;
+      }
+      return;
+    }
 
     if (!activeItems.length) {
       return;
@@ -5649,6 +5666,14 @@ function addDnmStateGroup({
     throw new Error("Select a valid Do Not Mail state.");
   }
 
+  const currentPayload = readReferenceLists();
+  const removedStateKeys = new Set(ensureArray(currentPayload.removedDnmStateKeys));
+  if (removedStateKeys.delete(group.key)) {
+    currentPayload.removedDnmStateKeys = Array.from(removedStateKeys);
+    currentPayload.updatedAt = new Date().toISOString();
+    writeReferenceLists(currentPayload);
+  }
+
   if (!group.scfs.length) {
     const payload = readReferenceLists();
     const list = payload.lists.find((entry) => entry.type === "dnm");
@@ -5737,6 +5762,9 @@ function removeDnmStateGroup(stateKey) {
   list.items = nextItems;
   const changedAt = new Date().toISOString();
   payload.updatedAt = changedAt;
+  payload.removedDnmStateKeys = Array.from(
+    new Set([...ensureArray(payload.removedDnmStateKeys), group.key])
+  );
   recordReferenceListHistory(payload, {
     listType: "dnm",
     actionType: "manual-remove-state",
@@ -6168,6 +6196,13 @@ function importReferenceList({ listType, fileName, base64Content, actor = DEFAUL
     });
   });
   list.items = normalizedEntries;
+  if (normalizedType === "dnm") {
+    const importedScfs = new Set(normalizedEntries.map((entry) => entry.scf));
+    payload.removedDnmStateKeys = ensureArray(payload.removedDnmStateKeys).filter((stateKey) => {
+      const group = DNM_SEED_GROUPS.find((entry) => entry.key === stateKey);
+      return !group || !group.scfs.some((scf) => importedScfs.has(scf));
+    });
+  }
   const changedAt = new Date().toISOString();
   payload.updatedAt = changedAt;
   recordReferenceListHistory(payload, {

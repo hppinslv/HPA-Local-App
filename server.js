@@ -1084,13 +1084,14 @@ const server = http.createServer(async (request, response) => {
   );
   if (dnmStateMatch && request.method === "POST") {
     collectRequestBody(request)
-      .then((body) => {
+      .then(async (body) => {
         const result = addDnmStateGroup({
           stateKey: decodeURIComponent(dnmStateMatch[1]),
           actor: body.actor,
           reason: body.reason,
           sourceName: body.sourceName,
         });
+        await flushAnalysisPersistence();
         sendJson(response, 200, { result, list: result.list, lists: listReferenceLists() });
       })
       .catch((error) => {
@@ -1100,12 +1101,15 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (dnmStateMatch && request.method === "DELETE") {
-    try {
-      const list = removeDnmStateGroup(decodeURIComponent(dnmStateMatch[1]));
-      sendJson(response, 200, { list, lists: listReferenceLists() });
-    } catch (error) {
-      sendJson(response, 400, { error: error.message || "Unable to remove DNM state." });
-    }
+    Promise.resolve()
+      .then(async () => {
+        const list = removeDnmStateGroup(decodeURIComponent(dnmStateMatch[1]));
+        await flushAnalysisPersistence();
+        sendJson(response, 200, { list, lists: listReferenceLists() });
+      })
+      .catch((error) => {
+        sendJson(response, 400, { error: error.message || "Unable to remove DNM state." });
+      });
     return;
   }
 

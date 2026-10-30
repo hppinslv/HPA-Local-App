@@ -987,7 +987,7 @@ test("DNM export succeeds after Massachusetts is removed and SCF 055 is no longe
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  const service = loadAnalysisServiceWithTempDir(tempDir);
+  let service = loadAnalysisServiceWithTempDir(tempDir);
   service.addDnmStateGroup({ stateKey: "new-hampshire" });
   service.addDnmStateGroup({ stateKey: "vermont" });
   service.addDnmStateGroup({ stateKey: "massachusetts" });
@@ -996,9 +996,27 @@ test("DNM export succeeds after Massachusetts is removed and SCF 055 is no longe
   assert.equal(listAfterRemoval.items.some((entry) => entry.scf === "055"), false);
   assert.equal(listAfterRemoval.items.some((entry) => entry.scf === "050"), true);
 
+  const persistedPath = path.join(tempDir, "scf-reference-lists.json");
+  const persisted = JSON.parse(fs.readFileSync(persistedPath, "utf8"));
+  assert.equal(persisted.removedDnmStateKeys.includes("massachusetts"), true);
+  persisted.lists
+    .find((entry) => entry.type === "dnm")
+    .items.push({ scf: "055", scope: "Massachusetts", stateKey: "massachusetts" });
+  fs.writeFileSync(persistedPath, JSON.stringify(persisted, null, 2));
+
+  service = loadAnalysisServiceWithTempDir(tempDir);
+  const reloadedDnm = service.getReferenceListByType("dnm");
+  assert.equal(reloadedDnm.items.some((entry) => entry.scf === "055"), false);
+  assert.equal(reloadedDnm.items.some((entry) => entry.stateKey === "massachusetts"), false);
+
   const artifact = service.writeReferenceListExport("dnm");
   assert.equal(fs.existsSync(artifact.filePath), true);
   assert.equal(artifact.listType, "dnm");
+
+  service.addDnmStateGroup({ stateKey: "massachusetts" });
+  const afterIntentionalReAdd = JSON.parse(fs.readFileSync(persistedPath, "utf8"));
+  assert.equal(afterIntentionalReAdd.removedDnmStateKeys.includes("massachusetts"), false);
+  assert.equal(service.getReferenceListByType("dnm").items.some((entry) => entry.scf === "055"), true);
 });
 
 test("review working-list changes persist before completion and reload with the setup", (t) => {
