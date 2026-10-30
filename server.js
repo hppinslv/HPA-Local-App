@@ -756,7 +756,10 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/api/mailing-data/preview" && request.method === "POST") {
     collectRequestBody(request)
       .then((body) => {
-        const preview = previewMailingData(body || {});
+        const preview = previewMailingData({
+          ...(body || {}),
+          doNotMailEntries: getReferenceListByType("dnm").items,
+        });
         sendJson(response, 200, {
           preview,
           nextCaseNumber: getNextMailingCaseNumber(),
@@ -775,7 +778,10 @@ const server = http.createServer(async (request, response) => {
           at: new Date().toISOString(),
           action: "generate",
         });
-        const result = generateMailingDataWorkbook(body || {});
+        const result = generateMailingDataWorkbook({
+          ...(body || {}),
+          doNotMailEntries: getReferenceListByType("dnm").items,
+        });
         sendJson(response, 200, {
           historyEntry: result.historyEntry,
           preview: result.preview,

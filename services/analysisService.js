@@ -999,6 +999,64 @@ function recordReferenceListHistory(payload, entry) {
   ].slice(0, REFERENCE_LIST_HISTORY_LIMIT);
 }
 
+function removeDoNotMailScfsFromMailingLists(payload, {
+  actor = "System",
+  sourceName = "do-not-mail-enforcement",
+  reason = "Removed because the SCF belongs to an active Do Not Mail state.",
+  changedAt = new Date().toISOString(),
+} = {}) {
+  if (!payload || !Array.isArray(payload.lists)) {
+    return { payload, changed: false, removedByList: {} };
+  }
+
+  const dnmList = payload.lists.find((entry) => entry?.type === "dnm");
+  const dnmScfs = new Set(
+    ensureArray(dnmList?.items)
+      .map((entry) => normalizeScf(entry?.scf))
+      .filter(Boolean)
+  );
+  const removedByList = {};
+  let changed = false;
+
+  ["nhcl", "rfc"].forEach((listType) => {
+    const list = payload.lists.find((entry) => entry?.type === listType);
+    if (!list) {
+      return;
+    }
+
+    const beforeItems = ensureArray(list.items);
+    const removedScfs = Array.from(new Set(
+      beforeItems
+        .map((entry) => normalizeScf(entry?.scf))
+        .filter((scf) => scf && dnmScfs.has(scf))
+    ));
+    if (!removedScfs.length) {
+      return;
+    }
+
+    list.items = beforeItems.filter((entry) => !dnmScfs.has(normalizeScf(entry?.scf)));
+    removedByList[listType] = removedScfs;
+    changed = true;
+    recordReferenceListHistory(payload, {
+      listType,
+      actionType: "dnm-exclusion",
+      actor,
+      sourceName,
+      reason,
+      changedAt,
+      beforeItems,
+      afterItems: list.items,
+      metadata: { removedScfs },
+    });
+  });
+
+  if (changed) {
+    payload.updatedAt = changedAt;
+  }
+
+  return { payload, changed, removedByList };
+}
+
 function readJson(filePath, fallbackValue) {
   ensureStorage();
   return safeParseJson(filePath, fallbackValue);
@@ -1712,7 +1770,9 @@ function readReferenceLists() {
     referenceListsCache = normalizeReferenceListsPayload(pruned.payload);
     const repaired = rebuildActiveDnmStateGroups(referenceListsCache);
     referenceListsCache = normalizeReferenceListsPayload(repaired.payload);
-    if (pruned.changed || repaired.changed) {
+    const reconciled = removeDoNotMailScfsFromMailingLists(referenceListsCache);
+    referenceListsCache = normalizeReferenceListsPayload(reconciled.payload);
+    if (pruned.changed || repaired.changed || reconciled.changed) {
       const savedPrimary = persistJsonFile(SCF_REFERENCE_LISTS_PATH, referenceListsCache);
       if (!savedPrimary) {
         persistJsonFile(SCF_REFERENCE_LISTS_FALLBACK_PATH, referenceListsCache);
@@ -1726,6 +1786,8 @@ function readReferenceLists() {
 
 function writeReferenceLists(payload) {
   referenceListsCache = normalizeReferenceListsPayload(clone(payload));
+  const reconciled = removeDoNotMailScfsFromMailingLists(referenceListsCache);
+  referenceListsCache = normalizeReferenceListsPayload(reconciled.payload);
   const savedPrimary = persistJsonFile(SCF_REFERENCE_LISTS_PATH, referenceListsCache);
   if (!savedPrimary) {
     persistJsonFile(SCF_REFERENCE_LISTS_FALLBACK_PATH, referenceListsCache);

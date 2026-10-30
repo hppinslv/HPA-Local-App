@@ -793,6 +793,80 @@ test("DNM state catalog keeps audited Maryland and West Virginia SCFs", (t) => {
   assert.ok(!scfs.has("213"));
 });
 
+test("adding a DNM state removes all of its SCFs from NHCL and RFC", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir, {
+    lists: [
+      { type: "dnm", name: "Do Not Mail", sourceName: "Test", items: [] },
+      {
+        type: "nhcl",
+        name: "NHCL Mailing SCFs",
+        sourceName: "Test",
+        items: [{ scf: "206", state: "Maryland" }, { scf: "010", state: "Massachusetts" }],
+      },
+      {
+        type: "rfc",
+        name: "RFC Mailing SCFs",
+        sourceName: "Test",
+        items: [{ scf: "217", state: "Maryland" }, { scf: "143", state: "New York" }],
+      },
+      { type: "candidate", name: "Candidate SCFs", sourceName: "Test", items: [] },
+    ],
+  });
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+  service.addDnmStateGroup({ stateKey: "maryland", actor: "Local User" });
+
+  const nhcl = service.getReferenceListByType("nhcl");
+  const rfc = service.getReferenceListByType("rfc");
+  assert.deepEqual(nhcl.items.map((entry) => entry.scf), ["010"]);
+  assert.deepEqual(rfc.items.map((entry) => entry.scf), ["143"]);
+  assert.deepEqual(nhcl.history[0].metadata.removedScfs, ["206"]);
+  assert.deepEqual(rfc.history[0].metadata.removedScfs, ["217"]);
+  assert.equal(nhcl.history[0].actionType, "dnm-exclusion");
+  assert.equal(rfc.history[0].actionType, "dnm-exclusion");
+});
+
+test("loading saved lists removes SCFs that already conflict with Do Not Mail", (t) => {
+  const tempDir = createTempAnalysisDir();
+  seedReferenceLists(tempDir, {
+    lists: [
+      {
+        type: "dnm",
+        name: "Do Not Mail",
+        sourceName: "Test",
+        items: [{ scf: "206", scope: "Maryland", stateKey: "maryland" }],
+      },
+      {
+        type: "nhcl",
+        name: "NHCL Mailing SCFs",
+        sourceName: "Test",
+        items: [{ scf: "206", state: "Maryland" }, { scf: "010", state: "Massachusetts" }],
+      },
+      {
+        type: "rfc",
+        name: "RFC Mailing SCFs",
+        sourceName: "Test",
+        items: [{ scf: "206", state: "Maryland" }, { scf: "143", state: "New York" }],
+      },
+      { type: "candidate", name: "Candidate SCFs", sourceName: "Test", items: [] },
+    ],
+  });
+  t.after(() => {
+    delete process.env.HPA_ANALYSIS_DATA_DIR;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const service = loadAnalysisServiceWithTempDir(tempDir);
+
+  assert.deepEqual(service.getReferenceListByType("nhcl").items.map((entry) => entry.scf), ["010"]);
+  assert.deepEqual(service.getReferenceListByType("rfc").items.map((entry) => entry.scf), ["143"]);
+});
+
 test("DNM state selector exposes corrected Maryland and West Virginia catalog entries", (t) => {
   const tempDir = createTempAnalysisDir();
   seedReferenceLists(tempDir);
@@ -1316,7 +1390,7 @@ test("only the most recent completed analysis can be undone", (t) => {
         { type: "rfc", items: [] },
       ],
       referenceListChanges: [
-        { type: "nhcl", added: [{ scf: "143", state: "" }], removed: [] },
+        { type: "nhcl", added: [{ scf: "893", state: "Nevada" }], removed: [] },
       ],
     }),
   });
@@ -1326,11 +1400,11 @@ test("only the most recent completed analysis can be undone", (t) => {
       status: "complete",
       completedAt: "2026-06-26T15:30:00.000Z",
       referenceListsSnapshot: [
-        { type: "nhcl", items: [{ scf: "143", state: "" }] },
+        { type: "nhcl", items: [{ scf: "893", state: "Nevada" }] },
         { type: "rfc", items: [] },
       ],
       referenceListChanges: [
-        { type: "nhcl", added: [{ scf: "144", state: "" }], removed: [] },
+        { type: "nhcl", added: [{ scf: "894", state: "Nevada" }], removed: [] },
       ],
     }),
   });

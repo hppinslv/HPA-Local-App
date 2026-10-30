@@ -159,6 +159,27 @@ function normalizeHeader(value) {
   return normalizeText(value).toUpperCase();
 }
 
+function normalizeRecipientZipScf(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) {
+    return "";
+  }
+  if (digits.length <= 5) {
+    return digits.padStart(5, "0").slice(0, 3);
+  }
+  return digits.slice(0, 3);
+}
+
+function normalizeReferenceScf(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) {
+    return "";
+  }
+  return digits.length <= 3
+    ? digits.padStart(3, "0")
+    : normalizeRecipientZipScf(digits);
+}
+
 function normalizeNumber(value) {
   const text = String(value ?? "").trim();
   if (!text) return null;
@@ -539,6 +560,93 @@ function parseMailingUpload(entry) {
   };
 }
 
+function auditParsedMailingUploadsForDoNotMail(parsedUploads = [], doNotMailEntries = []) {
+  const dnmLabelsByScf = new Map();
+  doNotMailEntries.forEach((entry) => {
+    const scf = normalizeReferenceScf(entry?.scf ?? entry);
+    if (!scf) {
+      return;
+    }
+    const label = normalizeText(entry?.state || entry?.scope || "Do Not Mail");
+    if (!dnmLabelsByScf.has(scf)) {
+      dnmLabelsByScf.set(scf, label || "Do Not Mail");
+    }
+  });
+
+  const conflictsByUpload = [];
+  let checkedRecordCount = 0;
+  let missingZipCount = 0;
+
+  sortUploads(parsedUploads).forEach((upload) => {
+    const conflictCounts = new Map();
+    upload.rows.forEach((row) => {
+      checkedRecordCount += 1;
+      const scf = normalizeText(row.SCF)
+        ? normalizeReferenceScf(row.SCF)
+        : normalizeRecipientZipScf(row.ZIP);
+      if (!scf) {
+        missingZipCount += 1;
+        return;
+      }
+      if (dnmLabelsByScf.has(scf)) {
+        conflictCounts.set(scf, (conflictCounts.get(scf) || 0) + 1);
+      }
+    });
+
+    if (conflictCounts.size) {
+      conflictsByUpload.push({
+        fileName: upload.fileName,
+        keyCode: upload.keyCode,
+        recordCount: Array.from(conflictCounts.values()).reduce((sum, count) => sum + count, 0),
+        scfs: Array.from(conflictCounts.entries())
+          .map(([scf, recordCount]) => ({
+            scf,
+            recordCount,
+            label: dnmLabelsByScf.get(scf) || "Do Not Mail",
+          }))
+          .sort((left, right) => left.scf.localeCompare(right.scf)),
+      });
+    }
+  });
+
+  const conflictRecordCount = conflictsByUpload.reduce(
+    (sum, upload) => sum + upload.recordCount,
+    0
+  );
+  const audit = {
+    passed: conflictRecordCount === 0 && missingZipCount === 0,
+    checkedRecordCount,
+    missingZipCount,
+    conflictRecordCount,
+    conflictsByUpload,
+  };
+
+  if (!audit.passed) {
+    const conflictSummary = conflictsByUpload.map((upload) => {
+      const scfSummary = upload.scfs
+        .map((entry) => `${entry.scf} (${entry.recordCount.toLocaleString()} record${entry.recordCount === 1 ? "" : "s"})`)
+        .join(", ");
+      return `${upload.keyCode || upload.fileName}: ${scfSummary}`;
+    }).join("; ");
+    const failureDetails = [];
+    if (conflictRecordCount) {
+      failureDetails.push(
+        `Remove ${conflictRecordCount.toLocaleString()} blocked record${conflictRecordCount === 1 ? "" : "s"} before continuing.`
+      );
+    }
+    if (missingZipCount) {
+      failureDetails.push(
+        `${missingZipCount.toLocaleString()} record${missingZipCount === 1 ? " is" : "s are"} missing a usable ZIP/SCF and could not be audited.`
+      );
+    }
+    throw new Error(
+      `Do Not Mail audit failed. ${failureDetails.join(" ")}${conflictSummary ? ` ${conflictSummary}` : ""}`
+    );
+  }
+
+  return audit;
+}
+
 function buildPreviewFromParsedUploads(parsedUploads, options = {}) {
   const mailingMonth = normalizeText(options.mailingMonth);
   const startingCaseNumber = integerOrNull(options.startingCaseNumber);
@@ -868,24 +976,39 @@ function createHistoryEntry(preview, uploads, artifactPath) {
     startingCaseNumber: preview.startingCaseNumber,
     endingCaseNumber: preview.endingCaseNumber,
     mailDate: preview.mailDate,
+    doNotMailAudit: preview.doNotMailAudit,
     outputFilePath: artifactPath,
     uploads: preview.uploads,
   };
 }
 
-function previewMailingData({ uploads = [], mailingMonth = "", startingCaseNumber = "" } = {}) {
+function previewMailingData({
+  uploads = [],
+  mailingMonth = "",
+  startingCaseNumber = "",
+  doNotMailEntries = [],
+} = {}) {
   const normalizedUploads = sortUploads(uploads.map(normalizeUploadRequest));
   if (!normalizedUploads.length) {
     throw new Error("Upload at least one ZIP file.");
   }
   const parsedUploads = normalizedUploads.map(parseMailingUpload);
-  return buildPreviewFromParsedUploads(parsedUploads, {
-    mailingMonth,
-    startingCaseNumber,
-  });
+  const doNotMailAudit = auditParsedMailingUploadsForDoNotMail(parsedUploads, doNotMailEntries);
+  return {
+    ...buildPreviewFromParsedUploads(parsedUploads, {
+      mailingMonth,
+      startingCaseNumber,
+    }),
+    doNotMailAudit,
+  };
 }
 
-function generateMailingDataWorkbook({ uploads = [], mailingMonth = "", startingCaseNumber = "" } = {}) {
+function generateMailingDataWorkbook({
+  uploads = [],
+  mailingMonth = "",
+  startingCaseNumber = "",
+  doNotMailEntries = [],
+} = {}) {
   console.info("[Mailing Data] workbook generation started", {
     at: new Date().toISOString(),
     uploadCount: Array.isArray(uploads) ? uploads.length : 0,
@@ -897,10 +1020,14 @@ function generateMailingDataWorkbook({ uploads = [], mailingMonth = "", starting
     throw new Error("Upload at least one ZIP file.");
   }
   const parsedUploads = normalizedUploads.map(parseMailingUpload);
-  const preview = buildPreviewFromParsedUploads(parsedUploads, {
-    mailingMonth,
-    startingCaseNumber,
-  });
+  const doNotMailAudit = auditParsedMailingUploadsForDoNotMail(parsedUploads, doNotMailEntries);
+  const preview = {
+    ...buildPreviewFromParsedUploads(parsedUploads, {
+      mailingMonth,
+      startingCaseNumber,
+    }),
+    doNotMailAudit,
+  };
   const combinedRows = buildCombinedRows(parsedUploads, preview);
   if (combinedRows.length !== preview.totalRecords) {
     throw new Error(`Final record count mismatch. Expected ${preview.totalRecords}, got ${combinedRows.length}.`);
@@ -949,6 +1076,7 @@ module.exports = {
   deleteMostRecentMailingDataRun,
   getMailingDataArtifact,
   getNextMailingCaseNumber,
+  auditParsedMailingUploadsForDoNotMail,
   previewMailingData,
   generateMailingDataWorkbook,
 };

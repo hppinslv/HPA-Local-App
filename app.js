@@ -3330,6 +3330,9 @@ function renderMailingDataPage() {
         <div class="summary-chip"><strong>Starting Case</strong><span>${esc(preview.startingCaseNumber || "")}</span></div>
         <div class="summary-chip"><strong>Ending Case</strong><span>${esc(preview.endingCaseNumber || "")}</span></div>
         <div class="summary-chip"><strong>Mail Date</strong><span>${esc(formatShortDate(preview.mailDate || ""))}</span></div>
+        <div class="summary-chip"><strong>Do Not Mail Audit</strong><span>${preview.doNotMailAudit?.passed
+          ? `Passed · ${esc(Number(preview.doNotMailAudit.checkedRecordCount || 0).toLocaleString())} records checked`
+          : "Not run"}</span></div>
       `;
     }
   }

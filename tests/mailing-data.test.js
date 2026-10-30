@@ -7,9 +7,70 @@ const { spawnSync } = require("child_process");
 
 const {
   DEFAULT_START_CASE_NUMBER,
+  auditParsedMailingUploadsForDoNotMail,
   generateMailingDataWorkbook,
   previewMailingData,
 } = require("../services/mailingDataService");
+
+test("monthly mailing audit blocks DNM SCFs derived from recipient ZIP codes", () => {
+  assert.throws(
+    () => auditParsedMailingUploadsForDoNotMail(
+      [
+        {
+          fileName: "NHCL_test.zip",
+          keyCode: "NHCL",
+          originalIndex: 0,
+          rows: [
+            { ZIP: "20601" },
+            { ZIP: "20602-1234" },
+            { ZIP: "89101" },
+          ],
+        },
+        {
+          fileName: "RFC_test.zip",
+          keyCode: "RFC",
+          originalIndex: 1,
+          rows: [{ ZIP: "00501" }],
+        },
+      ],
+      [
+        { scf: "206", state: "Maryland" },
+        { scf: "005", state: "New York" },
+      ]
+    ),
+    /Do Not Mail audit failed.*3 blocked records.*NHCL: 206 \(2 records\).*RFC: 005 \(1 record\)/i
+  );
+});
+
+test("monthly mailing audit restores leading zeroes from numeric ZIP cells", () => {
+  assert.throws(
+    () => auditParsedMailingUploadsForDoNotMail(
+      [{
+        fileName: "NHCL_test.zip",
+        keyCode: "NHCL",
+        originalIndex: 0,
+        rows: [{ ZIP: "501" }, { ZIP: "89101" }],
+      }],
+      [{ scf: "005", state: "New York" }]
+    ),
+    /005 \(1 record\)/i
+  );
+});
+
+test("monthly mailing audit blocks records without a usable ZIP or SCF", () => {
+  assert.throws(
+    () => auditParsedMailingUploadsForDoNotMail(
+      [{
+        fileName: "RFC_test.zip",
+        keyCode: "RFC",
+        originalIndex: 0,
+        rows: [{ ZIP: "" }, { ZIP: "89101" }],
+      }],
+      []
+    ),
+    /1 record is missing a usable ZIP\/SCF and could not be audited/i
+  );
+});
 
 function loadUpload(fileName) {
   return {
@@ -79,6 +140,8 @@ test("mailing data preview and workbook generation match the sample mailbag layo
   });
 
   assert.equal(generated.historyEntry.totalRecords, 126167);
+  assert.equal(generated.historyEntry.doNotMailAudit.passed, true);
+  assert.equal(generated.historyEntry.doNotMailAudit.checkedRecordCount, 126167);
   assert.equal(fs.existsSync(generated.historyEntry.outputFilePath), true);
 
   const extracted = extractWorkbook(generated.historyEntry.outputFilePath);
