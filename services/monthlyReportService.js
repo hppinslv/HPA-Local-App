@@ -2153,20 +2153,10 @@ function buildRecoveredArtifacts(run) {
   }
 
   if (run.reportType === FINAL_SUMMARY_LETTER_REPORT_TYPE) {
-    const generatedPdfPath = path.join(runDir, `${filePrefix}_Premier - Letter.pdf`);
-    if (
-      !fs.existsSync(generatedPdfPath) &&
-      run?.report?.finalSummaryLetter
-    ) {
-      try {
-        const docxFileName = findSummaryLetterDocx(runDir);
-        if (docxFileName) {
-          generatePdfFromDocx(path.join(runDir, docxFileName), generatedPdfPath);
-        }
-      } catch {
-        // Leave the older artifacts in place if PDF recovery is unavailable.
-      }
-    }
+    // Never launch Word while serializing a GET /api/monthly-reports response.
+    // Final-letter generation belongs in the isolated report worker. A missing
+    // PDF should simply remain absent so report listing and Excel downloads stay
+    // responsive even when Office automation is unavailable.
     pushArtifact(
       "summary-letter",
       "Download Final Summary Letter",
