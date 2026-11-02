@@ -2,6 +2,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+
+const MONTH_END_CHILD_PROCESS_TIMEOUT_MS = 2 * 60 * 1000;
 const { generatePdfFromHtml } = require("./pdfPrintService");
 const {
   formatCompletionMonthFilePrefix,
@@ -582,11 +584,17 @@ function runPowerShell(command) {
     ["-NoProfile", "-Command", command],
     {
       encoding: "utf8",
+      windowsHide: true,
+      timeout: MONTH_END_CHILD_PROCESS_TIMEOUT_MS,
     }
   );
 
+  if (result.error?.code === "ETIMEDOUT") {
+    throw new Error("Transaction-detail file generation timed out after 2 minutes. Close any open report files, then run the report again.");
+  }
+
   if (result.status !== 0) {
-    throw new Error(result.stderr?.trim() || result.stdout?.trim() || "PowerShell command failed.");
+    throw new Error(result.stderr?.trim() || result.stdout?.trim() || result.error?.message || "PowerShell command failed.");
   }
 }
 

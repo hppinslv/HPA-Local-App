@@ -59,6 +59,7 @@ const FINAL_SUMMARY_SIGNATURE = [
   "American Homeowners Association",
 ];
 const STALE_RUNNING_REPORT_MS = 10 * 60 * 1000;
+const MONTH_END_CHILD_PROCESS_TIMEOUT_MS = 2 * 60 * 1000;
 // Salesforce report requests are resource-intensive. Serialize month-end jobs so a
 // Run All Reports request does not start multiple long-running report executions at once.
 let monthlyReportExecutionQueue = Promise.resolve();
@@ -1393,11 +1394,17 @@ function runPowerShell(command) {
     ["-NoProfile", "-Command", command],
     {
       encoding: "utf8",
+      windowsHide: true,
+      timeout: MONTH_END_CHILD_PROCESS_TIMEOUT_MS,
     }
   );
 
+  if (result.error?.code === "ETIMEDOUT") {
+    throw new Error("Month-end file generation timed out after 2 minutes. Close any open Excel or Word report files, then run the report again.");
+  }
+
   if (result.status !== 0) {
-    throw new Error(result.stderr?.trim() || result.stdout?.trim() || "PowerShell command failed.");
+    throw new Error(result.stderr?.trim() || result.stdout?.trim() || result.error?.message || "PowerShell command failed.");
   }
 }
 
@@ -2373,6 +2380,10 @@ function createRun(
         );
         report = await buildReportForType(newRun.reportType, newRun.reportMonth, sourceData);
       }
+      updateStoredRun(newRun.id, (run) => {
+        run.updatedAt = new Date().toISOString();
+        run.statusDetail = "Salesforce data received. Generating month-end files.";
+      });
       const artifacts = writeRunArtifacts(newRun.id, newRun.reportType, report);
 
       updateStoredRun(newRun.id, (run) => {
