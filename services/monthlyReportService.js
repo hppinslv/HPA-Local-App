@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { spawnSync } = require("child_process");
+const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const { fetchMonthlySalesforceReportData } = require("./salesforceClient");
 const { loadStateObject, queueStateSync } = require("./supabasePersistence");
 const {
@@ -135,6 +136,7 @@ const FINAL_REPORT_SECTIONS = [
 
 let reportRunsDiskWritable = true;
 let reportRunsInMemory = null;
+let reportRunsDiskMtimeMs = 0;
 let reportRunsPersistenceReady = false;
 
 function safeParseJson(filePath, fallbackValue) {
@@ -167,6 +169,7 @@ function compactReportPayload(reportType, report) {
       source: report.source || "",
       totals: report.totals || null,
       finalSummaryLetter: report.finalSummaryLetter || null,
+      finalSummaryLetterError: report.finalSummaryLetterError || "",
     };
   }
 
@@ -283,6 +286,20 @@ function readRuns() {
   ensureStorage();
 
   if (Array.isArray(reportRunsInMemory)) {
+    if (reportRunsDiskWritable && fs.existsSync(REPORT_RUNS_PATH)) {
+      try {
+        const diskMtimeMs = fs.statSync(REPORT_RUNS_PATH).mtimeMs || 0;
+        if (diskMtimeMs > reportRunsDiskMtimeMs) {
+          const parsed = safeParseJson(REPORT_RUNS_PATH, reportRunsInMemory);
+          if (Array.isArray(parsed)) {
+            reportRunsInMemory = parsed;
+            reportRunsDiskMtimeMs = diskMtimeMs;
+          }
+        }
+      } catch {
+        // Keep the last complete in-memory snapshot while a worker replaces the file.
+      }
+    }
     const normalizedMemory = normalizeStoredRuns(reportRunsInMemory);
     if (normalizedMemory.changed) {
       reportRunsInMemory = normalizedMemory.runs;
@@ -302,6 +319,7 @@ function readRuns() {
       if (Array.isArray(parsed)) {
         const normalizedDiskRuns = normalizeStoredRuns(parsed);
         reportRunsInMemory = normalizedDiskRuns.runs;
+        reportRunsDiskMtimeMs = fs.statSync(REPORT_RUNS_PATH).mtimeMs || 0;
         if (normalizedDiskRuns.changed) {
           writeRuns(reportRunsInMemory);
         }
@@ -328,6 +346,7 @@ function writeRuns(runs) {
 
     if (reportRunsDiskWritable) {
       fs.writeFileSync(REPORT_RUNS_PATH, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+      reportRunsDiskMtimeMs = fs.statSync(REPORT_RUNS_PATH).mtimeMs || Date.now();
     }
     queueStateSync(REPORT_RUNS_SUPABASE_KEY, payload);
     return;
@@ -2322,6 +2341,105 @@ function resolveMonthlySummaryPremiumTotal(runs, reportMonth, requestedValue) {
   return matchingRun ? Number(matchingRun.report.totals.grossPremium) : null;
 }
 
+async function executeStoredMonthlyReportRun(runId) {
+  const storedRun = readRuns().find((entry) => entry.id === runId);
+  if (!storedRun) {
+    throw new Error(`Month-end run was not found: ${runId}`);
+  }
+
+  const options = storedRun.options || {};
+  try {
+    let report = null;
+
+    if (storedRun.reportType === "amalgamated-premium-remittance") {
+      const currentRuns = readRuns();
+      report = await buildReportForType(storedRun.reportType, storedRun.reportMonth, {
+        reportMonth: storedRun.reportMonth,
+        sourceMode: options.sourceMode || "live",
+        uploadedFiles: options.uploadedFiles || {},
+        monthlySummaryPremiumTotal: resolveMonthlySummaryPremiumTotal(
+          currentRuns,
+          storedRun.reportMonth,
+          options.monthlySummaryPremiumTotal
+        ),
+      });
+    } else {
+      const sourceData = await fetchMonthlySalesforceReportData(
+        storedRun.reportType || DEFAULT_MONTHLY_REPORT_TYPE,
+        storedRun.reportMonth
+      );
+      report = await buildReportForType(storedRun.reportType, storedRun.reportMonth, sourceData);
+    }
+
+    updateStoredRun(storedRun.id, (run) => {
+      run.updatedAt = new Date().toISOString();
+      run.statusDetail = "Salesforce data received. Generating month-end files.";
+    });
+    const artifacts = writeRunArtifacts(storedRun.id, storedRun.reportType, report);
+
+    if (storedRun.reportType === "transaction-summary") {
+      try {
+        const letterResult = createFinalSummaryLetterArtifacts(storedRun.id, report);
+        report.finalSummaryLetter = letterResult.letterData;
+        artifacts.push(...letterResult.artifacts);
+      } catch (error) {
+        report.finalSummaryLetterError = String(error?.message || error || "Unable to generate final summary letter.");
+      }
+    }
+
+    updateStoredRun(storedRun.id, (run) => {
+      run.status = "complete";
+      run.updatedAt = new Date().toISOString();
+      const warnings = [report?.printArtifactWarning, report?.finalSummaryLetterError].filter(Boolean);
+      run.statusDetail = warnings.length
+        ? `Salesforce report run completed. ${warnings.join(" ")}`
+        : "Salesforce report run completed successfully.";
+      run.report = compactReportPayload(run.reportType, report);
+      run.artifacts = artifacts;
+    });
+  } catch (error) {
+    updateStoredRun(storedRun.id, (run) => {
+      run.status = "failed";
+      run.updatedAt = new Date().toISOString();
+      run.statusDetail = String(error?.message || error || "Month-end report failed.");
+    });
+  }
+}
+
+function executeMonthlyReportInWorker(runId) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(__filename, {
+      workerData: {
+        task: "execute-monthly-report",
+        runId,
+      },
+    });
+    let workerError = null;
+
+    worker.once("error", (error) => {
+      workerError = error;
+    });
+    worker.once("exit", (code) => {
+      reportRunsInMemory = null;
+      const refreshedRuns = readRuns();
+      writeRuns(refreshedRuns);
+      if (workerError || code !== 0) {
+        const error = workerError || new Error(`Month-end worker exited with code ${code}.`);
+        updateStoredRun(runId, (run) => {
+          if (run.status === "running") {
+            run.status = "failed";
+            run.updatedAt = new Date().toISOString();
+            run.statusDetail = error.message;
+          }
+        });
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 function createRun(
   reportType = DEFAULT_MONTHLY_REPORT_TYPE,
   reportMonth = getPreviousMonthValue(),
@@ -2357,52 +2475,7 @@ function createRun(
   setTimeout(() => {
     monthlyReportExecutionQueue = monthlyReportExecutionQueue
       .catch(() => {})
-      .then(async () => {
-    try {
-      let report = null;
-
-      if (newRun.reportType === "amalgamated-premium-remittance") {
-        const currentRuns = readRuns();
-        report = await buildReportForType(newRun.reportType, newRun.reportMonth, {
-          reportMonth: newRun.reportMonth,
-          sourceMode: options.sourceMode || "live",
-          uploadedFiles: options.uploadedFiles || {},
-          monthlySummaryPremiumTotal: resolveMonthlySummaryPremiumTotal(
-            currentRuns,
-            newRun.reportMonth,
-            options.monthlySummaryPremiumTotal
-          ),
-        });
-      } else {
-        const sourceData = await fetchMonthlySalesforceReportData(
-          newRun.reportType || DEFAULT_MONTHLY_REPORT_TYPE,
-          newRun.reportMonth
-        );
-        report = await buildReportForType(newRun.reportType, newRun.reportMonth, sourceData);
-      }
-      updateStoredRun(newRun.id, (run) => {
-        run.updatedAt = new Date().toISOString();
-        run.statusDetail = "Salesforce data received. Generating month-end files.";
-      });
-      const artifacts = writeRunArtifacts(newRun.id, newRun.reportType, report);
-
-      updateStoredRun(newRun.id, (run) => {
-        run.status = "complete";
-        run.updatedAt = new Date().toISOString();
-        run.statusDetail = report?.printArtifactWarning
-          ? `Salesforce report run completed successfully. ${report.printArtifactWarning}`
-          : "Salesforce report run completed successfully.";
-        run.report = compactReportPayload(run.reportType, report);
-        run.artifacts = artifacts;
-      });
-    } catch (error) {
-      updateStoredRun(newRun.id, (run) => {
-        run.status = "failed";
-        run.updatedAt = new Date().toISOString();
-        run.statusDetail = error.message;
-      });
-    }
-      });
+      .then(() => executeMonthlyReportInWorker(newRun.id));
   }, 1200);
 
   return serializeRun(newRun);
@@ -2519,7 +2592,10 @@ function createFinalSummaryLetterRun(summaryRunId, reportMonth, options = {}) {
             !summaryRun.report.finalSummaryLetter.reportMonth ||
             !summaryHasLetterArtifacts
           ) {
-            generateFinalSummaryLetter(summaryRun.id);
+            throw new Error(
+              summaryRun.report.finalSummaryLetterError
+              || "The summary completed, but its final summary letter files were not generated."
+            );
           }
 
           const updatedRuns = readRuns();
@@ -2713,6 +2789,21 @@ function generateFinalSummaryLetter(runId) {
   writeRuns(runs);
 
   return serializeRun(run);
+}
+
+if (!isMainThread && workerData?.task === "execute-monthly-report") {
+  executeStoredMonthlyReportRun(String(workerData.runId || ""))
+    .then(() => {
+      parentPort?.postMessage({ ok: true, runId: workerData.runId });
+    })
+    .catch((error) => {
+      parentPort?.postMessage({
+        ok: false,
+        runId: workerData.runId,
+        error: String(error?.message || error || "Month-end worker failed."),
+      });
+      process.exitCode = 1;
+    });
 }
 
 module.exports = {
