@@ -20,6 +20,34 @@ function writesEnabled() {
   return String(process.env.HPA_BILLING_SALESFORCE_WRITES_ENABLED || "").trim().toLowerCase() === "true";
 }
 
+const BILL_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function reportDateParts(input) {
+  const normalized = String(input ?? "").trim().replace(/(\d+)(st|nd|rd|th)\b/gi, "$1");
+  const timestamp = Date.parse(normalized);
+  if (!Number.isFinite(timestamp)) return null;
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const monthIndex = date.getMonth();
+  const day = date.getDate();
+  const mod100 = day % 100;
+  const suffix = mod100 >= 11 && mod100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[day % 10] || "th");
+  return {
+    iso: `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    display: `${BILL_MONTH_NAMES[monthIndex]} ${day}, ${year}`,
+    ordinalDisplay: `${BILL_MONTH_NAMES[monthIndex]} ${day}${suffix}, ${year}`,
+  };
+}
+
+function resolveAuthoritativeBill3Lapse(rows = []) {
+  const resolved = rows.map((row) => reportDateParts(row.values?.Lapse)).filter(Boolean);
+  const unique = new Map(resolved.map((entry) => [entry.iso, entry]));
+  if (unique.size > 1) {
+    return { value: null, error: `Bill 3 report contains ${unique.size} different Lapse dates; one authoritative general-notice date is required.` };
+  }
+  return { value: unique.values().next().value || null, error: "" };
+}
+
 function requireWritesEnabled() {
   if (!writesEnabled()) throw new Error("Salesforce billing writes are disabled for this deployment. Set HPA_BILLING_SALESFORCE_WRITES_ENABLED=true only after approved testing.");
 }
@@ -57,7 +85,7 @@ function runOfficeGenerator(payload) {
     const result = spawnSync(
       "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(__dirname, "..", "scripts", "generate-billing-package.ps1"), "-PayloadPath", payloadPath],
-      { encoding: "utf8", windowsHide: true, timeout: 15 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 }
+      { encoding: "utf8", windowsHide: true, timeout: 45 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 }
     );
     if (result.status !== 0) throw new Error(result.stderr?.trim() || result.stdout?.trim() || "Billing document generation failed.");
     const resultPath = path.join(outputDir, "generation-result.json");
@@ -78,12 +106,12 @@ async function validateGeneratedBillingPdfs(generated, datasets) {
   const errors = [];
   const details = {};
   const specs = [
-    ["Bill1_", "bill1", datasets.bill1.rows], ["Bill2_", "bill2", datasets.bill2.rows],
-    ["Bill3_", "bill3", datasets.bill3.rows], ["Bill4_", "bill4", datasets.bill4.rows],
-    ["Bill3_Important_Notice_", "bill3Notices", datasets.bill3.rows],
-    ["Bill4_Important_Notice_", "bill4Notices", datasets.bill4.rows],
+    ["_Bill1.pdf", "bill1", datasets.bill1.rows], ["_Bill2.pdf", "bill2", datasets.bill2.rows],
+    ["_Bill3.pdf", "bill3", datasets.bill3.rows], ["_Bill4.pdf", "bill4", datasets.bill4.rows],
+    ["_Bill3_Letter.pdf", "bill3Notices", datasets.bill3.rows],
+    ["_Bill4_Letter.pdf", "bill4Notices", datasets.bill4.rows],
   ];
-  const commonFields = ["Member 1", "Certificate Number: Billing Street", "Certificate Number: Billing City", "Certificate Number: Billing State/Province", "Certificate Number: Billing Zip/Postal Code"];
+  const commonFields = ["Member 1", "Member 2", "Certificate Number: Billing Street", "Certificate Number: Billing City", "Certificate Number: Billing State/Province", "Certificate Number: Billing Zip/Postal Code"];
   function valueVariants(value) {
     const raw = String(value ?? "").trim();
     const variants = new Set([raw, raw.replace(/,/g, "")]);
@@ -105,8 +133,8 @@ async function validateGeneratedBillingPdfs(generated, datasets) {
     const normalized = String(pageText || "").replace(/[$,]/g, "").replace(/\s+/g, " ").toLowerCase();
     return valueVariants(value).some((variant) => normalized.includes(variant.replace(/[$,]/g, "")));
   }
-  for (const [prefix, key, rows] of specs) {
-    const artifact = (generated.artifacts || []).find((item) => item.kind !== "summary" && String(item.fileName || "").startsWith(prefix));
+  for (const [suffix, key, rows] of specs) {
+    const artifact = (generated.artifacts || []).find((item) => item.kind !== "summary" && String(item.fileName || "").endsWith(suffix));
     if (!artifact) { errors.push(`${key} PDF is missing.`); continue; }
     const parsed = await readPdf(path.join(generated.outputDirectory, artifact.fileName));
     const text = parsed.text || "";
@@ -159,13 +187,8 @@ async function runMonthlyBilling(run, options = {}) {
   const datasets = await retrieveBillingReports(options.dependencies);
   await progress("Sorting certificates");
   const dataErrors = Object.values(datasets).flatMap((dataset) => dataset.errors || []);
-  const normalizedGeneralLapse = Date.parse(String(run.dates?.bill3LapseDeadlineDisplay || "").replace(/(\d+)(st|nd|rd|th)/i, "$1"));
-  for (const row of datasets.bill3.rows) {
-    const rowLapse = Date.parse(String(row.values?.Lapse || "").replace(/(\d+)(st|nd|rd|th)/i, "$1"));
-    if (!Number.isFinite(normalizedGeneralLapse) || !Number.isFinite(rowLapse) || normalizedGeneralLapse !== rowLapse) {
-      dataErrors.push({ group: "bill3", certificateNumber: row.certificateNumber, recordId: row.recordId, error: "Bill 3 report Lapse does not match the approved general-notice lapse date." });
-    }
-  }
+  const authoritativeBill3Lapse = resolveAuthoritativeBill3Lapse(datasets.bill3.rows);
+  if (authoritativeBill3Lapse.error) dataErrors.push({ group: "bill3", error: authoritativeBill3Lapse.error });
   if (dataErrors.length) {
     const error = new Error(`${dataErrors.length} billing data exception(s) must be corrected before document generation.`);
     error.code = "billing_data_validation_failed";
@@ -176,9 +199,18 @@ async function runMonthlyBilling(run, options = {}) {
   }
   const bill4Pairing = validateBill4Pairing(datasets.bill4.rows, datasets.bill4.rows);
   if (!bill4Pairing.valid) throw new Error(bill4Pairing.errors.join(" "));
+  const effectiveDates = authoritativeBill3Lapse.value
+    ? {
+        ...(run.dates || {}),
+        bill3LapseDeadline: authoritativeBill3Lapse.value.iso,
+        bill3LapseDeadlineDisplay: authoritativeBill3Lapse.value.display,
+        bill3LapseDeadlineOrdinalDisplay: authoritativeBill3Lapse.value.ordinalDisplay,
+      }
+    : { ...(run.dates || {}) };
+  const effectiveRun = { ...run, dates: effectiveDates };
   await progress("Generating invoices");
   const generator = options.generatePackage || runOfficeGenerator;
-  const generated = generator({ run, corrections, datasets, bill4Pairing });
+  const generated = generator({ run: effectiveRun, corrections, datasets, bill4Pairing });
   await progress("Generating notices");
   await progress("Validating PDFs");
   const pdfValidation = options.validatePdfs === false
@@ -194,7 +226,7 @@ async function runMonthlyBilling(run, options = {}) {
     throw error;
   }
   await progress("Ready to Download");
-  return { corrections, datasets, bill4Pairing, generated };
+  return { corrections, datasets, bill4Pairing, generated, effectiveDates };
 }
 
 function getBillingArtifactPath(run, fileName) {

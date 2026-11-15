@@ -1,32 +1,21 @@
 [
   {
-    "id": "row_missing_report_cert",
-    "session_id": "session_missing_report_cert",
+    "id": "row_active_policy",
+    "session_id": "session_active_policy",
     "row_number": 1,
-    "transaction_id": "txn-missing",
-    "certificate_number": "999999",
-    "matched_policy_id": "",
-    "matched_certificate_record_id": "",
+    "transaction_id": "txn-active",
+    "certificate_number": "226560",
+    "matched_policy_id": "policy-active",
+    "matched_certificate_record_id": "001ACTIVE123456",
     "manual_policy_id": "",
     "amount": "75.62",
     "transaction_date": "2026-06-18",
     "payment_account": "5475",
     "months": "",
-    "status": "error",
-    "issue_reason": "Certificate 999999 was not found on report 00OQm0000016PuPMAU. | Missing Certificate record lookup.",
-    "issue_details": [
-      {
-        "severity": "error",
-        "code": "missing_policy_id",
-        "message": "Certificate 999999 was not found on report 00OQm0000016PuPMAU."
-      },
-      {
-        "severity": "error",
-        "code": "missing_certificate_record_id",
-        "message": "Missing Certificate record lookup."
-      }
-    ],
-    "payment_name": "999999 - Online CC - 5475 - 6/18/2026",
+    "status": "ready",
+    "issue_reason": "",
+    "issue_details": [],
+    "payment_name": "226560 - Online CC - 5475 - 6/18/2026",
     "name_amount_match_note": "",
     "raw_json": {
       "TransactionDate": "2026-06-18"
@@ -35,9 +24,9 @@
     "type": "2",
     "pay_type": "3",
     "manual_payment": "Yes",
-    "matched_policy_status": "",
-    "expected_amount": null,
-    "expected_amount_label": "",
+    "matched_policy_status": "In Force",
+    "expected_amount": 75.62,
+    "expected_amount_label": "P1",
     "manually_corrected": false
   }
 ]

@@ -91,6 +91,21 @@ test("updateBillRun persists status transitions and audit events", () => {
   assert.equal(updated.events.at(-1).newStatus, "Pending Approval");
 });
 
+test("updateBillRun persists report-authoritative date overrides", () => {
+  const tempDir = createTempDir();
+  const { billRunService } = loadFreshBillServices(tempDir);
+  const run = billRunService.createBillRun({ billMonth: "2026-12", createdBy: "Tester" });
+  const updated = billRunService.updateBillRun(run.id, {
+    dates: {
+      bill3LapseDeadline: "2026-12-14",
+      bill3LapseDeadlineDisplay: "December 14, 2026",
+      bill3LapseDeadlineOrdinalDisplay: "December 14th, 2026",
+    },
+  });
+  assert.equal(updated.dates.bill3LapseDeadlineDisplay, "December 14, 2026");
+  assert.equal(billRunService.getBillRun(run.id).dates.bill3LapseDeadline, "2026-12-14");
+});
+
 test("calculateBillDates handles year rollover and ordinals", () => {
   const tempDir = createTempDir();
   const { billDateService } = loadFreshBillServices(tempDir);

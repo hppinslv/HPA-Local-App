@@ -160,6 +160,19 @@ function ensureArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function mergeBillRuns(remoteRuns, localRuns) {
+  const byId = new Map();
+  for (const run of [...ensureArray(remoteRuns), ...ensureArray(localRuns)]) {
+    const id = String(run?.id || "").trim();
+    if (!id) continue;
+    const existing = byId.get(id);
+    if (!existing || String(run.updatedAt || run.createdAt || "") >= String(existing.updatedAt || existing.createdAt || "")) {
+      byId.set(id, clone(run));
+    }
+  }
+  return [...byId.values()];
+}
+
 function appendRunEvent(run, eventType, details = {}, actor = DEFAULT_ACTOR) {
   const event = {
     id: buildEventId(),
@@ -382,6 +395,9 @@ function updateBillRun(runId, changes = {}) {
   if (changes.counts && typeof changes.counts === "object") {
     run.counts = { ...run.counts, ...clone(changes.counts) };
   }
+  if (changes.dates && typeof changes.dates === "object") {
+    run.dates = { ...run.dates, ...clone(changes.dates) };
+  }
   if (Array.isArray(changes.documents)) run.documents = clone(changes.documents);
   if (Array.isArray(changes.validations)) run.validations = clone(changes.validations);
   if (typeof changes.outputDirectory === "string") run.outputDirectory = changes.outputDirectory;
@@ -460,12 +476,13 @@ async function initializeBillRunPersistence() {
   billPersistenceReady = true;
 
   ensureDir(BILL_DATA_DIR);
+  const localRuns = safeParseJson(BILL_RUNS_PATH, []);
   const [remoteRuns, remoteSettings] = await Promise.all([
-    loadStateObject(BILL_RUNS_SUPABASE_KEY, safeParseJson(BILL_RUNS_PATH, [])),
+    loadStateObject(BILL_RUNS_SUPABASE_KEY, localRuns),
     loadStateObject(BILL_SETTINGS_SUPABASE_KEY, safeParseJson(BILL_SETTINGS_PATH, normalizeSettings(DEFAULT_BILL_SETTINGS))),
   ]);
 
-  billRunsCache = Array.isArray(remoteRuns) ? remoteRuns : [];
+  billRunsCache = mergeBillRuns(remoteRuns, localRuns);
   billSettingsCache = normalizeSettings(remoteSettings);
   writeBillRuns(billRunsCache);
   writeBillSettings(billSettingsCache);

@@ -10,7 +10,9 @@ const BILL2_CORRECTION_REPORT_ID = "00O5G000008lD4oUAE";
 const BILL4_CORRECTION_REPORT_ID = "00O5G000008lD4tUAE";
 const POLICY_OBJECT = "Policy__c";
 const BILL2_PAYMENT_TYPE_FIELD = "Pay_Type__c";
-const MONTHLY_BILLING_PAY_TYPE = "Monthly Billing";
+const BILL2_PREMIUM_FIELD = "Total_Monthly_Premium__c";
+const MONTHLY_BILLING_PAY_TYPE = "3";
+const MONTHLY_BILLING_PAY_TYPE_LABEL = "Monthly Billing";
 const TARGET_NON_CONTRIB = 3000;
 const INCORRECT_NON_CONTRIB = 7000;
 const MAX_CONTRIB = 500000;
@@ -22,7 +24,11 @@ function value(row, labels) {
   for (const label of labels) {
     const key = normalizeLabel(label);
     const candidate = row?.[key] ?? row?.[`${key} label`];
-    if (candidate !== undefined && candidate !== null && String(candidate).trim() !== "") return candidate;
+    if (candidate !== undefined && candidate !== null && String(candidate).trim() !== "") {
+      if (typeof candidate === "object" && Number.isFinite(Number(candidate.amount))) return Number(candidate.amount);
+      if (typeof candidate === "object" && candidate.value !== undefined) return candidate.value;
+      return candidate;
+    }
   }
   return "";
 }
@@ -41,6 +47,19 @@ function parseMoneyStrict(input, fieldName) {
   return normalized;
 }
 
+function isMonthlyBillingValue(input) {
+  const value = String(input ?? "").trim().toLowerCase();
+  return value === MONTHLY_BILLING_PAY_TYPE || value === "monthly bill" || value === "monthly billing";
+}
+
+function sameStoredValue(left, right) {
+  if (left === null || left === undefined || left === "") return right === null || right === undefined || right === "";
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber === rightNumber;
+  return String(left) === String(right);
+}
+
 function buildBill2CorrectionRow(row) {
   const policyId = requiredText(row, ["Policy ID", "Policy Id", "Record ID", "Id"], "Policy ID");
   const payType = String(value(row, ["Pay Type", BILL2_PAYMENT_TYPE_FIELD])).trim();
@@ -50,9 +69,10 @@ function buildBill2CorrectionRow(row) {
     certificateNumber: String(value(row, ["Certificate Number", "Certificate Name"])).trim(),
     billingName: String(value(row, ["Billing Name", "Name"])).trim(),
     payType,
-    targetPayType: MONTHLY_BILLING_PAY_TYPE,
+    targetPayType: MONTHLY_BILLING_PAY_TYPE_LABEL,
+    targetPayTypeValue: MONTHLY_BILLING_PAY_TYPE,
     sourceReportId: BILL2_CORRECTION_REPORT_ID,
-    status: payType === MONTHLY_BILLING_PAY_TYPE ? "Unchanged" : "Ready",
+    status: isMonthlyBillingValue(payType) ? "Unchanged" : "Ready",
   };
 }
 
@@ -151,7 +171,7 @@ async function resolveBill4Fields(dependencies = {}) {
   return {
     contrib: resolveDescribeField(describe, ["Orig Contrib AD&D Coverage Amt", "Contrib AD&D Coverage Amt", "Orig_Contrib_AD_D_Coverage_Amt__c"], "Bill 4 Contrib", { requireUpdateable: true }),
     nonContrib: resolveDescribeField(describe, ["Orig Non-Contrib AD&D Coverage Amt", "Non-Contrib AD&D Coverage Amt", "Orig_Non_Contrib_AD_D_Coverage_Amt__c"], "Bill 4 Non-Contrib", { requireUpdateable: true }),
-    premium: resolveDescribeField(describe, ["Monthly Premium", "Premium", "P1", "Monthly_Premium__c"], "Bill 4 monthly premium"),
+    premium: resolveDescribeField(describe, ["Total Monthly Premium", "Total_Monthly_Premium__c"], "Bill 4 stored monthly premium", { requireUpdateable: true }),
   };
 }
 
@@ -162,17 +182,20 @@ async function applyBill2Corrections(rows, dependencies = {}) {
     const row = clone(input);
     if (!row.policyId || row.status === "Data Error") { results.push(row); continue; }
     try {
-      const before = await gateway.read(row.policyId, [BILL2_PAYMENT_TYPE_FIELD]);
+      const before = await gateway.read(row.policyId, [BILL2_PAYMENT_TYPE_FIELD, BILL2_PREMIUM_FIELD]);
       const originalPayType = String(before[BILL2_PAYMENT_TYPE_FIELD] ?? "").trim();
+      const premiumBefore = before[BILL2_PREMIUM_FIELD];
       let updatePerformed = false;
       if (originalPayType !== MONTHLY_BILLING_PAY_TYPE) {
         await gateway.update(row.policyId, { [BILL2_PAYMENT_TYPE_FIELD]: MONTHLY_BILLING_PAY_TYPE });
         updatePerformed = true;
       }
-      const after = await gateway.read(row.policyId, [BILL2_PAYMENT_TYPE_FIELD]);
+      const after = await gateway.read(row.policyId, [BILL2_PAYMENT_TYPE_FIELD, BILL2_PREMIUM_FIELD]);
       const verifiedPayType = String(after[BILL2_PAYMENT_TYPE_FIELD] ?? "").trim();
+      const premiumAfter = after[BILL2_PREMIUM_FIELD];
       if (verifiedPayType !== MONTHLY_BILLING_PAY_TYPE) throw new Error(`Verification returned ${verifiedPayType || "a blank value"}.`);
-      results.push({ ...row, payType: originalPayType, verifiedPayType, updatePerformed, status: updatePerformed ? "Updated and Verified" : "Unchanged and Verified" });
+      if (!sameStoredValue(premiumBefore, premiumAfter)) throw new Error("Monthly premium changed during the Bill 2 payment-type correction.");
+      results.push({ ...row, payType: originalPayType, verifiedPayType, premiumBefore, premiumAfter, updatePerformed, status: updatePerformed ? "Updated and Verified" : "Unchanged and Verified" });
     } catch (error) {
       results.push({ ...row, status: "Failed", error: error.message || String(error), verified: false });
     }
@@ -181,13 +204,19 @@ async function applyBill2Corrections(rows, dependencies = {}) {
 }
 
 async function applyBill4Corrections(rows, dependencies = {}) {
-  const gateway = dependencies.gateway || await createDefaultGateway();
-  const fields = await resolveBill4Fields(dependencies);
+  let gateway = dependencies.gateway || null;
+  let fields = dependencies.fields || null;
   const results = [];
   for (const input of rows || []) {
     const row = clone(input);
     if (!row.policyId || row.status === "Data Error") { results.push(row); continue; }
+    if (row.requiresUpdate === false) {
+      results.push({ ...row, updatePerformed: false, status: "Unchanged and Verified" });
+      continue;
+    }
     try {
+      if (!gateway) gateway = await createDefaultGateway();
+      if (!fields) fields = await resolveBill4Fields(dependencies);
       const before = await gateway.read(row.policyId, [fields.contrib, fields.nonContrib, fields.premium]);
       const amounts = calculateBill4Correction(before[fields.contrib], before[fields.nonContrib]);
       const premiumBefore = parseMoneyStrict(before[fields.premium], "Existing premium");
@@ -196,13 +225,20 @@ async function applyBill4Corrections(rows, dependencies = {}) {
         await gateway.update(row.policyId, { [fields.contrib]: amounts.newContrib, [fields.nonContrib]: amounts.newNonContrib });
         updatePerformed = true;
       }
-      const after = await gateway.read(row.policyId, [fields.contrib, fields.nonContrib, fields.premium]);
+      let after = await gateway.read(row.policyId, [fields.contrib, fields.nonContrib, fields.premium]);
+      const premiumAfterCoverageUpdate = parseMoneyStrict(after[fields.premium], "Premium after coverage update");
+      let premiumRestored = false;
+      if (premiumAfterCoverageUpdate !== premiumBefore) {
+        await gateway.update(row.policyId, { [fields.premium]: premiumBefore });
+        premiumRestored = true;
+        after = await gateway.read(row.policyId, [fields.contrib, fields.nonContrib, fields.premium]);
+      }
       const verifiedContrib = parseMoneyStrict(after[fields.contrib], "Verified Contrib");
       const verifiedNonContrib = parseMoneyStrict(after[fields.nonContrib], "Verified Non-Contrib");
       const premiumAfter = parseMoneyStrict(after[fields.premium], "Verified premium");
       if (verifiedContrib !== amounts.newContrib || verifiedNonContrib !== amounts.newNonContrib) throw new Error("Saved coverage values did not match the approved calculation.");
       if (premiumAfter !== premiumBefore) throw new Error("Monthly premium changed during the Bill 4 correction.");
-      results.push({ ...row, ...amounts, premiumBefore, premiumAfter, verifiedContrib, verifiedNonContrib, updatePerformed, status: updatePerformed ? "Updated and Verified" : "Unchanged and Verified" });
+      results.push({ ...row, ...amounts, premiumBefore, premiumAfterCoverageUpdate, premiumAfter, premiumRestored, verifiedContrib, verifiedNonContrib, updatePerformed, status: updatePerformed ? "Updated and Verified" : "Unchanged and Verified" });
     } catch (error) {
       results.push({ ...row, status: "Failed", error: error.message || String(error), verified: false });
     }
@@ -224,7 +260,7 @@ function summarizeCorrectionResults(bill2, bill4) {
 }
 
 module.exports = {
-  BILL2_CORRECTION_REPORT_ID, BILL4_CORRECTION_REPORT_ID, BILL2_PAYMENT_TYPE_FIELD,
+  BILL2_CORRECTION_REPORT_ID, BILL4_CORRECTION_REPORT_ID, BILL2_PAYMENT_TYPE_FIELD, BILL2_PREMIUM_FIELD,
   INCORRECT_NON_CONTRIB, MAX_CONTRIB, MAX_TOTAL, MONTHLY_BILLING_PAY_TYPE,
   POLICY_OBJECT, TARGET_NON_CONTRIB, applyBill2Corrections, applyBill4Corrections,
   buildBill2CorrectionRow, buildBill4CorrectionRow, calculateBill4Correction,

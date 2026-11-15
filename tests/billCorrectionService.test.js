@@ -5,6 +5,7 @@ const { normalizeLabel } = require("../services/salesforceClient");
 const {
   BILL2_CORRECTION_REPORT_ID,
   BILL2_PAYMENT_TYPE_FIELD,
+  BILL2_PREMIUM_FIELD,
   MONTHLY_BILLING_PAY_TYPE,
   applyBill2Corrections,
   applyBill4Corrections,
@@ -41,15 +42,16 @@ test("Bill 2 pulls every report row and uses the authoritative report/value", as
     return { reportName: "Bill 2 Correction", rows: source };
   } });
   assert.equal(pulled.rows.length, 5);
-  assert.deepEqual(pulled.rows.map((row) => row.targetPayType), Array(5).fill(MONTHLY_BILLING_PAY_TYPE));
+  assert.deepEqual(pulled.rows.map((row) => row.targetPayType), Array(5).fill("Monthly Billing"));
+  assert.deepEqual(pulled.rows.map((row) => row.targetPayTypeValue), Array(5).fill(MONTHLY_BILLING_PAY_TYPE));
   assert.equal(pulled.rows[3].status, "Unchanged");
 });
 
 test("Bill 2 updates all nonmatching types, skips matching values, and verifies rereads", async () => {
   const records = {
-    p1: { [BILL2_PAYMENT_TYPE_FIELD]: "CC", Other__c: "keep" },
-    p2: { [BILL2_PAYMENT_TYPE_FIELD]: "ACH" },
-    p3: { [BILL2_PAYMENT_TYPE_FIELD]: "Monthly Billing" },
+    p1: { [BILL2_PAYMENT_TYPE_FIELD]: "2", [BILL2_PREMIUM_FIELD]: 81.42, Other__c: "keep" },
+    p2: { [BILL2_PAYMENT_TYPE_FIELD]: "1", [BILL2_PREMIUM_FIELD]: 25.87 },
+    p3: { [BILL2_PAYMENT_TYPE_FIELD]: "3", [BILL2_PREMIUM_FIELD]: 54.27 },
   };
   const gateway = memoryGateway(records);
   const rows = ["p1", "p2", "p3"].map((policyId) => ({ policyId, status: "Ready" }));
@@ -61,10 +63,24 @@ test("Bill 2 updates all nonmatching types, skips matching values, and verifies 
 });
 
 test("Bill 2 does not report success when the saved value cannot be verified", async () => {
-  const records = { p1: { [BILL2_PAYMENT_TYPE_FIELD]: "CC" } };
+  const records = { p1: { [BILL2_PAYMENT_TYPE_FIELD]: "2", [BILL2_PREMIUM_FIELD]: 42 } };
   const results = await applyBill2Corrections([{ policyId: "p1", status: "Ready" }], { gateway: memoryGateway(records, { ignoreUpdate: true }) });
   assert.equal(results[0].status, "Failed");
   assert.match(results[0].error, /Verification returned/i);
+});
+
+test("Bill 2 fails verification if Salesforce automation changes the stored premium", async () => {
+  const records = { p1: { [BILL2_PAYMENT_TYPE_FIELD]: "2", [BILL2_PREMIUM_FIELD]: 81.42 } };
+  const gateway = {
+    async read(id) { return { ...records[id] }; },
+    async update(id, changes) {
+      Object.assign(records[id], changes);
+      records[id][BILL2_PREMIUM_FIELD] = 99;
+    },
+  };
+  const results = await applyBill2Corrections([{ policyId: "p1", status: "Ready" }], { gateway });
+  assert.equal(results[0].status, "Failed");
+  assert.match(results[0].error, /premium changed/i);
 });
 
 test("Bill 4 calculations preserve coverage, cap coverage, and ignore non-7000 values", () => {
@@ -87,6 +103,19 @@ test("Bill 4 invalid values become explicit data errors", () => {
   assert.throws(() => calculateBill4Correction(-1, 7000), /negative/i);
 });
 
+test("Bill 4 accepts Salesforce currency cells and skips non-7000 rows without a write", async () => {
+  const built = buildBill4CorrectionRow(reportRow({
+    "Policy ID": "p1",
+    "Orig Contrib AD&D Coverage Amt": { amount: 143000, currency: null },
+    "Orig Non-Contrib AD&D Coverage Amt": { amount: 3000, currency: null },
+  }));
+  assert.equal(built.status, "Unchanged");
+  assert.equal(built.originalContrib, 143000);
+  const result = await applyBill4Corrections([built], { gateway: { read: async () => { throw new Error("should not read"); }, update: async () => { throw new Error("should not update"); } } });
+  assert.equal(result[0].status, "Unchanged and Verified");
+  assert.equal(result[0].updatePerformed, false);
+});
+
 test("Bill 4 updates only coverage fields, preserves premium, and verifies values", async () => {
   const fields = { contrib: "Contrib__c", nonContrib: "NonContrib__c", premium: "Premium__c" };
   const records = { p1: { Contrib__c: 500000, NonContrib__c: 7000, Premium__c: 42.5, Other__c: "keep" } };
@@ -98,6 +127,27 @@ test("Bill 4 updates only coverage fields, preserves premium, and verifies value
   assert.equal(result[0].premiumAfter, 42.5);
   assert.deepEqual(Object.keys(gateway.updates[0].changes).sort(), ["Contrib__c", "NonContrib__c"]);
   assert.equal(records.p1.Other__c, "keep");
+});
+
+test("Bill 4 restores the stored premium when Salesforce automation recalculates it", async () => {
+  const fields = { contrib: "Contrib__c", nonContrib: "NonContrib__c", premium: "Premium__c" };
+  const records = { p1: { Contrib__c: 154000, NonContrib__c: 7000, Premium__c: 54.82 } };
+  const updates = [];
+  const gateway = {
+    async read(id) { return { ...records[id] }; },
+    async update(id, changes) {
+      updates.push({ ...changes });
+      Object.assign(records[id], changes);
+      if (Object.hasOwn(changes, "Contrib__c")) records[id].Premium__c = 56.14;
+    },
+  };
+  const result = await applyBill4Corrections([{ policyId: "p1", status: "Ready" }], { gateway, fields });
+  assert.equal(result[0].status, "Updated and Verified");
+  assert.equal(result[0].premiumBefore, 54.82);
+  assert.equal(result[0].premiumAfterCoverageUpdate, 56.14);
+  assert.equal(result[0].premiumAfter, 54.82);
+  assert.equal(result[0].premiumRestored, true);
+  assert.deepEqual(updates.at(-1), { Premium__c: 54.82 });
 });
 
 test("Bill 4 rejects update and verification failures", async () => {

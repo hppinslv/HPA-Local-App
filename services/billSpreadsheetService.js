@@ -39,9 +39,49 @@ function firstValue(row, labels) {
   for (const label of labels) {
     const key = normalizeLabel(label);
     const candidate = row?.[key] ?? row?.[`${key} label`];
-    if (candidate !== undefined && candidate !== null && String(candidate).trim() !== "") return candidate;
+    if (candidate !== undefined && candidate !== null && String(candidate).trim() !== "") {
+      if (typeof candidate === "object" && Number.isFinite(Number(candidate.amount))) return Number(candidate.amount);
+      if (typeof candidate === "object" && candidate.value !== undefined) return candidate.value;
+      return candidate;
+    }
   }
   return "";
+}
+
+function firstDisplayValue(row, labels) {
+  for (const label of labels) {
+    const key = normalizeLabel(label);
+    const candidate = row?.[`${key} label`] ?? row?.[`${label}__label`];
+    if (candidate !== undefined && candidate !== null && String(candidate).trim() !== "") {
+      if (typeof candidate === "object" && Number.isFinite(Number(candidate.amount))) return Number(candidate.amount);
+      if (typeof candidate === "object" && candidate.value !== undefined) return candidate.value;
+      return candidate;
+    }
+  }
+  return firstValue(row, labels);
+}
+
+function isBlankLookupDisplay(value) {
+  const text = String(value ?? "").trim();
+  return text === "" || /^-+$/.test(text) || /^(?:n\/a|null|undefined)$/i.test(text);
+}
+
+function looksLikeSalesforceId(value) {
+  return /^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$/.test(String(value ?? "").trim());
+}
+
+function memberDisplayValue(row, header) {
+  const labels = FIELD_ALIASES[header] || [header];
+  for (const label of labels) {
+    const key = normalizeLabel(label);
+    const candidate = row?.[`${key} label`] ?? row?.[`${label}__label`];
+    if (candidate !== undefined && candidate !== null) {
+      return isBlankLookupDisplay(candidate) ? "" : firstDisplayValue(row, [label]);
+    }
+  }
+  const raw = firstValue(row, labels);
+  if (isBlankLookupDisplay(raw) || looksLikeSalesforceId(raw)) return "";
+  return raw;
 }
 
 function parseCertificate(value) {
@@ -51,7 +91,10 @@ function parseCertificate(value) {
 }
 
 function recordIdFromRow(row) {
-  return String(firstValue(row, ["Policy ID", "Record ID", "Id", "Certificate Number ID", "Certificate ID"])).trim();
+  const explicitId = String(firstValue(row, ["Policy ID", "Record ID", "Id", "Certificate Number ID", "Certificate ID"])).trim();
+  if (explicitId) return explicitId;
+  const certificateReferenceId = String(firstValue(row, ["Certificate Number: Certificate Name"])).trim();
+  return /^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$/.test(certificateReferenceId) ? certificateReferenceId : "";
 }
 
 function isNumericAmount(input) {
@@ -62,13 +105,21 @@ function isNumericAmount(input) {
 
 function isReadableDate(input) {
   const text = String(input ?? "").trim();
-  return Boolean(text) && Number.isFinite(Date.parse(text.replace(/,\s*(\d{4})$/, " $1")));
+  if (!text) return false;
+  const normalized = text
+    .replace(/(\d+)(st|nd|rd|th)\b/gi, "$1")
+    .replace(/,\s*(\d{4})$/, " $1");
+  if (/^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)$/i.test(normalized)) return true;
+  return Number.isFinite(Date.parse(normalized));
 }
 
 function mapBillingRow(group, row) {
   const headers = BILLING_HEADERS[group];
   if (!headers) throw new Error(`Unknown billing group ${group}.`);
   const values = Object.fromEntries(headers.map((header) => [header, firstValue(row, FIELD_ALIASES[header] || [header])]));
+  values["Certificate Number: Certificate Name"] = firstDisplayValue(row, FIELD_ALIASES["Certificate Number: Certificate Name"]);
+  values["Member 1"] = memberDisplayValue(row, "Member 1");
+  values["Member 2"] = memberDisplayValue(row, "Member 2");
   const certificate = parseCertificate(values["Certificate Number: Certificate Name"]);
   const errors = [];
   if (!recordIdFromRow(row)) errors.push("Salesforce record ID is missing.");

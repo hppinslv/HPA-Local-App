@@ -1540,9 +1540,53 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (request.method === "DELETE") {
-      sendJson(response, 410, { error: "Billing run deletion is disabled to preserve the audit history." });
+      try {
+        const run = getBillRun(billRunMatch[1]);
+        const hasGeneratedFiles = Array.isArray(run.documents) && run.documents.length > 0;
+        const deletableStatus = ["Draft", "Cancelled"].includes(String(run.status || "").trim());
+        if (activeBillExecutionKeys.has(`run:${run.id}`) || activeBillExecutionKeys.has(`month:${run.billMonth}`)) {
+          sendJson(response, 409, { error: "This billing run is currently processing and cannot be deleted." });
+          return;
+        }
+        if (!deletableStatus || hasGeneratedFiles) {
+          sendJson(response, 409, { error: "Only unused Draft or Cancelled runs without generated files can be deleted. Use Correct and Rerun to replace incorrect billing files while preserving the audit history." });
+          return;
+        }
+        const actor = String(requestUrl.searchParams.get("actor") || "HPA User").trim() || "HPA User";
+        deleteBillRun(run.id, actor);
+        sendJson(response, 200, { dashboard: getBillDashboard(), runs: listBillRuns() });
+      } catch (error) {
+        sendJson(response, 400, { error: error.message || "Unable to delete bill run." });
+      }
       return;
     }
+  }
+
+  const billRerunMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/rerun$/);
+  if (billRerunMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("bills")) return sendPersistenceNotReady(response, "bills");
+    try {
+      const original = getBillRun(billRerunMatch[1]);
+      if (activeBillExecutionKeys.has(`run:${original.id}`) || activeBillExecutionKeys.has(`month:${original.billMonth}`)) {
+        sendJson(response, 409, { error: `A billing operation is already running for ${original.billMonth}.` });
+        return;
+      }
+      const body = await parseJsonBody(request);
+      const createdBy = String(body?.createdBy || "HPA User").trim() || "HPA User";
+      const reason = String(body?.reason || "Regenerated after correcting billing document output.").trim();
+      const rerun = createBillRun({
+        billMonth: original.billMonth,
+        scheduledProcessingDate: original.scheduledProcessingDate || original.dates?.processingDate || original.processingDate,
+        createdBy,
+        notes: `Corrected rerun of ${original.runCode || original.id}. ${reason}`,
+        allowDuplicateOverride: true,
+        duplicateOverrideReason: reason,
+      });
+      sendJson(response, 200, { run: rerun, originalRunId: original.id, dashboard: getBillDashboard(), runs: listBillRuns() });
+    } catch (error) {
+      sendJson(response, error.code === "duplicate_active_run" ? 409 : 400, { error: error.message || "Unable to create corrected billing rerun.", code: error.code || "" });
+    }
+    return;
   }
 
   const billArtifactMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/files\/([^/]+)$/);
@@ -1574,7 +1618,7 @@ const server = http.createServer(async (request, response) => {
       releaseExecution = beginBillExecution(run);
       const corrections = await runCorrections({
         billMonth: run.billMonth,
-        progress: async (activeStage) => { updateBillRun(runId, { actor: "HPA User", status: "Updating Salesforce", correctionStatus: "Running", activeStage }); },
+        progress: async (activeStage) => { updateBillRun(runId, { actor: "HPA User", status: "Updating Salesforce", correctionStatus: "Running", activeStage, lastError: "" }); },
       });
       const status = corrections.summary.complete ? "Corrections Complete" : "Salesforce Update Partially Failed";
       const updated = updateBillRun(runId, {
@@ -1585,13 +1629,16 @@ const server = http.createServer(async (request, response) => {
       });
       sendJson(response, corrections.summary.complete ? 200 : 409, { run: updated, corrections });
     } catch (error) {
-      try {
-        const run = getBillRun(runId);
-        const exception = writeBillingExceptionReport(run, error);
-        updateBillRun(runId, { actor: "HPA User", status: "Salesforce Update Partially Failed", correctionStatus: "Failed", lastError: error.message || String(error),
-          corrections: error.corrections ? { bill2: error.corrections.bill2 || [], bill4: error.corrections.bill4 || [] } : undefined,
-          documents: [...(run.documents || []), exception.artifact], outputDirectory: exception.outputDirectory });
-      } catch { /* preserve original error */ }
+      if (error.code !== "billing_run_in_progress") {
+        try {
+          const run = getBillRun(runId);
+          const exception = writeBillingExceptionReport(run, error);
+          const documents = [...(run.documents || []).filter((item) => item.fileName !== exception.artifact.fileName), exception.artifact];
+          updateBillRun(runId, { actor: "HPA User", status: "Salesforce Update Partially Failed", correctionStatus: "Failed", lastError: error.message || String(error),
+            corrections: error.corrections ? { bill2: error.corrections.bill2 || [], bill4: error.corrections.bill4 || [] } : undefined,
+            documents, outputDirectory: exception.outputDirectory });
+        } catch { /* preserve original error */ }
+      }
       sendJson(response, error.code === "billing_run_in_progress" ? 409 : 400, { error: error.message || "Unable to run bill corrections.", code: error.code || "", writesEnabled: writesEnabled() });
     } finally {
       if (releaseExecution) releaseExecution();
@@ -1608,7 +1655,7 @@ const server = http.createServer(async (request, response) => {
       const run = getBillRun(runId);
       releaseExecution = beginBillExecution(run);
       const result = await runMonthlyBilling(run, {
-        progress: async (activeStage) => { updateBillRun(runId, { actor: "HPA User", status: activeStage === "Ready to Download" ? "Documents Generated" : "Pulling Data", generationStatus: "Running", activeStage }); },
+        progress: async (activeStage) => { updateBillRun(runId, { actor: "HPA User", status: activeStage === "Ready to Download" ? "Documents Generated" : "Pulling Data", generationStatus: "Running", activeStage, lastError: "" }); },
       });
       const counts = {
         bill1: result.datasets.bill1.rows.length, bill2: result.datasets.bill2.rows.length,
@@ -1621,18 +1668,21 @@ const server = http.createServer(async (request, response) => {
         actor: "HPA User", status: "Documents Generated", correctionStatus: "Complete", generationStatus: "Complete", activeStage: "Ready to Download",
         corrections: { bill2: result.corrections.bill2, bill4: result.corrections.bill4 }, counts,
         documents: result.generated.artifacts || [], validations: [{ type: "bill4-pairing", ...result.bill4Pairing }, { type: "pdf-pages", pageCounts: result.generated.pageCounts }],
-        outputDirectory: result.generated.outputDirectory,
+        outputDirectory: result.generated.outputDirectory, dates: result.effectiveDates || run.dates,
       });
       sendJson(response, 200, { run: updated, result: { generated: result.generated, corrections: result.corrections.summary } });
     } catch (error) {
-      try {
-        const run = getBillRun(runId);
-        const exception = writeBillingExceptionReport(run, error);
-        updateBillRun(runId, { actor: "HPA User", status: "Validation Failed", generationStatus: "Failed", lastError: error.message || String(error),
-          corrections: error.corrections ? { bill2: error.corrections.bill2 || [], bill4: error.corrections.bill4 || [] } : undefined,
-          validations: [{ type: error.code || "workflow", valid: false, error: error.message || String(error), dataErrors: error.dataErrors || [] }],
-          documents: [...(run.documents || []), exception.artifact], outputDirectory: exception.outputDirectory });
-      } catch { /* preserve original error */ }
+      if (error.code !== "billing_run_in_progress") {
+        try {
+          const run = getBillRun(runId);
+          const exception = writeBillingExceptionReport(run, error);
+          const documents = [...(run.documents || []).filter((item) => item.fileName !== exception.artifact.fileName), exception.artifact];
+          updateBillRun(runId, { actor: "HPA User", status: "Validation Failed", generationStatus: "Failed", lastError: error.message || String(error),
+            corrections: error.corrections ? { bill2: error.corrections.bill2 || [], bill4: error.corrections.bill4 || [] } : undefined,
+            validations: [{ type: error.code || "workflow", valid: false, error: error.message || String(error), dataErrors: error.dataErrors || [] }],
+            documents, outputDirectory: exception.outputDirectory });
+        } catch { /* preserve original error */ }
+      }
       sendJson(response, error.code === "billing_run_in_progress" ? 409 : 400, { error: error.message || "Unable to run monthly billing.", code: error.code || "", writesEnabled: writesEnabled() });
     } finally {
       if (releaseExecution) releaseExecution();

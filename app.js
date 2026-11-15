@@ -163,6 +163,8 @@ const state = {
     dashboard: null,
     history: [],
     settings: null,
+    pollTimer: null,
+    pollInFlight: false,
   },
   scoreHistory: {
     latest: null,
@@ -16169,6 +16171,66 @@ function formatBillTimestamp(value) {
   return new Date(timestamp).toLocaleString("en-US");
 }
 
+const ACTIVE_BILL_RUN_STATUSES = new Set([
+  "Pulling Data",
+  "Ready for Salesforce Update",
+  "Updating Salesforce",
+  "Corrections Complete",
+  "Bill Data Ready",
+  "Ready to Generate",
+]);
+
+function isBillRunActive(run) {
+  if (!run) return false;
+  return run.generationStatus === "Running" || ACTIVE_BILL_RUN_STATUSES.has(run.status);
+}
+
+function updateBillRunControls() {
+  const active = isBillRunActive(state.bills.currentRun);
+  const monthlyButton = el("bill-create-run-button");
+  const correctionsButton = el("bill-corrections-only-button");
+  if (monthlyButton) {
+    monthlyButton.disabled = active;
+    monthlyButton.textContent = active ? "Monthly Billing Is Running..." : "Run Monthly Billing";
+  }
+  if (correctionsButton) correctionsButton.disabled = active;
+}
+
+function syncBillRunPolling({ immediate = false } = {}) {
+  if (state.bills.pollTimer) {
+    clearTimeout(state.bills.pollTimer);
+    state.bills.pollTimer = null;
+  }
+  if (!isBillRunActive(state.bills.currentRun) || !state.bills.currentRunId) return;
+  state.bills.pollTimer = setTimeout(pollBillRunStatus, immediate ? 250 : 2500);
+}
+
+async function pollBillRunStatus() {
+  state.bills.pollTimer = null;
+  if (state.bills.pollInFlight || !state.bills.currentRunId) {
+    syncBillRunPolling();
+    return;
+  }
+  state.bills.pollInFlight = true;
+  try {
+    const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(state.bills.currentRunId)}`);
+    state.bills.currentRun = payload.run || state.bills.currentRun;
+    renderBillCurrentRun();
+    if (!isBillRunActive(state.bills.currentRun)) {
+      await Promise.all([loadBillDashboard(), loadBillRuns()]);
+      const status = state.bills.currentRun?.lastError
+        ? `Billing stopped: ${state.bills.currentRun.lastError}`
+        : `${state.bills.currentRun?.runCode || "Billing"} finished: ${state.bills.currentRun?.status || "Complete"}.`;
+      setStatus("bill-run-status", status);
+    }
+  } catch (error) {
+    setStatus("bill-run-status", `Unable to refresh billing progress: ${error.message}`);
+  } finally {
+    state.bills.pollInFlight = false;
+    syncBillRunPolling();
+  }
+}
+
 function buildBillSummaryCard(label, value) {
   return `
     <article class="bill-summary-card">
@@ -16250,20 +16312,40 @@ function renderBillCurrentRun() {
   if (!run) {
     panel.innerHTML = '<div class="empty-state-block">No bill run selected yet.</div>';
     renderBillStepper(null);
+    updateBillRunControls();
     return;
   }
   renderBillStepper(run);
+  const active = isBillRunActive(run);
   const sectionLabel = normalizeBillSection(state.bills.section).replace("-", " ");
-  const nextStageButton = run.status === "Documents Generated"
+  const documents = ensureArray(run.documents);
+  const canDeleteRun = !active && documents.length === 0 && ["Draft", "Cancelled"].includes(String(run.status || ""));
+  const nextStageButton = active
     ? ""
-    : `<button class="primary-button" data-bill-stage-action="run-monthly" data-bill-run-id="${esc(run.id || "")}">Run Monthly Billing</button>
-       <button class="secondary-button" data-bill-stage-action="run-corrections" data-bill-run-id="${esc(run.id || "")}">Run Bill Corrections Only</button>`;
+    : run.status === "Documents Generated" || documents.length > 0
+      ? `<button class="primary-button" data-bill-stage-action="correct-rerun" data-bill-run-id="${esc(run.id || "")}">Correct and Rerun</button>`
+      : `<button class="primary-button" data-bill-stage-action="run-monthly" data-bill-run-id="${esc(run.id || "")}">Run Monthly Billing</button>
+         <button class="secondary-button" data-bill-stage-action="run-corrections" data-bill-run-id="${esc(run.id || "")}">Run Bill Corrections Only</button>
+         ${canDeleteRun ? `<button class="secondary-button" data-bill-delete-run="${esc(run.id || "")}" data-bill-run-code="${esc(run.runCode || "")}">Delete Run</button>` : ""}`;
   const stepMessage = run.lastError
     ? `Run stopped: ${run.lastError}`
     : run.status === "Documents Generated"
       ? `${run.billMonth} is ready to download. Counts and validation results are saved with this run.`
       : "The run automatically corrects and verifies Salesforce before retrieving fresh billing reports.";
+  const liveStatus = active
+    ? `<div class="bill-live-status is-running" role="status" aria-live="polite">
+        <span class="bill-live-spinner" aria-hidden="true"></span>
+        <div>
+          <strong>Monthly billing is running</strong>
+          <p>Current step: <strong>${esc(run.activeStage || run.status || "Starting")}</strong></p>
+          <p class="bill-live-meta">Last update: ${esc(formatBillTimestamp(run.updatedAt || ""))} · This page refreshes automatically.</p>
+        </div>
+      </div>`
+    : run.lastError
+      ? `<div class="bill-live-status is-error" role="alert"><div><strong>Billing stopped</strong><p>${esc(run.lastError)}</p></div></div>`
+      : `<div class="bill-live-status is-finished" role="status"><div><strong>${esc(run.status || "Ready")}</strong><p>Last update: ${esc(formatBillTimestamp(run.updatedAt || ""))}</p></div></div>`;
   panel.innerHTML = `
+    ${liveStatus}
     <div class="bill-current-run-grid">
       <article class="bill-current-run-card">
         <p class="card-label">Run</p>
@@ -16322,6 +16404,7 @@ function renderBillCurrentRun() {
       </table>
     </div>
   `;
+  updateBillRunControls();
 }
 
 function populateBillSettings() {
@@ -16365,6 +16448,7 @@ async function openBillRun(runId) {
   state.bills.currentRunId = runId;
   state.bills.currentRun = payload.run || null;
   renderBillCurrentRun();
+  syncBillRunPolling();
   persistUiState();
 }
 
@@ -16377,6 +16461,7 @@ async function loadBillsWorkspace() {
     renderBillCurrentRun();
     renderBillStepper(null);
   }
+  syncBillRunPolling();
 }
 
 async function handleCreateBillRun(mode = "monthly") {
@@ -16400,6 +16485,7 @@ async function handleCreateBillRun(mode = "monthly") {
     renderBillCurrentRun();
     setStatus("bill-run-status", `${payload.run?.runCode || "Bill run"}: starting ${mode === "corrections" ? "corrections" : "monthly billing"}...`);
     persistUiState();
+    syncBillRunPolling({ immediate: true });
     await handleAutomaticBillRun(payload.run?.id || "", mode);
   } catch (error) {
     setStatus("bill-run-status", error.message || "Unable to create bill run.");
@@ -16409,12 +16495,23 @@ async function handleCreateBillRun(mode = "monthly") {
 async function handleAutomaticBillRun(runId, mode = "monthly") {
   if (!runId) return;
   const endpoint = mode === "corrections" ? "corrections/run" : "monthly/run";
+  state.bills.currentRun = {
+    ...(state.bills.currentRun || {}),
+    id: runId,
+    status: "Pulling Data",
+    generationStatus: "Running",
+    activeStage: mode === "corrections" ? "Starting corrections" : "Starting monthly billing",
+    updatedAt: new Date().toISOString(),
+  };
+  renderBillCurrentRun();
+  syncBillRunPolling({ immediate: true });
   setStatus("bill-run-status", mode === "corrections" ? "Running Bill 2 and Bill 4 corrections..." : "Running corrections, reports, invoices, notices, and validation...");
   try {
     const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(runId)}/${endpoint}`, { method: "POST" });
     state.bills.currentRun = payload.run || state.bills.currentRun;
     await Promise.all([loadBillDashboard(), loadBillRuns()]);
     renderBillCurrentRun();
+    syncBillRunPolling();
     const counts = payload.run?.counts || {};
     setStatus("bill-run-status", mode === "corrections"
       ? `Corrections complete: ${payload.result?.corrections?.updated ?? payload.corrections?.summary?.updated ?? 0} updated.`
@@ -16422,6 +16519,8 @@ async function handleAutomaticBillRun(runId, mode = "monthly") {
   } catch (error) {
     await openBillRun(runId).catch(() => {});
     setStatus("bill-run-status", error.message || "The billing run did not complete.");
+  } finally {
+    syncBillRunPolling();
   }
 }
 
@@ -16474,12 +16573,44 @@ async function handleDeleteBillRun(runId, runCode = "") {
   }
 }
 
+async function handleCorrectedBillRerun(runId) {
+  const run = state.bills.currentRun;
+  const label = run?.runCode || "this billing run";
+  if (!confirm(`Create a corrected revision of ${label} and regenerate all billing files? The original run will remain in history.`)) return;
+  setStatus("bill-run-status", `Creating a corrected revision of ${label}...`);
+  try {
+    const createdBy = el("bill-run-created-by")?.value || "HPA User";
+    const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(runId)}/rerun`, {
+      method: "POST",
+      body: {
+        createdBy,
+        reason: "Regenerated after correcting member names, blank second-member lines, and billing filenames.",
+      },
+    });
+    state.bills.dashboard = payload.dashboard || state.bills.dashboard;
+    state.bills.history = Array.isArray(payload.runs) ? payload.runs : state.bills.history;
+    state.bills.currentRunId = payload.run?.id || "";
+    state.bills.currentRun = payload.run || null;
+    renderBillDashboard();
+    renderBillHistory();
+    renderBillCurrentRun();
+    persistUiState();
+    await handleAutomaticBillRun(payload.run?.id || "", "monthly");
+  } catch (error) {
+    setStatus("bill-run-status", error.message || "Unable to create the corrected billing rerun.");
+  }
+}
+
 async function handleBillStageAction(runId, action) {
   if (!runId || !action) {
     return;
   }
   if (action === "run-monthly" || action === "run-corrections") {
     await handleAutomaticBillRun(runId, action === "run-corrections" ? "corrections" : "monthly");
+    return;
+  }
+  if (action === "correct-rerun") {
+    await handleCorrectedBillRerun(runId);
     return;
   }
   if (action === "pull-bill2") {

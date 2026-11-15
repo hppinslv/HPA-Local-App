@@ -1,1 +1,110 @@
+[Startup] {
+  host: '0.0.0.0',
+  port: 4173,
+  nodeEnv: 'development',
+  supabaseEnabled: true,
+  supabaseTargetHost: 'nhbljrhhtcbextwapouh.supabase.co',
+  persistenceReady: false
+}
+[Startup] persistence readiness {
+  ready: true,
+  startedAt: '2026-11-15T19:14:31.794Z',
+  finishedAt: '2026-11-15T19:14:38.977Z',
+  modules: {
+    certificateLookup: { ready: true, error: null },
+    analysis: { ready: true, error: null },
+    checkImports: { ready: true, error: null },
+    monthlyReports: { ready: true, error: null },
+    bills: { ready: true, error: null },
+    application: { ready: true, error: null },
+    ccPayments: { ready: true, error: null },
+    achReturns: { ready: true, error: null },
+    mailingData: { ready: true, error: null }
+  }
+}
+SCORE snapshot scheduler armed for Nov 16, 2026, 06:00 AM.
+Certificate lookup refresh scheduler armed for Nov 16, 2026, 05:00 AM.
 HPA Automations is running at http://localhost:4173
+[Route start] { route: '/api/monthly-reports', method: 'GET' }
+[Route timing] {
+  route: '/api/monthly-reports',
+  method: 'GET',
+  durationMs: 33,
+  statusCode: 200,
+  count: 20,
+  source: 'backend-canonical'
+}
+[Route start] { route: '/api/bills/dashboard', method: 'GET' }
+[Route timing] {
+  route: '/api/bills/dashboard',
+  method: 'GET',
+  durationMs: 3,
+  statusCode: 200
+}
+[Route start] { route: '/api/bills/runs', method: 'GET' }
+[Route timing] {
+  route: '/api/bills/runs',
+  method: 'GET',
+  durationMs: 2,
+  statusCode: 200
+}
+[Route start] { route: '/api/bills/runs', method: 'GET' }
+[Route timing] {
+  route: '/api/bills/runs',
+  method: 'GET',
+  durationMs: 2,
+  statusCode: 200
+}
+[Route start] { route: '/api/bills/runs', method: 'GET' }
+[Route timing] {
+  route: '/api/bills/runs',
+  method: 'GET',
+  durationMs: 1,
+  statusCode: 200
+}
+[Route start] { route: '/api/monthly-reports', method: 'GET' }
+[Route timing] {
+  route: '/api/monthly-reports',
+  method: 'GET',
+  durationMs: 24,
+  statusCode: 200,
+  count: 20,
+  source: 'backend-canonical'
+}
+[Route start] { route: '/api/bills/dashboard', method: 'GET' }
+[Route timing] {
+  route: '/api/bills/dashboard',
+  method: 'GET',
+  durationMs: 3,
+  statusCode: 200
+}
+[Route start] { route: '/api/bills/runs', method: 'GET' }
+[Route timing] {
+  route: '/api/bills/runs',
+  method: 'GET',
+  durationMs: 1,
+  statusCode: 200
+}
+[Route start] { route: '/api/monthly-reports', method: 'GET' }
+[Route timing] {
+  route: '/api/monthly-reports',
+  method: 'GET',
+  durationMs: 23,
+  statusCode: 200,
+  count: 20,
+  source: 'backend-canonical'
+}
+[Route start] { route: '/api/bills/dashboard', method: 'GET' }
+[Route timing] {
+  route: '/api/bills/dashboard',
+  method: 'GET',
+  durationMs: 2,
+  statusCode: 200
+}
+[Route start] { route: '/api/bills/runs', method: 'GET' }
+[Route timing] {
+  route: '/api/bills/runs',
+  method: 'GET',
+  durationMs: 1,
+  statusCode: 200
+}

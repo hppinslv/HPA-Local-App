@@ -18,28 +18,38 @@ test("Office generator renders the six ordered PDFs and audit package", { skip: 
     "Certificate Number: Billing Zip/Postal Code": "89101",
     "Bill For": "TEST PERIOD", P1: 10, P2: 20, P3: 30, P6: 60, P12: 120,
   };
-  const item = (group, values) => ({ group, recordId: `${group}-record`, certificateNumber: "00150209", certificateNumeric: "150209", values });
+  const item = (group, values, certificateNumber, recordSuffix) => ({
+    group,
+    recordId: `${group}-record-${recordSuffix}`,
+    certificateNumber,
+    certificateNumeric: String(BigInt(certificateNumber)),
+    values,
+  });
+  const items = (group, values) => [
+    item(group, values, "00150209", "one-member"),
+    item(group, { ...values, "Certificate Number: Certificate Name": "00150210", "Member 2": "SECOND MEMBER" }, "00150210", "two-members"),
+  ];
   try {
     const datasets = {
-      bill1: { rows: [item("bill1", common)] },
-      bill2: { rows: [item("bill2", { ...common, "Bill Due": "12/1/2026", "Bill 2 Next (+1)": "JANUARY, 2027" })] },
-      bill3: { rows: [item("bill3", { ...common, "Bill For Long": "December 2026", "Bill Due": "12/1/2026", "Bill 3 Next (+1)": "January 2027", "Bill 3 Next (+2)": "February 2027", Lapse: "January 14, 2027" })] },
-      bill4: { rows: [item("bill4", { ...common, "Bill 4 Due": "12/1/2026", "Bill Due": "12/1/2026", "Bill For Long": "December 1, 2026", "Coverage Production": 503000, "Rate Text": "will be" })] },
+      bill1: { rows: items("bill1", common) },
+      bill2: { rows: items("bill2", { ...common, "Bill Due": "12/1/2026", "Bill 2 Next (+1)": "JANUARY, 2027" }) },
+      bill3: { rows: items("bill3", { ...common, "Bill For Long": "December 2026", "Bill Due": "12/1/2026", "Bill 3 Next (+1)": "January 2027", "Bill 3 Next (+2)": "February 2027", Lapse: "January 14, 2027" }) },
+      bill4: { rows: items("bill4", { ...common, "Bill 4 Due": "12/1/2026", "Bill Due": "12/1/2026", "Bill For Long": "December 1, 2026", "Coverage Production": 503000, "Rate Text": "will be" }) },
     };
     const generated = runOfficeGenerator({
-      run: { id: "test-run", runCode: "BILL-TEST", billMonth: "2026-12", dates: { bill3FirstOverdueMonth: "OCTOBER, 2026", bill3LapseDeadlineDisplay: "January 14, 2027" } },
+      run: { id: "test-run", runCode: "BILL-TEST", billMonth: "2026-12", scheduledProcessingDate: "2026-12-14", dates: { processingDate: "2026-12-14", bill3FirstOverdueMonth: "OCTOBER, 2026", bill3LapseDeadlineDisplay: "January 14, 2027" } },
       corrections: { bill2: [], bill4: [], summary: { updated: 0, unchanged: 0, coverageReductions: 0 } },
       datasets,
       bill4Pairing: { valid: true },
     });
     assert.equal(generated.valid, true, (generated.errors || []).join(" "));
     const names = generated.artifacts.map((artifact) => artifact.fileName);
-    for (const required of ["Bill1_2026-12.pdf", "Bill2_2026-12.pdf", "Bill3_2026-12.pdf", "Bill4_2026-12.pdf", "Bill3_Important_Notice_2026-12.pdf", "Bill4_Important_Notice_2026-12.pdf", "Bill_Spreadsheet_2026-12.xlsx", "Bill_Corrections_2026-12.xlsx", "Billing_Reconciliation_2026-12.xlsx", "Billing_Run_Summary_2026-12.pdf", "Billing_Package_2026-12.zip"]) assert.ok(names.includes(required), required);
-    assert.equal(generated.recordCounts.bill3Notices, 1);
-    assert.equal(generated.recordCounts.bill4Notices, 1);
+    for (const required of ["2026.11.14_Bill1.pdf", "2026.11.14_Bill2.pdf", "2026.11.14_Bill3.pdf", "2026.11.14_Bill4.pdf", "2026.11.14_Bill3_Letter.pdf", "2026.11.14_Bill4_Letter.pdf", "Bill_Spreadsheet_2026-12.xlsx", "Bill_Corrections_2026-12.xlsx", "Billing_Reconciliation_2026-12.xlsx", "Billing_Run_Summary_2026-12.pdf", "Billing_Package_2026-12.zip"]) assert.ok(names.includes(required), required);
+    assert.equal(generated.recordCounts.bill3Notices, 2);
+    assert.equal(generated.recordCounts.bill4Notices, 2);
     const validation = await validateGeneratedBillingPdfs(generated, datasets);
     assert.equal(validation.valid, true, validation.errors.join(" "));
-    assert.ok(Object.values(validation.details).every((detail) => detail.pages === 1));
+    assert.ok(Object.values(validation.details).every((detail) => detail.pages === 2));
   } finally {
     if (process.env.HPA_KEEP_OFFICE_TEST_OUTPUT === "true") console.log(`Synthetic billing QA output: ${outputRoot}`);
     else fs.rmSync(outputRoot, { recursive: true, force: true });

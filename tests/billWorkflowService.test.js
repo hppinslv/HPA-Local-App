@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { normalizeLabel } = require("../services/salesforceClient");
-const { BILL2_CORRECTION_REPORT_ID, BILL4_CORRECTION_REPORT_ID } = require("../services/billCorrectionServiceV2");
+const { BILL2_CORRECTION_REPORT_ID, BILL4_CORRECTION_REPORT_ID, MONTHLY_BILLING_PAY_TYPE } = require("../services/billCorrectionServiceV2");
 const { BILLING_REPORTS } = require("../services/billSpreadsheetService");
 
 function row(values) { return Object.fromEntries(Object.entries(values).map(([key, value]) => [normalizeLabel(key), value])); }
@@ -41,7 +41,7 @@ test("monthly workflow gates reports after verified corrections and generates fr
     if (id === BILL4_CORRECTION_REPORT_ID) return { reportName: "b4 correction", rows: [row({ "Policy ID": "b4", "Orig Contrib AD&D Coverage Amt": 300000, "Orig Non-Contrib AD&D Coverage Amt": 7000 })] };
     const group = Object.entries(BILLING_REPORTS).find(([, reportId]) => reportId === id)[0];
     const extras = group === "bill2" ? { "Bill Due": "12/1/2026", "Bill 2 Next (+1)": "January 2027" }
-      : group === "bill3" ? { "Bill For Long": "December 2026", "Bill Due": "12/1/2026", "Bill 3 Next (+1)": "January 2027", "Bill 3 Next (+2)": "February 2027", Lapse: "January 14, 2027" }
+      : group === "bill3" ? { "Bill For Long": "December 2026", "Bill Due": "12/1/2026", "Bill 3 Next (+1)": "January 2027", "Bill 3 Next (+2)": "February 2027", Lapse: "December 14th, 2026" }
         : group === "bill4" ? { "Bill 4 Due": "12/1/2026", "Bill Due": "12/1/2026", "Bill For Long": "December 2026", "Coverage Production": 307000, "Rate Text": "will be" } : {};
     return { reportName: group, rows: [common("260647", `${group}-2`), common("150209", `${group}-1`)].map((item) => ({ ...item, ...row(extras) })) };
   };
@@ -51,11 +51,13 @@ test("monthly workflow gates reports after verified corrections and generates fr
       progress: async (stage) => stages.push(stage),
       validatePdfs: false,
       dependencies: { fetchReport, gateway, fields: { contrib: "Contrib__c", nonContrib: "NonContrib__c", premium: "Premium__c" } },
-      generatePackage: ({ datasets }) => ({ valid: true, artifacts: [], outputDirectory: "test", pageCounts: {}, first: datasets.bill1.rows[0].certificateNumber }),
+      generatePackage: ({ datasets, run }) => ({ valid: true, artifacts: [], outputDirectory: "test", pageCounts: {}, first: datasets.bill1.rows[0].certificateNumber, lapse: run.dates.bill3LapseDeadlineDisplay }),
     });
-    assert.equal(records.b2.Pay_Type__c, "Monthly Billing");
+    assert.equal(records.b2.Pay_Type__c, MONTHLY_BILLING_PAY_TYPE);
     assert.deepEqual([records.b4.Contrib__c, records.b4.NonContrib__c, records.b4.Premium__c], [304000, 3000, 25]);
     assert.equal(result.datasets.bill1.rows[0].certificateNumber, "150209");
+    assert.equal(result.effectiveDates.bill3LapseDeadlineDisplay, "December 14, 2026");
+    assert.equal(result.generated.lapse, "December 14, 2026");
     assert.deepEqual(calls.slice(0, 2).sort(), [BILL2_CORRECTION_REPORT_ID, BILL4_CORRECTION_REPORT_ID].sort());
     assert.ok(calls.indexOf(BILLING_REPORTS.bill1) > 1);
     assert.equal(stages.at(-1), "Ready to Download");
