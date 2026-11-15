@@ -1,83 +1,68 @@
 [
   {
-    "id": "bill_run_1786716497519_zs9qii",
+    "id": "bill_run_1794763889388_fnv0u7",
     "runCode": "BILL-2026-08",
     "billMonth": "2026-08",
     "processingDate": "2026-08-14",
     "scheduledProcessingDate": "2026-08-14",
-    "createdBy": "HPA User",
+    "createdBy": "Melinda",
     "notes": "",
-    "status": "Pulling Data",
-    "correctionStatus": "Pulling Data",
+    "status": "Pending Approval",
+    "correctionStatus": "Draft",
     "generationStatus": "Draft",
     "approvalStatus": "Draft",
     "versionNumber": 1,
     "duplicateOverrideReason": "",
-    "activeStage": "Pull Bill 2 Correction Records",
+    "activeStage": "Review and Approve",
     "stages": [
       {
         "key": "stage_1",
-        "title": "Create Monthly Run",
-        "status": "complete"
+        "title": "Retrieving correction reports",
+        "status": "pending"
       },
       {
         "key": "stage_2",
-        "title": "Pull Bill 2 Correction Records",
-        "status": "current"
+        "title": "Correcting Bill 2",
+        "status": "pending"
       },
       {
         "key": "stage_3",
-        "title": "Correct Bill 2 Payment Method",
+        "title": "Correcting Bill 4",
         "status": "pending"
       },
       {
         "key": "stage_4",
-        "title": "Upload Bill 2 Corrections to Salesforce",
+        "title": "Verifying Salesforce",
         "status": "pending"
       },
       {
         "key": "stage_5",
-        "title": "Pull Bill 4 Correction Records",
+        "title": "Retrieving billing reports",
         "status": "pending"
       },
       {
         "key": "stage_6",
-        "title": "Correct Bill 4 Coverage Values",
+        "title": "Sorting certificates",
         "status": "pending"
       },
       {
         "key": "stage_7",
-        "title": "Upload Bill 4 Corrections to Salesforce",
+        "title": "Generating invoices",
         "status": "pending"
       },
       {
         "key": "stage_8",
-        "title": "Pull Bill 1-4 Report Data",
+        "title": "Generating notices",
         "status": "pending"
       },
       {
         "key": "stage_9",
-        "title": "Validate Bill Data",
+        "title": "Validating PDFs",
         "status": "pending"
       },
       {
         "key": "stage_10",
-        "title": "Generate Bill Documents",
-        "status": "pending"
-      },
-      {
-        "key": "stage_11",
-        "title": "Review and Approve",
-        "status": "pending"
-      },
-      {
-        "key": "stage_12",
-        "title": "Download / Print",
-        "status": "pending"
-      },
-      {
-        "key": "stage_13",
-        "title": "Complete Run",
+        "title": "Ready to Download",
         "status": "pending"
       }
     ],
@@ -132,12 +117,12 @@
     "validations": [],
     "documents": [],
     "approvals": [],
-    "sourceSnapshotTimestamp": "2026-08-14T14:08:17.519Z",
-    "createdAt": "2026-08-14T14:08:17.519Z",
-    "updatedAt": "2026-08-14T14:08:32.818Z",
+    "sourceSnapshotTimestamp": "2026-11-15T17:31:29.388Z",
+    "createdAt": "2026-11-15T17:31:29.388Z",
+    "updatedAt": "2026-11-15T17:31:29.389Z",
     "events": [
       {
-        "id": "bill_event_1786716497519_dvkjou",
+        "id": "bill_event_1794763889388_0d8h0e",
         "eventType": "run-created",
         "previousStatus": "",
         "newStatus": "Draft",
@@ -148,22 +133,22 @@
           "runCode": "BILL-2026-08",
           "duplicateOverrideReason": ""
         },
-        "performedBy": "HPA User",
-        "performedAt": "2026-08-14T14:08:17.519Z"
+        "performedBy": "Melinda",
+        "performedAt": "2026-11-15T17:31:29.388Z"
       },
       {
-        "id": "bill_event_1786716512818_8fd6rp",
+        "id": "bill_event_1794763889389_6ke570",
         "eventType": "run-updated",
         "previousStatus": "Draft",
-        "newStatus": "Pulling Data",
+        "newStatus": "Pending Approval",
         "details": {
           "previousStatus": "Draft",
-          "newStatus": "Pulling Data",
-          "activeStage": "Pull Bill 2 Correction Records",
+          "newStatus": "Pending Approval",
+          "activeStage": "Review and Approve",
           "notesUpdated": false
         },
-        "performedBy": "HPA User",
-        "performedAt": "2026-08-14T14:08:32.819Z"
+        "performedBy": "Reviewer A",
+        "performedAt": "2026-11-15T17:31:29.389Z"
       }
     ]
   }

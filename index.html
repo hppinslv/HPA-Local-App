@@ -239,7 +239,7 @@
             <p class="eyebrow">Billing</p>
             <h2>Monthly Bill Processing</h2>
             <p class="page-copy">
-              Manage durable monthly bill runs, staged corrections, approvals, and bill history.
+              Run verified Salesforce corrections and create the complete next-month print package.
             </p>
           </header>
 
@@ -264,25 +264,13 @@
 
             <article class="panel">
               <div class="panel-heading">
-                <h3>Step 1: Create Monthly Run</h3>
-                <p>Save the monthly bill-run shell, calculated dates, and audit record before any Salesforce correction work begins.</p>
+                <h3>Run Monthly Billing</h3>
+                <p>The billing month is calculated automatically as the next calendar month. Standard corrections run without confirmation prompts.</p>
               </div>
               <div class="field-grid">
                 <label>
-                  <span class="field-label">Bill Processing Month</span>
-                  <input id="bill-run-month" class="field-input" type="month" />
-                </label>
-                <label>
-                  <span class="field-label">Scheduled Processing Date</span>
-                  <input id="bill-run-date" class="field-input" type="date" />
-                </label>
-                <label>
-                  <span class="field-label">Created By</span>
+                  <span class="field-label">Run By</span>
                   <input id="bill-run-created-by" class="field-input" type="text" placeholder="Melinda Harris" />
-                </label>
-                <label>
-                  <span class="field-label">Duplicate Override Reason</span>
-                  <input id="bill-run-override-reason" class="field-input" type="text" placeholder="Only required for an authorized rerun" />
                 </label>
                 <label class="field-span-2">
                   <span class="field-label">Notes</span>
@@ -290,7 +278,8 @@
                 </label>
               </div>
               <div class="action-row">
-                <button id="bill-create-run-button" class="primary-button">Create Bill Run</button>
+                <button id="bill-create-run-button" class="primary-button">Run Monthly Billing</button>
+                <button id="bill-corrections-only-button" class="secondary-button">Run Bill Corrections Only</button>
                 <button id="bill-refresh-dashboard-button" class="secondary-button">Refresh</button>
               </div>
               <p id="bill-run-status" class="inline-status"></p>

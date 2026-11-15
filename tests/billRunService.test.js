@@ -30,7 +30,7 @@ test("createBillRun generates the base run code for the first month run", () => 
 
   assert.equal(run.runCode, "BILL-2026-07");
   assert.equal(run.status, "Draft");
-  assert.equal(run.activeStage, "Create Monthly Run");
+  assert.equal(run.activeStage, "Retrieving correction reports");
   assert.equal(run.dates.processingDate, "2026-07-14");
 });
 
@@ -108,4 +108,12 @@ test("calculateBillDates handles year rollover and ordinals", () => {
   assert.equal(billDateService.formatOrdinalDay(22), "22nd");
   assert.equal(billDateService.formatOrdinalDay(23), "23rd");
   assert.equal(billDateService.formatOrdinalDay(31), "31st");
+});
+
+test("billing month is always the next calendar month in the business timezone", () => {
+  const tempDir = createTempDir();
+  const { billDateService } = loadFreshBillServices(tempDir);
+  assert.equal(billDateService.getNextBillingMonth(new Date("2026-11-15T20:00:00Z")), "2026-12");
+  assert.equal(billDateService.getNextBillingMonth(new Date("2026-12-15T20:00:00Z")), "2027-01");
+  assert.equal(billDateService.getNextBillingMonth(new Date("2027-01-15T20:00:00Z")), "2027-02");
 });

@@ -1,6 +1,5745 @@
 {
-  "updatedAt": "2026-08-11T14:45:36.574Z",
+  "updatedAt": "2026-11-15T17:38:20.502Z",
   "history": [
+    {
+      "id": "ref_history_1794764300517_ltcos3",
+      "listType": "rfc",
+      "actionType": "dnm-exclusion",
+      "actor": "System",
+      "sourceName": "do-not-mail-enforcement",
+      "reason": "Removed because the SCF belongs to an active Do Not Mail state.",
+      "changedAt": "2026-11-15T17:38:20.502Z",
+      "beforeItems": [
+        {
+          "scf": "011",
+          "state": "CT"
+        },
+        {
+          "scf": "012",
+          "state": "CT"
+        },
+        {
+          "scf": "013",
+          "state": "MA"
+        },
+        {
+          "scf": "015",
+          "state": "MA"
+        },
+        {
+          "scf": "016",
+          "state": "MA"
+        },
+        {
+          "scf": "021",
+          "state": "MA"
+        },
+        {
+          "scf": "023",
+          "state": "MA"
+        },
+        {
+          "scf": "026",
+          "state": "RI"
+        },
+        {
+          "scf": "027",
+          "state": "RI"
+        },
+        {
+          "scf": "028",
+          "state": "RI"
+        },
+        {
+          "scf": "042",
+          "state": "ME"
+        },
+        {
+          "scf": "046",
+          "state": "ME"
+        },
+        {
+          "scf": "047",
+          "state": "ME"
+        },
+        {
+          "scf": "065",
+          "state": "CT"
+        },
+        {
+          "scf": "066",
+          "state": "NY"
+        },
+        {
+          "scf": "067",
+          "state": "CT"
+        },
+        {
+          "scf": "070",
+          "state": "NJ"
+        },
+        {
+          "scf": "072",
+          "state": "NJ"
+        },
+        {
+          "scf": "074",
+          "state": "NJ"
+        },
+        {
+          "scf": "077",
+          "state": "NJ"
+        },
+        {
+          "scf": "080",
+          "state": "NJ"
+        },
+        {
+          "scf": "082",
+          "state": "NJ"
+        },
+        {
+          "scf": "083",
+          "state": "NJ"
+        },
+        {
+          "scf": "086",
+          "state": "NJ"
+        },
+        {
+          "scf": "087",
+          "state": "NJ"
+        },
+        {
+          "scf": "088",
+          "state": "NJ"
+        },
+        {
+          "scf": "103",
+          "state": "NY"
+        },
+        {
+          "scf": "104",
+          "state": "NY"
+        },
+        {
+          "scf": "107",
+          "state": "NY"
+        },
+        {
+          "scf": "109",
+          "state": "NY"
+        },
+        {
+          "scf": "110",
+          "state": "NY"
+        },
+        {
+          "scf": "112",
+          "state": "NY"
+        },
+        {
+          "scf": "113",
+          "state": "NY"
+        },
+        {
+          "scf": "114",
+          "state": "NY"
+        },
+        {
+          "scf": "115",
+          "state": "NY"
+        },
+        {
+          "scf": "117",
+          "state": "NY"
+        },
+        {
+          "scf": "118",
+          "state": "NY"
+        },
+        {
+          "scf": "120",
+          "state": "NY"
+        },
+        {
+          "scf": "121",
+          "state": "NY"
+        },
+        {
+          "scf": "123",
+          "state": "NY"
+        },
+        {
+          "scf": "125",
+          "state": "NY"
+        },
+        {
+          "scf": "129",
+          "state": "NY"
+        },
+        {
+          "scf": "130",
+          "state": "NY"
+        },
+        {
+          "scf": "131",
+          "state": "NY"
+        },
+        {
+          "scf": "133",
+          "state": "NY"
+        },
+        {
+          "scf": "134",
+          "state": "NY"
+        },
+        {
+          "scf": "136",
+          "state": "NY"
+        },
+        {
+          "scf": "138",
+          "state": "NY"
+        },
+        {
+          "scf": "139",
+          "state": "NY"
+        },
+        {
+          "scf": "140",
+          "state": "NY"
+        },
+        {
+          "scf": "142",
+          "state": "NY"
+        },
+        {
+          "scf": "143",
+          "state": "NY"
+        },
+        {
+          "scf": "144",
+          "state": "NY"
+        },
+        {
+          "scf": "145",
+          "state": "NY"
+        },
+        {
+          "scf": "146",
+          "state": "NY"
+        },
+        {
+          "scf": "147",
+          "state": "NY"
+        },
+        {
+          "scf": "151",
+          "state": "PA"
+        },
+        {
+          "scf": "152",
+          "state": "PA"
+        },
+        {
+          "scf": "153",
+          "state": "PA"
+        },
+        {
+          "scf": "155",
+          "state": "PA"
+        },
+        {
+          "scf": "156",
+          "state": "PA"
+        },
+        {
+          "scf": "158",
+          "state": "PA"
+        },
+        {
+          "scf": "160",
+          "state": "PA"
+        },
+        {
+          "scf": "161",
+          "state": "PA"
+        },
+        {
+          "scf": "163",
+          "state": "PA"
+        },
+        {
+          "scf": "166",
+          "state": "PA"
+        },
+        {
+          "scf": "167",
+          "state": "NY"
+        },
+        {
+          "scf": "170",
+          "state": "PA"
+        },
+        {
+          "scf": "172",
+          "state": "PA"
+        },
+        {
+          "scf": "173",
+          "state": "PA"
+        },
+        {
+          "scf": "175",
+          "state": "PA"
+        },
+        {
+          "scf": "176",
+          "state": "PA"
+        },
+        {
+          "scf": "177",
+          "state": "PA"
+        },
+        {
+          "scf": "178",
+          "state": "PA"
+        },
+        {
+          "scf": "179",
+          "state": "PA"
+        },
+        {
+          "scf": "180",
+          "state": "PA"
+        },
+        {
+          "scf": "182",
+          "state": "PA"
+        },
+        {
+          "scf": "183",
+          "state": "PA"
+        },
+        {
+          "scf": "184",
+          "state": "PA"
+        },
+        {
+          "scf": "185",
+          "state": "PA"
+        },
+        {
+          "scf": "186",
+          "state": "PA"
+        },
+        {
+          "scf": "187",
+          "state": "PA"
+        },
+        {
+          "scf": "189",
+          "state": "PA"
+        },
+        {
+          "scf": "190",
+          "state": "PA"
+        },
+        {
+          "scf": "191",
+          "state": "PA"
+        },
+        {
+          "scf": "193",
+          "state": "DE"
+        },
+        {
+          "scf": "195",
+          "state": "PA"
+        },
+        {
+          "scf": "196",
+          "state": "PA"
+        },
+        {
+          "scf": "197",
+          "state": "DE"
+        },
+        {
+          "scf": "198",
+          "state": "DE"
+        },
+        {
+          "scf": "199",
+          "state": "DE"
+        },
+        {
+          "scf": "200",
+          "state": "DC"
+        },
+        {
+          "scf": "201",
+          "state": "VA"
+        },
+        {
+          "scf": "220",
+          "state": "VA"
+        },
+        {
+          "scf": "224",
+          "state": "VA"
+        },
+        {
+          "scf": "225",
+          "state": "VA"
+        },
+        {
+          "scf": "226",
+          "state": "VA"
+        },
+        {
+          "scf": "228",
+          "state": "VA"
+        },
+        {
+          "scf": "230",
+          "state": "VA"
+        },
+        {
+          "scf": "231",
+          "state": "VA"
+        },
+        {
+          "scf": "232",
+          "state": "VA"
+        },
+        {
+          "scf": "233",
+          "state": "VA"
+        },
+        {
+          "scf": "234",
+          "state": "VA"
+        },
+        {
+          "scf": "235",
+          "state": "VA"
+        },
+        {
+          "scf": "236",
+          "state": "VA"
+        },
+        {
+          "scf": "237",
+          "state": "VA"
+        },
+        {
+          "scf": "238",
+          "state": "VA"
+        },
+        {
+          "scf": "240",
+          "state": "VA"
+        },
+        {
+          "scf": "241",
+          "state": "VA"
+        },
+        {
+          "scf": "242",
+          "state": "TN"
+        },
+        {
+          "scf": "244",
+          "state": "VA"
+        },
+        {
+          "scf": "245",
+          "state": "VA"
+        },
+        {
+          "scf": "246",
+          "state": "WV"
+        },
+        {
+          "scf": "254",
+          "state": "PA"
+        },
+        {
+          "scf": "260",
+          "state": "WV"
+        },
+        {
+          "scf": "261",
+          "state": "WV"
+        },
+        {
+          "scf": "263",
+          "state": "WV"
+        },
+        {
+          "scf": "265",
+          "state": "WV"
+        },
+        {
+          "scf": "290",
+          "state": "SC"
+        },
+        {
+          "scf": "291",
+          "state": "SC"
+        },
+        {
+          "scf": "292",
+          "state": "SC"
+        },
+        {
+          "scf": "294",
+          "state": "SC"
+        },
+        {
+          "scf": "295",
+          "state": "SC"
+        },
+        {
+          "scf": "296",
+          "state": "SC"
+        },
+        {
+          "scf": "298",
+          "state": "GA"
+        },
+        {
+          "scf": "299",
+          "state": "SC"
+        },
+        {
+          "scf": "301",
+          "state": "GA"
+        },
+        {
+          "scf": "302",
+          "state": "GA"
+        },
+        {
+          "scf": "303",
+          "state": "GA"
+        },
+        {
+          "scf": "304",
+          "state": "GA"
+        },
+        {
+          "scf": "305",
+          "state": "GA"
+        },
+        {
+          "scf": "309",
+          "state": "GA"
+        },
+        {
+          "scf": "310",
+          "state": "GA"
+        },
+        {
+          "scf": "312",
+          "state": "GA"
+        },
+        {
+          "scf": "313",
+          "state": "FL"
+        },
+        {
+          "scf": "314",
+          "state": "FL"
+        },
+        {
+          "scf": "315",
+          "state": "FL"
+        },
+        {
+          "scf": "316",
+          "state": "FL"
+        },
+        {
+          "scf": "317",
+          "state": "FL"
+        },
+        {
+          "scf": "318",
+          "state": "GA"
+        },
+        {
+          "scf": "319",
+          "state": "GA"
+        },
+        {
+          "scf": "320",
+          "state": "FL"
+        },
+        {
+          "scf": "321",
+          "state": "FL"
+        },
+        {
+          "scf": "322",
+          "state": "FL"
+        },
+        {
+          "scf": "323",
+          "state": "FL"
+        },
+        {
+          "scf": "324",
+          "state": "FL"
+        },
+        {
+          "scf": "325",
+          "state": "FL"
+        },
+        {
+          "scf": "326",
+          "state": "FL"
+        },
+        {
+          "scf": "327",
+          "state": "FL"
+        },
+        {
+          "scf": "328",
+          "state": "FL"
+        },
+        {
+          "scf": "329",
+          "state": "FL"
+        },
+        {
+          "scf": "330",
+          "state": "FL"
+        },
+        {
+          "scf": "331",
+          "state": "FL"
+        },
+        {
+          "scf": "334",
+          "state": "FL"
+        },
+        {
+          "scf": "335",
+          "state": "FL"
+        },
+        {
+          "scf": "336",
+          "state": "FL"
+        },
+        {
+          "scf": "338",
+          "state": "FL"
+        },
+        {
+          "scf": "339",
+          "state": "FL"
+        },
+        {
+          "scf": "341",
+          "state": "FL"
+        },
+        {
+          "scf": "344",
+          "state": "FL"
+        },
+        {
+          "scf": "346",
+          "state": "FL"
+        },
+        {
+          "scf": "347",
+          "state": "FL"
+        },
+        {
+          "scf": "349",
+          "state": "FL"
+        },
+        {
+          "scf": "350",
+          "state": "AL"
+        },
+        {
+          "scf": "351",
+          "state": "AL"
+        },
+        {
+          "scf": "352",
+          "state": "AL"
+        },
+        {
+          "scf": "354",
+          "state": "AL"
+        },
+        {
+          "scf": "355",
+          "state": "AL"
+        },
+        {
+          "scf": "356",
+          "state": "AL"
+        },
+        {
+          "scf": "357",
+          "state": "AL"
+        },
+        {
+          "scf": "358",
+          "state": "AL"
+        },
+        {
+          "scf": "359",
+          "state": "AL"
+        },
+        {
+          "scf": "360",
+          "state": "AL"
+        },
+        {
+          "scf": "361",
+          "state": "AL"
+        },
+        {
+          "scf": "363",
+          "state": "AL"
+        },
+        {
+          "scf": "365",
+          "state": "AL"
+        },
+        {
+          "scf": "366",
+          "state": "AL"
+        },
+        {
+          "scf": "368",
+          "state": "AL"
+        },
+        {
+          "scf": "370",
+          "state": "TN"
+        },
+        {
+          "scf": "371",
+          "state": "TN"
+        },
+        {
+          "scf": "372",
+          "state": "TN"
+        },
+        {
+          "scf": "373",
+          "state": "TN"
+        },
+        {
+          "scf": "374",
+          "state": "TN"
+        },
+        {
+          "scf": "376",
+          "state": "TN"
+        },
+        {
+          "scf": "377",
+          "state": "TN"
+        },
+        {
+          "scf": "378",
+          "state": "TN"
+        },
+        {
+          "scf": "379",
+          "state": "TN"
+        },
+        {
+          "scf": "380",
+          "state": "TN"
+        },
+        {
+          "scf": "381",
+          "state": "TN"
+        },
+        {
+          "scf": "382",
+          "state": "TN"
+        },
+        {
+          "scf": "383",
+          "state": "TN"
+        },
+        {
+          "scf": "384",
+          "state": "TN"
+        },
+        {
+          "scf": "385",
+          "state": "TN"
+        },
+        {
+          "scf": "386",
+          "state": "TN"
+        },
+        {
+          "scf": "390",
+          "state": "MS"
+        },
+        {
+          "scf": "391",
+          "state": "MS"
+        },
+        {
+          "scf": "394",
+          "state": "AL"
+        },
+        {
+          "scf": "395",
+          "state": "MS"
+        },
+        {
+          "scf": "396",
+          "state": "MS"
+        },
+        {
+          "scf": "400",
+          "state": "KY"
+        },
+        {
+          "scf": "401",
+          "state": "KY"
+        },
+        {
+          "scf": "402",
+          "state": "KY"
+        },
+        {
+          "scf": "403",
+          "state": "KY"
+        },
+        {
+          "scf": "404",
+          "state": "KY"
+        },
+        {
+          "scf": "407",
+          "state": "TN"
+        },
+        {
+          "scf": "409",
+          "state": "TN"
+        },
+        {
+          "scf": "410",
+          "state": "OH"
+        },
+        {
+          "scf": "411",
+          "state": "WV"
+        },
+        {
+          "scf": "413",
+          "state": "KY"
+        },
+        {
+          "scf": "420",
+          "state": "IN"
+        },
+        {
+          "scf": "421",
+          "state": "TN"
+        },
+        {
+          "scf": "424",
+          "state": "IN"
+        },
+        {
+          "scf": "427",
+          "state": "KY"
+        },
+        {
+          "scf": "430",
+          "state": "OH"
+        },
+        {
+          "scf": "432",
+          "state": "OH"
+        },
+        {
+          "scf": "434",
+          "state": "OH"
+        },
+        {
+          "scf": "435",
+          "state": "OH"
+        },
+        {
+          "scf": "436",
+          "state": "OH"
+        },
+        {
+          "scf": "437",
+          "state": "OH"
+        },
+        {
+          "scf": "438",
+          "state": "OH"
+        },
+        {
+          "scf": "439",
+          "state": "PA"
+        },
+        {
+          "scf": "440",
+          "state": "OH"
+        },
+        {
+          "scf": "441",
+          "state": "OH"
+        },
+        {
+          "scf": "443",
+          "state": "OH"
+        },
+        {
+          "scf": "444",
+          "state": "OH"
+        },
+        {
+          "scf": "445",
+          "state": "OH"
+        },
+        {
+          "scf": "447",
+          "state": "OH"
+        },
+        {
+          "scf": "449",
+          "state": "OH"
+        },
+        {
+          "scf": "451",
+          "state": "OH"
+        },
+        {
+          "scf": "452",
+          "state": "OH"
+        },
+        {
+          "scf": "453",
+          "state": "OH"
+        },
+        {
+          "scf": "455",
+          "state": "OH"
+        },
+        {
+          "scf": "456",
+          "state": "OH"
+        },
+        {
+          "scf": "457",
+          "state": "OH"
+        },
+        {
+          "scf": "458",
+          "state": "OH"
+        },
+        {
+          "scf": "461",
+          "state": "IN"
+        },
+        {
+          "scf": "462",
+          "state": "IN"
+        },
+        {
+          "scf": "463",
+          "state": "IN"
+        },
+        {
+          "scf": "465",
+          "state": "IN"
+        },
+        {
+          "scf": "466",
+          "state": "IN"
+        },
+        {
+          "scf": "467",
+          "state": "IN"
+        },
+        {
+          "scf": "468",
+          "state": "IN"
+        },
+        {
+          "scf": "469",
+          "state": "IN"
+        },
+        {
+          "scf": "470",
+          "state": "OH"
+        },
+        {
+          "scf": "471",
+          "state": "KY"
+        },
+        {
+          "scf": "473",
+          "state": "IN"
+        },
+        {
+          "scf": "474",
+          "state": "IN"
+        },
+        {
+          "scf": "476",
+          "state": "IN"
+        },
+        {
+          "scf": "477",
+          "state": "IN"
+        },
+        {
+          "scf": "478",
+          "state": "IN"
+        },
+        {
+          "scf": "479",
+          "state": "IN"
+        },
+        {
+          "scf": "482",
+          "state": "MI"
+        },
+        {
+          "scf": "484",
+          "state": "MI"
+        },
+        {
+          "scf": "486",
+          "state": "MI"
+        },
+        {
+          "scf": "487",
+          "state": "MI"
+        },
+        {
+          "scf": "488",
+          "state": "MI"
+        },
+        {
+          "scf": "489",
+          "state": "MI"
+        },
+        {
+          "scf": "490",
+          "state": "MI"
+        },
+        {
+          "scf": "492",
+          "state": "MI"
+        },
+        {
+          "scf": "493",
+          "state": "MI"
+        },
+        {
+          "scf": "494",
+          "state": "MI"
+        },
+        {
+          "scf": "495",
+          "state": "MI"
+        },
+        {
+          "scf": "498",
+          "state": "MI"
+        },
+        {
+          "scf": "501",
+          "state": "IA"
+        },
+        {
+          "scf": "502",
+          "state": "IA"
+        },
+        {
+          "scf": "507",
+          "state": "IA"
+        },
+        {
+          "scf": "522",
+          "state": "IA"
+        },
+        {
+          "scf": "523",
+          "state": "IA"
+        },
+        {
+          "scf": "524",
+          "state": "IA"
+        },
+        {
+          "scf": "530",
+          "state": "WI"
+        },
+        {
+          "scf": "532",
+          "state": "WI"
+        },
+        {
+          "scf": "534",
+          "state": "WI"
+        },
+        {
+          "scf": "535",
+          "state": "WI"
+        },
+        {
+          "scf": "540",
+          "state": "MN"
+        },
+        {
+          "scf": "544",
+          "state": "WI"
+        },
+        {
+          "scf": "545",
+          "state": "WI"
+        },
+        {
+          "scf": "546",
+          "state": "MN"
+        },
+        {
+          "scf": "549",
+          "state": "WI"
+        },
+        {
+          "scf": "550",
+          "state": "MN"
+        },
+        {
+          "scf": "558",
+          "state": "MN"
+        },
+        {
+          "scf": "559",
+          "state": "MN"
+        },
+        {
+          "scf": "561",
+          "state": "MN"
+        },
+        {
+          "scf": "562",
+          "state": "MN"
+        },
+        {
+          "scf": "564",
+          "state": "MN"
+        },
+        {
+          "scf": "565",
+          "state": "ND"
+        },
+        {
+          "scf": "580",
+          "state": "ND"
+        },
+        {
+          "scf": "585",
+          "state": "ND"
+        },
+        {
+          "scf": "588",
+          "state": "ND"
+        },
+        {
+          "scf": "601",
+          "state": "IL"
+        },
+        {
+          "scf": "604",
+          "state": "IL"
+        },
+        {
+          "scf": "605",
+          "state": "IL"
+        },
+        {
+          "scf": "606",
+          "state": "IL"
+        },
+        {
+          "scf": "607",
+          "state": "IL"
+        },
+        {
+          "scf": "608",
+          "state": "IL"
+        },
+        {
+          "scf": "609",
+          "state": "IL"
+        },
+        {
+          "scf": "610",
+          "state": "IL"
+        },
+        {
+          "scf": "611",
+          "state": "IL"
+        },
+        {
+          "scf": "612",
+          "state": "IL"
+        },
+        {
+          "scf": "613",
+          "state": "IL"
+        },
+        {
+          "scf": "615",
+          "state": "IL"
+        },
+        {
+          "scf": "617",
+          "state": "IL"
+        },
+        {
+          "scf": "618",
+          "state": "IL"
+        },
+        {
+          "scf": "620",
+          "state": "MO"
+        },
+        {
+          "scf": "622",
+          "state": "MO"
+        },
+        {
+          "scf": "625",
+          "state": "IL"
+        },
+        {
+          "scf": "626",
+          "state": "IL"
+        },
+        {
+          "scf": "628",
+          "state": "MO"
+        },
+        {
+          "scf": "629",
+          "state": "MO"
+        },
+        {
+          "scf": "630",
+          "state": "MO"
+        },
+        {
+          "scf": "631",
+          "state": "MO"
+        },
+        {
+          "scf": "633",
+          "state": "MO"
+        },
+        {
+          "scf": "634",
+          "state": "MO"
+        },
+        {
+          "scf": "636",
+          "state": "MO"
+        },
+        {
+          "scf": "637",
+          "state": "MO"
+        },
+        {
+          "scf": "638",
+          "state": "MO"
+        },
+        {
+          "scf": "639",
+          "state": "MO"
+        },
+        {
+          "scf": "640",
+          "state": "MO"
+        },
+        {
+          "scf": "641",
+          "state": "MO"
+        },
+        {
+          "scf": "645",
+          "state": "MO"
+        },
+        {
+          "scf": "646",
+          "state": "MO"
+        },
+        {
+          "scf": "647",
+          "state": "MO"
+        },
+        {
+          "scf": "648",
+          "state": "MO"
+        },
+        {
+          "scf": "650",
+          "state": "MO"
+        },
+        {
+          "scf": "653",
+          "state": "MO"
+        },
+        {
+          "scf": "655",
+          "state": "MO"
+        },
+        {
+          "scf": "656",
+          "state": "MO"
+        },
+        {
+          "scf": "657",
+          "state": "MO"
+        },
+        {
+          "scf": "658",
+          "state": "MO"
+        },
+        {
+          "scf": "665",
+          "state": "MO"
+        },
+        {
+          "scf": "681",
+          "state": "NE"
+        },
+        {
+          "scf": "686",
+          "state": "NE"
+        },
+        {
+          "scf": "688",
+          "state": "NE"
+        },
+        {
+          "scf": "693",
+          "state": "NE"
+        },
+        {
+          "scf": "717",
+          "state": "AR"
+        },
+        {
+          "scf": "719",
+          "state": "AR"
+        },
+        {
+          "scf": "720",
+          "state": "AR"
+        },
+        {
+          "scf": "721",
+          "state": "AR"
+        },
+        {
+          "scf": "722",
+          "state": "AR"
+        },
+        {
+          "scf": "723",
+          "state": "TN"
+        },
+        {
+          "scf": "724",
+          "state": "TN"
+        },
+        {
+          "scf": "725",
+          "state": "AR"
+        },
+        {
+          "scf": "726",
+          "state": "AR"
+        },
+        {
+          "scf": "727",
+          "state": "AR"
+        },
+        {
+          "scf": "728",
+          "state": "AR"
+        },
+        {
+          "scf": "729",
+          "state": "AR"
+        },
+        {
+          "scf": "730",
+          "state": "OK"
+        },
+        {
+          "scf": "731",
+          "state": "OK"
+        },
+        {
+          "scf": "735",
+          "state": "OK"
+        },
+        {
+          "scf": "737",
+          "state": "OK"
+        },
+        {
+          "scf": "738",
+          "state": "OK"
+        },
+        {
+          "scf": "740",
+          "state": "OK"
+        },
+        {
+          "scf": "741",
+          "state": "OK"
+        },
+        {
+          "scf": "743",
+          "state": "OK"
+        },
+        {
+          "scf": "744",
+          "state": "OK"
+        },
+        {
+          "scf": "745",
+          "state": "OK"
+        },
+        {
+          "scf": "748",
+          "state": "OK"
+        },
+        {
+          "scf": "749",
+          "state": "OK"
+        },
+        {
+          "scf": "751",
+          "state": "TX"
+        },
+        {
+          "scf": "754",
+          "state": "TX"
+        },
+        {
+          "scf": "757",
+          "state": "TX"
+        },
+        {
+          "scf": "765",
+          "state": "TX"
+        },
+        {
+          "scf": "772",
+          "state": "TX"
+        },
+        {
+          "scf": "773",
+          "state": "TX"
+        },
+        {
+          "scf": "774",
+          "state": "TX"
+        },
+        {
+          "scf": "775",
+          "state": "TX"
+        },
+        {
+          "scf": "776",
+          "state": "TX"
+        },
+        {
+          "scf": "778",
+          "state": "TX"
+        },
+        {
+          "scf": "780",
+          "state": "TX"
+        },
+        {
+          "scf": "781",
+          "state": "TX"
+        },
+        {
+          "scf": "783",
+          "state": "TX"
+        },
+        {
+          "scf": "784",
+          "state": "TX"
+        },
+        {
+          "scf": "785",
+          "state": "TX"
+        },
+        {
+          "scf": "790",
+          "state": "TX"
+        },
+        {
+          "scf": "795",
+          "state": "TX"
+        },
+        {
+          "scf": "799",
+          "state": "TX"
+        },
+        {
+          "scf": "801",
+          "state": "CO"
+        },
+        {
+          "scf": "802",
+          "state": "CO"
+        },
+        {
+          "scf": "805",
+          "state": "CO"
+        },
+        {
+          "scf": "806",
+          "state": "CO"
+        },
+        {
+          "scf": "807",
+          "state": "CO"
+        },
+        {
+          "scf": "808",
+          "state": "CO"
+        },
+        {
+          "scf": "809",
+          "state": "CO"
+        },
+        {
+          "scf": "810",
+          "state": "CO"
+        },
+        {
+          "scf": "811",
+          "state": "CO"
+        },
+        {
+          "scf": "812",
+          "state": "CO"
+        },
+        {
+          "scf": "814",
+          "state": "CO"
+        },
+        {
+          "scf": "815",
+          "state": "CO"
+        },
+        {
+          "scf": "820",
+          "state": "WY"
+        },
+        {
+          "scf": "832",
+          "state": "ID"
+        },
+        {
+          "scf": "833",
+          "state": "ID"
+        },
+        {
+          "scf": "834",
+          "state": "ID"
+        },
+        {
+          "scf": "835",
+          "state": "WA"
+        },
+        {
+          "scf": "836",
+          "state": "ID"
+        },
+        {
+          "scf": "837",
+          "state": "ID"
+        },
+        {
+          "scf": "838",
+          "state": "WA"
+        },
+        {
+          "scf": "850",
+          "state": "AZ"
+        },
+        {
+          "scf": "851",
+          "state": "AZ"
+        },
+        {
+          "scf": "853",
+          "state": "AZ"
+        },
+        {
+          "scf": "856",
+          "state": "AZ"
+        },
+        {
+          "scf": "857",
+          "state": "AZ"
+        },
+        {
+          "scf": "859",
+          "state": "AZ"
+        },
+        {
+          "scf": "860",
+          "state": "AZ"
+        },
+        {
+          "scf": "864",
+          "state": "NV"
+        },
+        {
+          "scf": "890",
+          "state": "NV"
+        },
+        {
+          "scf": "891",
+          "state": "NV"
+        },
+        {
+          "scf": "894",
+          "state": "NV"
+        },
+        {
+          "scf": "895",
+          "state": "NV"
+        },
+        {
+          "scf": "897",
+          "state": "NV"
+        },
+        {
+          "scf": "900",
+          "state": "CA"
+        },
+        {
+          "scf": "902",
+          "state": "CA"
+        },
+        {
+          "scf": "906",
+          "state": "CA"
+        },
+        {
+          "scf": "907",
+          "state": "CA"
+        },
+        {
+          "scf": "908",
+          "state": "CA"
+        },
+        {
+          "scf": "913",
+          "state": "CA"
+        },
+        {
+          "scf": "917",
+          "state": "CA"
+        },
+        {
+          "scf": "919",
+          "state": "CA"
+        },
+        {
+          "scf": "920",
+          "state": "CA"
+        },
+        {
+          "scf": "921",
+          "state": "CA"
+        },
+        {
+          "scf": "922",
+          "state": "CA"
+        },
+        {
+          "scf": "923",
+          "state": "CA"
+        },
+        {
+          "scf": "924",
+          "state": "CA"
+        },
+        {
+          "scf": "926",
+          "state": "CA"
+        },
+        {
+          "scf": "927",
+          "state": "CA"
+        },
+        {
+          "scf": "928",
+          "state": "CA"
+        },
+        {
+          "scf": "930",
+          "state": "CA"
+        },
+        {
+          "scf": "932",
+          "state": "CA"
+        },
+        {
+          "scf": "933",
+          "state": "CA"
+        },
+        {
+          "scf": "934",
+          "state": "CA"
+        },
+        {
+          "scf": "935",
+          "state": "CA"
+        },
+        {
+          "scf": "936",
+          "state": "CA"
+        },
+        {
+          "scf": "937",
+          "state": "CA"
+        },
+        {
+          "scf": "939",
+          "state": "CA"
+        },
+        {
+          "scf": "940",
+          "state": "CA"
+        },
+        {
+          "scf": "941",
+          "state": "CA"
+        },
+        {
+          "scf": "945",
+          "state": "CA"
+        },
+        {
+          "scf": "946",
+          "state": "CA"
+        },
+        {
+          "scf": "951",
+          "state": "CA"
+        },
+        {
+          "scf": "952",
+          "state": "CA"
+        },
+        {
+          "scf": "953",
+          "state": "CA"
+        },
+        {
+          "scf": "954",
+          "state": "CA"
+        },
+        {
+          "scf": "955",
+          "state": "CA"
+        },
+        {
+          "scf": "956",
+          "state": "CA"
+        },
+        {
+          "scf": "958",
+          "state": "CA"
+        },
+        {
+          "scf": "959",
+          "state": "CA"
+        },
+        {
+          "scf": "960",
+          "state": "CA"
+        },
+        {
+          "scf": "967",
+          "state": "HI"
+        },
+        {
+          "scf": "968",
+          "state": "HI"
+        },
+        {
+          "scf": "970",
+          "state": "OR"
+        },
+        {
+          "scf": "971",
+          "state": "OR"
+        },
+        {
+          "scf": "972",
+          "state": "OR"
+        },
+        {
+          "scf": "973",
+          "state": "OR"
+        },
+        {
+          "scf": "974",
+          "state": "OR"
+        },
+        {
+          "scf": "975",
+          "state": "OR"
+        },
+        {
+          "scf": "976",
+          "state": "OR"
+        },
+        {
+          "scf": "977",
+          "state": "OR"
+        },
+        {
+          "scf": "978",
+          "state": "OR"
+        },
+        {
+          "scf": "979",
+          "state": "ID"
+        },
+        {
+          "scf": "980",
+          "state": "WA"
+        },
+        {
+          "scf": "981",
+          "state": "WA"
+        },
+        {
+          "scf": "982",
+          "state": "WA"
+        },
+        {
+          "scf": "983",
+          "state": "WA"
+        },
+        {
+          "scf": "985",
+          "state": "WA"
+        },
+        {
+          "scf": "986",
+          "state": "OR"
+        },
+        {
+          "scf": "988",
+          "state": "WA"
+        },
+        {
+          "scf": "989",
+          "state": "WA"
+        },
+        {
+          "scf": "993",
+          "state": "WA"
+        }
+      ],
+      "afterItems": [
+        {
+          "scf": "028",
+          "state": "RI"
+        },
+        {
+          "scf": "042",
+          "state": "ME"
+        },
+        {
+          "scf": "046",
+          "state": "ME"
+        },
+        {
+          "scf": "047",
+          "state": "ME"
+        },
+        {
+          "scf": "065",
+          "state": "CT"
+        },
+        {
+          "scf": "066",
+          "state": "NY"
+        },
+        {
+          "scf": "067",
+          "state": "CT"
+        },
+        {
+          "scf": "070",
+          "state": "NJ"
+        },
+        {
+          "scf": "072",
+          "state": "NJ"
+        },
+        {
+          "scf": "074",
+          "state": "NJ"
+        },
+        {
+          "scf": "077",
+          "state": "NJ"
+        },
+        {
+          "scf": "080",
+          "state": "NJ"
+        },
+        {
+          "scf": "082",
+          "state": "NJ"
+        },
+        {
+          "scf": "083",
+          "state": "NJ"
+        },
+        {
+          "scf": "086",
+          "state": "NJ"
+        },
+        {
+          "scf": "087",
+          "state": "NJ"
+        },
+        {
+          "scf": "088",
+          "state": "NJ"
+        },
+        {
+          "scf": "103",
+          "state": "NY"
+        },
+        {
+          "scf": "104",
+          "state": "NY"
+        },
+        {
+          "scf": "107",
+          "state": "NY"
+        },
+        {
+          "scf": "109",
+          "state": "NY"
+        },
+        {
+          "scf": "110",
+          "state": "NY"
+        },
+        {
+          "scf": "112",
+          "state": "NY"
+        },
+        {
+          "scf": "113",
+          "state": "NY"
+        },
+        {
+          "scf": "114",
+          "state": "NY"
+        },
+        {
+          "scf": "115",
+          "state": "NY"
+        },
+        {
+          "scf": "117",
+          "state": "NY"
+        },
+        {
+          "scf": "118",
+          "state": "NY"
+        },
+        {
+          "scf": "120",
+          "state": "NY"
+        },
+        {
+          "scf": "121",
+          "state": "NY"
+        },
+        {
+          "scf": "123",
+          "state": "NY"
+        },
+        {
+          "scf": "125",
+          "state": "NY"
+        },
+        {
+          "scf": "129",
+          "state": "NY"
+        },
+        {
+          "scf": "130",
+          "state": "NY"
+        },
+        {
+          "scf": "131",
+          "state": "NY"
+        },
+        {
+          "scf": "133",
+          "state": "NY"
+        },
+        {
+          "scf": "134",
+          "state": "NY"
+        },
+        {
+          "scf": "136",
+          "state": "NY"
+        },
+        {
+          "scf": "138",
+          "state": "NY"
+        },
+        {
+          "scf": "139",
+          "state": "NY"
+        },
+        {
+          "scf": "140",
+          "state": "NY"
+        },
+        {
+          "scf": "142",
+          "state": "NY"
+        },
+        {
+          "scf": "143",
+          "state": "NY"
+        },
+        {
+          "scf": "144",
+          "state": "NY"
+        },
+        {
+          "scf": "145",
+          "state": "NY"
+        },
+        {
+          "scf": "146",
+          "state": "NY"
+        },
+        {
+          "scf": "147",
+          "state": "NY"
+        },
+        {
+          "scf": "151",
+          "state": "PA"
+        },
+        {
+          "scf": "152",
+          "state": "PA"
+        },
+        {
+          "scf": "153",
+          "state": "PA"
+        },
+        {
+          "scf": "155",
+          "state": "PA"
+        },
+        {
+          "scf": "156",
+          "state": "PA"
+        },
+        {
+          "scf": "158",
+          "state": "PA"
+        },
+        {
+          "scf": "160",
+          "state": "PA"
+        },
+        {
+          "scf": "161",
+          "state": "PA"
+        },
+        {
+          "scf": "163",
+          "state": "PA"
+        },
+        {
+          "scf": "166",
+          "state": "PA"
+        },
+        {
+          "scf": "167",
+          "state": "NY"
+        },
+        {
+          "scf": "170",
+          "state": "PA"
+        },
+        {
+          "scf": "172",
+          "state": "PA"
+        },
+        {
+          "scf": "173",
+          "state": "PA"
+        },
+        {
+          "scf": "175",
+          "state": "PA"
+        },
+        {
+          "scf": "176",
+          "state": "PA"
+        },
+        {
+          "scf": "177",
+          "state": "PA"
+        },
+        {
+          "scf": "178",
+          "state": "PA"
+        },
+        {
+          "scf": "179",
+          "state": "PA"
+        },
+        {
+          "scf": "180",
+          "state": "PA"
+        },
+        {
+          "scf": "182",
+          "state": "PA"
+        },
+        {
+          "scf": "183",
+          "state": "PA"
+        },
+        {
+          "scf": "184",
+          "state": "PA"
+        },
+        {
+          "scf": "185",
+          "state": "PA"
+        },
+        {
+          "scf": "186",
+          "state": "PA"
+        },
+        {
+          "scf": "187",
+          "state": "PA"
+        },
+        {
+          "scf": "189",
+          "state": "PA"
+        },
+        {
+          "scf": "190",
+          "state": "PA"
+        },
+        {
+          "scf": "191",
+          "state": "PA"
+        },
+        {
+          "scf": "193",
+          "state": "DE"
+        },
+        {
+          "scf": "195",
+          "state": "PA"
+        },
+        {
+          "scf": "196",
+          "state": "PA"
+        },
+        {
+          "scf": "197",
+          "state": "DE"
+        },
+        {
+          "scf": "198",
+          "state": "DE"
+        },
+        {
+          "scf": "199",
+          "state": "DE"
+        },
+        {
+          "scf": "200",
+          "state": "DC"
+        },
+        {
+          "scf": "201",
+          "state": "VA"
+        },
+        {
+          "scf": "220",
+          "state": "VA"
+        },
+        {
+          "scf": "224",
+          "state": "VA"
+        },
+        {
+          "scf": "225",
+          "state": "VA"
+        },
+        {
+          "scf": "226",
+          "state": "VA"
+        },
+        {
+          "scf": "228",
+          "state": "VA"
+        },
+        {
+          "scf": "230",
+          "state": "VA"
+        },
+        {
+          "scf": "231",
+          "state": "VA"
+        },
+        {
+          "scf": "232",
+          "state": "VA"
+        },
+        {
+          "scf": "233",
+          "state": "VA"
+        },
+        {
+          "scf": "234",
+          "state": "VA"
+        },
+        {
+          "scf": "235",
+          "state": "VA"
+        },
+        {
+          "scf": "236",
+          "state": "VA"
+        },
+        {
+          "scf": "237",
+          "state": "VA"
+        },
+        {
+          "scf": "238",
+          "state": "VA"
+        },
+        {
+          "scf": "240",
+          "state": "VA"
+        },
+        {
+          "scf": "241",
+          "state": "VA"
+        },
+        {
+          "scf": "242",
+          "state": "TN"
+        },
+        {
+          "scf": "244",
+          "state": "VA"
+        },
+        {
+          "scf": "245",
+          "state": "VA"
+        },
+        {
+          "scf": "246",
+          "state": "WV"
+        },
+        {
+          "scf": "254",
+          "state": "PA"
+        },
+        {
+          "scf": "260",
+          "state": "WV"
+        },
+        {
+          "scf": "261",
+          "state": "WV"
+        },
+        {
+          "scf": "263",
+          "state": "WV"
+        },
+        {
+          "scf": "265",
+          "state": "WV"
+        },
+        {
+          "scf": "290",
+          "state": "SC"
+        },
+        {
+          "scf": "291",
+          "state": "SC"
+        },
+        {
+          "scf": "292",
+          "state": "SC"
+        },
+        {
+          "scf": "294",
+          "state": "SC"
+        },
+        {
+          "scf": "295",
+          "state": "SC"
+        },
+        {
+          "scf": "296",
+          "state": "SC"
+        },
+        {
+          "scf": "298",
+          "state": "GA"
+        },
+        {
+          "scf": "299",
+          "state": "SC"
+        },
+        {
+          "scf": "301",
+          "state": "GA"
+        },
+        {
+          "scf": "302",
+          "state": "GA"
+        },
+        {
+          "scf": "303",
+          "state": "GA"
+        },
+        {
+          "scf": "304",
+          "state": "GA"
+        },
+        {
+          "scf": "305",
+          "state": "GA"
+        },
+        {
+          "scf": "309",
+          "state": "GA"
+        },
+        {
+          "scf": "310",
+          "state": "GA"
+        },
+        {
+          "scf": "312",
+          "state": "GA"
+        },
+        {
+          "scf": "313",
+          "state": "FL"
+        },
+        {
+          "scf": "314",
+          "state": "FL"
+        },
+        {
+          "scf": "315",
+          "state": "FL"
+        },
+        {
+          "scf": "316",
+          "state": "FL"
+        },
+        {
+          "scf": "317",
+          "state": "FL"
+        },
+        {
+          "scf": "318",
+          "state": "GA"
+        },
+        {
+          "scf": "319",
+          "state": "GA"
+        },
+        {
+          "scf": "320",
+          "state": "FL"
+        },
+        {
+          "scf": "321",
+          "state": "FL"
+        },
+        {
+          "scf": "322",
+          "state": "FL"
+        },
+        {
+          "scf": "323",
+          "state": "FL"
+        },
+        {
+          "scf": "324",
+          "state": "FL"
+        },
+        {
+          "scf": "325",
+          "state": "FL"
+        },
+        {
+          "scf": "326",
+          "state": "FL"
+        },
+        {
+          "scf": "327",
+          "state": "FL"
+        },
+        {
+          "scf": "328",
+          "state": "FL"
+        },
+        {
+          "scf": "329",
+          "state": "FL"
+        },
+        {
+          "scf": "330",
+          "state": "FL"
+        },
+        {
+          "scf": "331",
+          "state": "FL"
+        },
+        {
+          "scf": "334",
+          "state": "FL"
+        },
+        {
+          "scf": "335",
+          "state": "FL"
+        },
+        {
+          "scf": "336",
+          "state": "FL"
+        },
+        {
+          "scf": "338",
+          "state": "FL"
+        },
+        {
+          "scf": "339",
+          "state": "FL"
+        },
+        {
+          "scf": "341",
+          "state": "FL"
+        },
+        {
+          "scf": "344",
+          "state": "FL"
+        },
+        {
+          "scf": "346",
+          "state": "FL"
+        },
+        {
+          "scf": "347",
+          "state": "FL"
+        },
+        {
+          "scf": "349",
+          "state": "FL"
+        },
+        {
+          "scf": "350",
+          "state": "AL"
+        },
+        {
+          "scf": "351",
+          "state": "AL"
+        },
+        {
+          "scf": "352",
+          "state": "AL"
+        },
+        {
+          "scf": "354",
+          "state": "AL"
+        },
+        {
+          "scf": "355",
+          "state": "AL"
+        },
+        {
+          "scf": "356",
+          "state": "AL"
+        },
+        {
+          "scf": "357",
+          "state": "AL"
+        },
+        {
+          "scf": "358",
+          "state": "AL"
+        },
+        {
+          "scf": "359",
+          "state": "AL"
+        },
+        {
+          "scf": "360",
+          "state": "AL"
+        },
+        {
+          "scf": "361",
+          "state": "AL"
+        },
+        {
+          "scf": "363",
+          "state": "AL"
+        },
+        {
+          "scf": "365",
+          "state": "AL"
+        },
+        {
+          "scf": "366",
+          "state": "AL"
+        },
+        {
+          "scf": "368",
+          "state": "AL"
+        },
+        {
+          "scf": "370",
+          "state": "TN"
+        },
+        {
+          "scf": "371",
+          "state": "TN"
+        },
+        {
+          "scf": "372",
+          "state": "TN"
+        },
+        {
+          "scf": "373",
+          "state": "TN"
+        },
+        {
+          "scf": "374",
+          "state": "TN"
+        },
+        {
+          "scf": "376",
+          "state": "TN"
+        },
+        {
+          "scf": "377",
+          "state": "TN"
+        },
+        {
+          "scf": "378",
+          "state": "TN"
+        },
+        {
+          "scf": "379",
+          "state": "TN"
+        },
+        {
+          "scf": "380",
+          "state": "TN"
+        },
+        {
+          "scf": "381",
+          "state": "TN"
+        },
+        {
+          "scf": "382",
+          "state": "TN"
+        },
+        {
+          "scf": "383",
+          "state": "TN"
+        },
+        {
+          "scf": "384",
+          "state": "TN"
+        },
+        {
+          "scf": "385",
+          "state": "TN"
+        },
+        {
+          "scf": "386",
+          "state": "TN"
+        },
+        {
+          "scf": "390",
+          "state": "MS"
+        },
+        {
+          "scf": "391",
+          "state": "MS"
+        },
+        {
+          "scf": "394",
+          "state": "AL"
+        },
+        {
+          "scf": "395",
+          "state": "MS"
+        },
+        {
+          "scf": "396",
+          "state": "MS"
+        },
+        {
+          "scf": "400",
+          "state": "KY"
+        },
+        {
+          "scf": "401",
+          "state": "KY"
+        },
+        {
+          "scf": "402",
+          "state": "KY"
+        },
+        {
+          "scf": "403",
+          "state": "KY"
+        },
+        {
+          "scf": "404",
+          "state": "KY"
+        },
+        {
+          "scf": "407",
+          "state": "TN"
+        },
+        {
+          "scf": "409",
+          "state": "TN"
+        },
+        {
+          "scf": "410",
+          "state": "OH"
+        },
+        {
+          "scf": "411",
+          "state": "WV"
+        },
+        {
+          "scf": "413",
+          "state": "KY"
+        },
+        {
+          "scf": "420",
+          "state": "IN"
+        },
+        {
+          "scf": "421",
+          "state": "TN"
+        },
+        {
+          "scf": "424",
+          "state": "IN"
+        },
+        {
+          "scf": "427",
+          "state": "KY"
+        },
+        {
+          "scf": "430",
+          "state": "OH"
+        },
+        {
+          "scf": "432",
+          "state": "OH"
+        },
+        {
+          "scf": "434",
+          "state": "OH"
+        },
+        {
+          "scf": "435",
+          "state": "OH"
+        },
+        {
+          "scf": "436",
+          "state": "OH"
+        },
+        {
+          "scf": "437",
+          "state": "OH"
+        },
+        {
+          "scf": "438",
+          "state": "OH"
+        },
+        {
+          "scf": "439",
+          "state": "PA"
+        },
+        {
+          "scf": "440",
+          "state": "OH"
+        },
+        {
+          "scf": "441",
+          "state": "OH"
+        },
+        {
+          "scf": "443",
+          "state": "OH"
+        },
+        {
+          "scf": "444",
+          "state": "OH"
+        },
+        {
+          "scf": "445",
+          "state": "OH"
+        },
+        {
+          "scf": "447",
+          "state": "OH"
+        },
+        {
+          "scf": "449",
+          "state": "OH"
+        },
+        {
+          "scf": "451",
+          "state": "OH"
+        },
+        {
+          "scf": "452",
+          "state": "OH"
+        },
+        {
+          "scf": "453",
+          "state": "OH"
+        },
+        {
+          "scf": "455",
+          "state": "OH"
+        },
+        {
+          "scf": "456",
+          "state": "OH"
+        },
+        {
+          "scf": "457",
+          "state": "OH"
+        },
+        {
+          "scf": "458",
+          "state": "OH"
+        },
+        {
+          "scf": "461",
+          "state": "IN"
+        },
+        {
+          "scf": "462",
+          "state": "IN"
+        },
+        {
+          "scf": "463",
+          "state": "IN"
+        },
+        {
+          "scf": "465",
+          "state": "IN"
+        },
+        {
+          "scf": "466",
+          "state": "IN"
+        },
+        {
+          "scf": "467",
+          "state": "IN"
+        },
+        {
+          "scf": "468",
+          "state": "IN"
+        },
+        {
+          "scf": "469",
+          "state": "IN"
+        },
+        {
+          "scf": "470",
+          "state": "OH"
+        },
+        {
+          "scf": "471",
+          "state": "KY"
+        },
+        {
+          "scf": "473",
+          "state": "IN"
+        },
+        {
+          "scf": "474",
+          "state": "IN"
+        },
+        {
+          "scf": "476",
+          "state": "IN"
+        },
+        {
+          "scf": "477",
+          "state": "IN"
+        },
+        {
+          "scf": "478",
+          "state": "IN"
+        },
+        {
+          "scf": "479",
+          "state": "IN"
+        },
+        {
+          "scf": "482",
+          "state": "MI"
+        },
+        {
+          "scf": "484",
+          "state": "MI"
+        },
+        {
+          "scf": "486",
+          "state": "MI"
+        },
+        {
+          "scf": "487",
+          "state": "MI"
+        },
+        {
+          "scf": "488",
+          "state": "MI"
+        },
+        {
+          "scf": "489",
+          "state": "MI"
+        },
+        {
+          "scf": "490",
+          "state": "MI"
+        },
+        {
+          "scf": "492",
+          "state": "MI"
+        },
+        {
+          "scf": "493",
+          "state": "MI"
+        },
+        {
+          "scf": "494",
+          "state": "MI"
+        },
+        {
+          "scf": "495",
+          "state": "MI"
+        },
+        {
+          "scf": "498",
+          "state": "MI"
+        },
+        {
+          "scf": "501",
+          "state": "IA"
+        },
+        {
+          "scf": "502",
+          "state": "IA"
+        },
+        {
+          "scf": "507",
+          "state": "IA"
+        },
+        {
+          "scf": "522",
+          "state": "IA"
+        },
+        {
+          "scf": "523",
+          "state": "IA"
+        },
+        {
+          "scf": "524",
+          "state": "IA"
+        },
+        {
+          "scf": "530",
+          "state": "WI"
+        },
+        {
+          "scf": "532",
+          "state": "WI"
+        },
+        {
+          "scf": "534",
+          "state": "WI"
+        },
+        {
+          "scf": "535",
+          "state": "WI"
+        },
+        {
+          "scf": "540",
+          "state": "MN"
+        },
+        {
+          "scf": "544",
+          "state": "WI"
+        },
+        {
+          "scf": "545",
+          "state": "WI"
+        },
+        {
+          "scf": "546",
+          "state": "MN"
+        },
+        {
+          "scf": "549",
+          "state": "WI"
+        },
+        {
+          "scf": "550",
+          "state": "MN"
+        },
+        {
+          "scf": "558",
+          "state": "MN"
+        },
+        {
+          "scf": "559",
+          "state": "MN"
+        },
+        {
+          "scf": "561",
+          "state": "MN"
+        },
+        {
+          "scf": "562",
+          "state": "MN"
+        },
+        {
+          "scf": "564",
+          "state": "MN"
+        },
+        {
+          "scf": "565",
+          "state": "ND"
+        },
+        {
+          "scf": "580",
+          "state": "ND"
+        },
+        {
+          "scf": "585",
+          "state": "ND"
+        },
+        {
+          "scf": "588",
+          "state": "ND"
+        },
+        {
+          "scf": "601",
+          "state": "IL"
+        },
+        {
+          "scf": "604",
+          "state": "IL"
+        },
+        {
+          "scf": "605",
+          "state": "IL"
+        },
+        {
+          "scf": "606",
+          "state": "IL"
+        },
+        {
+          "scf": "607",
+          "state": "IL"
+        },
+        {
+          "scf": "608",
+          "state": "IL"
+        },
+        {
+          "scf": "609",
+          "state": "IL"
+        },
+        {
+          "scf": "610",
+          "state": "IL"
+        },
+        {
+          "scf": "611",
+          "state": "IL"
+        },
+        {
+          "scf": "612",
+          "state": "IL"
+        },
+        {
+          "scf": "613",
+          "state": "IL"
+        },
+        {
+          "scf": "615",
+          "state": "IL"
+        },
+        {
+          "scf": "617",
+          "state": "IL"
+        },
+        {
+          "scf": "618",
+          "state": "IL"
+        },
+        {
+          "scf": "620",
+          "state": "MO"
+        },
+        {
+          "scf": "622",
+          "state": "MO"
+        },
+        {
+          "scf": "625",
+          "state": "IL"
+        },
+        {
+          "scf": "626",
+          "state": "IL"
+        },
+        {
+          "scf": "628",
+          "state": "MO"
+        },
+        {
+          "scf": "629",
+          "state": "MO"
+        },
+        {
+          "scf": "630",
+          "state": "MO"
+        },
+        {
+          "scf": "631",
+          "state": "MO"
+        },
+        {
+          "scf": "633",
+          "state": "MO"
+        },
+        {
+          "scf": "634",
+          "state": "MO"
+        },
+        {
+          "scf": "636",
+          "state": "MO"
+        },
+        {
+          "scf": "637",
+          "state": "MO"
+        },
+        {
+          "scf": "638",
+          "state": "MO"
+        },
+        {
+          "scf": "639",
+          "state": "MO"
+        },
+        {
+          "scf": "640",
+          "state": "MO"
+        },
+        {
+          "scf": "641",
+          "state": "MO"
+        },
+        {
+          "scf": "645",
+          "state": "MO"
+        },
+        {
+          "scf": "646",
+          "state": "MO"
+        },
+        {
+          "scf": "647",
+          "state": "MO"
+        },
+        {
+          "scf": "648",
+          "state": "MO"
+        },
+        {
+          "scf": "650",
+          "state": "MO"
+        },
+        {
+          "scf": "653",
+          "state": "MO"
+        },
+        {
+          "scf": "655",
+          "state": "MO"
+        },
+        {
+          "scf": "656",
+          "state": "MO"
+        },
+        {
+          "scf": "657",
+          "state": "MO"
+        },
+        {
+          "scf": "658",
+          "state": "MO"
+        },
+        {
+          "scf": "665",
+          "state": "MO"
+        },
+        {
+          "scf": "681",
+          "state": "NE"
+        },
+        {
+          "scf": "686",
+          "state": "NE"
+        },
+        {
+          "scf": "688",
+          "state": "NE"
+        },
+        {
+          "scf": "693",
+          "state": "NE"
+        },
+        {
+          "scf": "717",
+          "state": "AR"
+        },
+        {
+          "scf": "719",
+          "state": "AR"
+        },
+        {
+          "scf": "720",
+          "state": "AR"
+        },
+        {
+          "scf": "721",
+          "state": "AR"
+        },
+        {
+          "scf": "722",
+          "state": "AR"
+        },
+        {
+          "scf": "723",
+          "state": "TN"
+        },
+        {
+          "scf": "724",
+          "state": "TN"
+        },
+        {
+          "scf": "725",
+          "state": "AR"
+        },
+        {
+          "scf": "726",
+          "state": "AR"
+        },
+        {
+          "scf": "727",
+          "state": "AR"
+        },
+        {
+          "scf": "728",
+          "state": "AR"
+        },
+        {
+          "scf": "729",
+          "state": "AR"
+        },
+        {
+          "scf": "730",
+          "state": "OK"
+        },
+        {
+          "scf": "731",
+          "state": "OK"
+        },
+        {
+          "scf": "735",
+          "state": "OK"
+        },
+        {
+          "scf": "737",
+          "state": "OK"
+        },
+        {
+          "scf": "738",
+          "state": "OK"
+        },
+        {
+          "scf": "740",
+          "state": "OK"
+        },
+        {
+          "scf": "741",
+          "state": "OK"
+        },
+        {
+          "scf": "743",
+          "state": "OK"
+        },
+        {
+          "scf": "744",
+          "state": "OK"
+        },
+        {
+          "scf": "745",
+          "state": "OK"
+        },
+        {
+          "scf": "748",
+          "state": "OK"
+        },
+        {
+          "scf": "749",
+          "state": "OK"
+        },
+        {
+          "scf": "751",
+          "state": "TX"
+        },
+        {
+          "scf": "754",
+          "state": "TX"
+        },
+        {
+          "scf": "757",
+          "state": "TX"
+        },
+        {
+          "scf": "765",
+          "state": "TX"
+        },
+        {
+          "scf": "772",
+          "state": "TX"
+        },
+        {
+          "scf": "773",
+          "state": "TX"
+        },
+        {
+          "scf": "774",
+          "state": "TX"
+        },
+        {
+          "scf": "775",
+          "state": "TX"
+        },
+        {
+          "scf": "776",
+          "state": "TX"
+        },
+        {
+          "scf": "778",
+          "state": "TX"
+        },
+        {
+          "scf": "780",
+          "state": "TX"
+        },
+        {
+          "scf": "781",
+          "state": "TX"
+        },
+        {
+          "scf": "783",
+          "state": "TX"
+        },
+        {
+          "scf": "784",
+          "state": "TX"
+        },
+        {
+          "scf": "785",
+          "state": "TX"
+        },
+        {
+          "scf": "790",
+          "state": "TX"
+        },
+        {
+          "scf": "795",
+          "state": "TX"
+        },
+        {
+          "scf": "799",
+          "state": "TX"
+        },
+        {
+          "scf": "801",
+          "state": "CO"
+        },
+        {
+          "scf": "802",
+          "state": "CO"
+        },
+        {
+          "scf": "805",
+          "state": "CO"
+        },
+        {
+          "scf": "806",
+          "state": "CO"
+        },
+        {
+          "scf": "807",
+          "state": "CO"
+        },
+        {
+          "scf": "808",
+          "state": "CO"
+        },
+        {
+          "scf": "809",
+          "state": "CO"
+        },
+        {
+          "scf": "810",
+          "state": "CO"
+        },
+        {
+          "scf": "811",
+          "state": "CO"
+        },
+        {
+          "scf": "812",
+          "state": "CO"
+        },
+        {
+          "scf": "814",
+          "state": "CO"
+        },
+        {
+          "scf": "815",
+          "state": "CO"
+        },
+        {
+          "scf": "820",
+          "state": "WY"
+        },
+        {
+          "scf": "832",
+          "state": "ID"
+        },
+        {
+          "scf": "833",
+          "state": "ID"
+        },
+        {
+          "scf": "834",
+          "state": "ID"
+        },
+        {
+          "scf": "835",
+          "state": "WA"
+        },
+        {
+          "scf": "836",
+          "state": "ID"
+        },
+        {
+          "scf": "837",
+          "state": "ID"
+        },
+        {
+          "scf": "838",
+          "state": "WA"
+        },
+        {
+          "scf": "850",
+          "state": "AZ"
+        },
+        {
+          "scf": "851",
+          "state": "AZ"
+        },
+        {
+          "scf": "853",
+          "state": "AZ"
+        },
+        {
+          "scf": "856",
+          "state": "AZ"
+        },
+        {
+          "scf": "857",
+          "state": "AZ"
+        },
+        {
+          "scf": "859",
+          "state": "AZ"
+        },
+        {
+          "scf": "860",
+          "state": "AZ"
+        },
+        {
+          "scf": "864",
+          "state": "NV"
+        },
+        {
+          "scf": "890",
+          "state": "NV"
+        },
+        {
+          "scf": "891",
+          "state": "NV"
+        },
+        {
+          "scf": "894",
+          "state": "NV"
+        },
+        {
+          "scf": "895",
+          "state": "NV"
+        },
+        {
+          "scf": "897",
+          "state": "NV"
+        },
+        {
+          "scf": "900",
+          "state": "CA"
+        },
+        {
+          "scf": "902",
+          "state": "CA"
+        },
+        {
+          "scf": "906",
+          "state": "CA"
+        },
+        {
+          "scf": "907",
+          "state": "CA"
+        },
+        {
+          "scf": "908",
+          "state": "CA"
+        },
+        {
+          "scf": "913",
+          "state": "CA"
+        },
+        {
+          "scf": "917",
+          "state": "CA"
+        },
+        {
+          "scf": "919",
+          "state": "CA"
+        },
+        {
+          "scf": "920",
+          "state": "CA"
+        },
+        {
+          "scf": "921",
+          "state": "CA"
+        },
+        {
+          "scf": "922",
+          "state": "CA"
+        },
+        {
+          "scf": "923",
+          "state": "CA"
+        },
+        {
+          "scf": "924",
+          "state": "CA"
+        },
+        {
+          "scf": "926",
+          "state": "CA"
+        },
+        {
+          "scf": "927",
+          "state": "CA"
+        },
+        {
+          "scf": "928",
+          "state": "CA"
+        },
+        {
+          "scf": "930",
+          "state": "CA"
+        },
+        {
+          "scf": "932",
+          "state": "CA"
+        },
+        {
+          "scf": "933",
+          "state": "CA"
+        },
+        {
+          "scf": "934",
+          "state": "CA"
+        },
+        {
+          "scf": "935",
+          "state": "CA"
+        },
+        {
+          "scf": "936",
+          "state": "CA"
+        },
+        {
+          "scf": "937",
+          "state": "CA"
+        },
+        {
+          "scf": "939",
+          "state": "CA"
+        },
+        {
+          "scf": "940",
+          "state": "CA"
+        },
+        {
+          "scf": "941",
+          "state": "CA"
+        },
+        {
+          "scf": "945",
+          "state": "CA"
+        },
+        {
+          "scf": "946",
+          "state": "CA"
+        },
+        {
+          "scf": "951",
+          "state": "CA"
+        },
+        {
+          "scf": "952",
+          "state": "CA"
+        },
+        {
+          "scf": "953",
+          "state": "CA"
+        },
+        {
+          "scf": "954",
+          "state": "CA"
+        },
+        {
+          "scf": "955",
+          "state": "CA"
+        },
+        {
+          "scf": "956",
+          "state": "CA"
+        },
+        {
+          "scf": "958",
+          "state": "CA"
+        },
+        {
+          "scf": "959",
+          "state": "CA"
+        },
+        {
+          "scf": "960",
+          "state": "CA"
+        },
+        {
+          "scf": "967",
+          "state": "HI"
+        },
+        {
+          "scf": "968",
+          "state": "HI"
+        },
+        {
+          "scf": "970",
+          "state": "OR"
+        },
+        {
+          "scf": "971",
+          "state": "OR"
+        },
+        {
+          "scf": "972",
+          "state": "OR"
+        },
+        {
+          "scf": "973",
+          "state": "OR"
+        },
+        {
+          "scf": "974",
+          "state": "OR"
+        },
+        {
+          "scf": "975",
+          "state": "OR"
+        },
+        {
+          "scf": "976",
+          "state": "OR"
+        },
+        {
+          "scf": "977",
+          "state": "OR"
+        },
+        {
+          "scf": "978",
+          "state": "OR"
+        },
+        {
+          "scf": "979",
+          "state": "ID"
+        },
+        {
+          "scf": "980",
+          "state": "WA"
+        },
+        {
+          "scf": "981",
+          "state": "WA"
+        },
+        {
+          "scf": "982",
+          "state": "WA"
+        },
+        {
+          "scf": "983",
+          "state": "WA"
+        },
+        {
+          "scf": "985",
+          "state": "WA"
+        },
+        {
+          "scf": "986",
+          "state": "OR"
+        },
+        {
+          "scf": "988",
+          "state": "WA"
+        },
+        {
+          "scf": "989",
+          "state": "WA"
+        },
+        {
+          "scf": "993",
+          "state": "WA"
+        }
+      ],
+      "metadata": {
+        "removedScfs": [
+          "011",
+          "012",
+          "013",
+          "015",
+          "016",
+          "021",
+          "023",
+          "026",
+          "027"
+        ]
+      }
+    },
+    {
+      "id": "ref_history_1794764300502_4xh002",
+      "listType": "nhcl",
+      "actionType": "dnm-exclusion",
+      "actor": "System",
+      "sourceName": "do-not-mail-enforcement",
+      "reason": "Removed because the SCF belongs to an active Do Not Mail state.",
+      "changedAt": "2026-11-15T17:38:20.502Z",
+      "beforeItems": [
+        {
+          "scf": "010",
+          "state": "CT"
+        },
+        {
+          "scf": "011",
+          "state": "CT"
+        },
+        {
+          "scf": "012",
+          "state": "CT"
+        },
+        {
+          "scf": "013",
+          "state": "MA"
+        },
+        {
+          "scf": "014",
+          "state": "MA"
+        },
+        {
+          "scf": "017",
+          "state": "MA"
+        },
+        {
+          "scf": "018",
+          "state": "MA"
+        },
+        {
+          "scf": "019",
+          "state": "MA"
+        },
+        {
+          "scf": "021",
+          "state": "MA"
+        },
+        {
+          "scf": "023",
+          "state": "MA"
+        },
+        {
+          "scf": "026",
+          "state": "RI"
+        },
+        {
+          "scf": "027",
+          "state": "RI"
+        },
+        {
+          "scf": "028",
+          "state": "RI"
+        },
+        {
+          "scf": "040",
+          "state": "ME"
+        },
+        {
+          "scf": "041",
+          "state": "ME"
+        },
+        {
+          "scf": "042",
+          "state": "ME"
+        },
+        {
+          "scf": "046",
+          "state": "ME"
+        },
+        {
+          "scf": "047",
+          "state": "ME"
+        },
+        {
+          "scf": "060",
+          "state": "CT"
+        },
+        {
+          "scf": "061",
+          "state": "CT"
+        },
+        {
+          "scf": "067",
+          "state": "CT"
+        },
+        {
+          "scf": "070",
+          "state": "NJ"
+        },
+        {
+          "scf": "071",
+          "state": "NJ"
+        },
+        {
+          "scf": "072",
+          "state": "NJ"
+        },
+        {
+          "scf": "077",
+          "state": "NJ"
+        },
+        {
+          "scf": "080",
+          "state": "NJ"
+        },
+        {
+          "scf": "082",
+          "state": "NJ"
+        },
+        {
+          "scf": "083",
+          "state": "NJ"
+        },
+        {
+          "scf": "084",
+          "state": "NJ"
+        },
+        {
+          "scf": "085",
+          "state": "NJ"
+        },
+        {
+          "scf": "086",
+          "state": "NJ"
+        },
+        {
+          "scf": "104",
+          "state": "NY"
+        },
+        {
+          "scf": "105",
+          "state": "NY"
+        },
+        {
+          "scf": "109",
+          "state": "NY"
+        },
+        {
+          "scf": "112",
+          "state": "NY"
+        },
+        {
+          "scf": "113",
+          "state": "NY"
+        },
+        {
+          "scf": "114",
+          "state": "NY"
+        },
+        {
+          "scf": "115",
+          "state": "NY"
+        },
+        {
+          "scf": "116",
+          "state": "NY"
+        },
+        {
+          "scf": "117",
+          "state": "NY"
+        },
+        {
+          "scf": "121",
+          "state": "NY"
+        },
+        {
+          "scf": "126",
+          "state": "NY"
+        },
+        {
+          "scf": "130",
+          "state": "NY"
+        },
+        {
+          "scf": "132",
+          "state": "NY"
+        },
+        {
+          "scf": "139",
+          "state": "NY"
+        },
+        {
+          "scf": "142",
+          "state": "NY"
+        },
+        {
+          "scf": "143",
+          "state": "NY"
+        },
+        {
+          "scf": "146",
+          "state": "NY"
+        },
+        {
+          "scf": "150",
+          "state": "PA"
+        },
+        {
+          "scf": "151",
+          "state": "PA"
+        },
+        {
+          "scf": "152",
+          "state": "PA"
+        },
+        {
+          "scf": "153",
+          "state": "PA"
+        },
+        {
+          "scf": "154",
+          "state": "PA"
+        },
+        {
+          "scf": "156",
+          "state": "PA"
+        },
+        {
+          "scf": "165",
+          "state": "PA"
+        },
+        {
+          "scf": "171",
+          "state": "PA"
+        },
+        {
+          "scf": "172",
+          "state": "PA"
+        },
+        {
+          "scf": "176",
+          "state": "PA"
+        },
+        {
+          "scf": "177",
+          "state": "PA"
+        },
+        {
+          "scf": "181",
+          "state": "PA"
+        },
+        {
+          "scf": "182",
+          "state": "PA"
+        },
+        {
+          "scf": "183",
+          "state": "PA"
+        },
+        {
+          "scf": "187",
+          "state": "PA"
+        },
+        {
+          "scf": "189",
+          "state": "PA"
+        },
+        {
+          "scf": "190",
+          "state": "PA"
+        },
+        {
+          "scf": "191",
+          "state": "PA"
+        },
+        {
+          "scf": "197",
+          "state": "DE"
+        },
+        {
+          "scf": "199",
+          "state": "DE"
+        },
+        {
+          "scf": "225",
+          "state": "VA"
+        },
+        {
+          "scf": "232",
+          "state": "VA"
+        },
+        {
+          "scf": "236",
+          "state": "VA"
+        },
+        {
+          "scf": "238",
+          "state": "VA"
+        },
+        {
+          "scf": "241",
+          "state": "VA"
+        },
+        {
+          "scf": "245",
+          "state": "VA"
+        },
+        {
+          "scf": "254",
+          "state": "PA"
+        },
+        {
+          "scf": "292",
+          "state": "SC"
+        },
+        {
+          "scf": "294",
+          "state": "SC"
+        },
+        {
+          "scf": "295",
+          "state": "SC"
+        },
+        {
+          "scf": "296",
+          "state": "SC"
+        },
+        {
+          "scf": "298",
+          "state": "GA"
+        },
+        {
+          "scf": "302",
+          "state": "GA"
+        },
+        {
+          "scf": "306",
+          "state": "GA"
+        },
+        {
+          "scf": "308",
+          "state": "GA"
+        },
+        {
+          "scf": "309",
+          "state": "GA"
+        },
+        {
+          "scf": "310",
+          "state": "GA"
+        },
+        {
+          "scf": "312",
+          "state": "GA"
+        },
+        {
+          "scf": "315",
+          "state": "FL"
+        },
+        {
+          "scf": "316",
+          "state": "FL"
+        },
+        {
+          "scf": "317",
+          "state": "FL"
+        },
+        {
+          "scf": "319",
+          "state": "GA"
+        },
+        {
+          "scf": "321",
+          "state": "FL"
+        },
+        {
+          "scf": "324",
+          "state": "FL"
+        },
+        {
+          "scf": "325",
+          "state": "FL"
+        },
+        {
+          "scf": "326",
+          "state": "FL"
+        },
+        {
+          "scf": "327",
+          "state": "FL"
+        },
+        {
+          "scf": "329",
+          "state": "FL"
+        },
+        {
+          "scf": "335",
+          "state": "FL"
+        },
+        {
+          "scf": "338",
+          "state": "FL"
+        },
+        {
+          "scf": "344",
+          "state": "FL"
+        },
+        {
+          "scf": "346",
+          "state": "FL"
+        },
+        {
+          "scf": "347",
+          "state": "FL"
+        },
+        {
+          "scf": "350",
+          "state": "AL"
+        },
+        {
+          "scf": "354",
+          "state": "AL"
+        },
+        {
+          "scf": "356",
+          "state": "AL"
+        },
+        {
+          "scf": "357",
+          "state": "AL"
+        },
+        {
+          "scf": "358",
+          "state": "AL"
+        },
+        {
+          "scf": "359",
+          "state": "AL"
+        },
+        {
+          "scf": "360",
+          "state": "AL"
+        },
+        {
+          "scf": "361",
+          "state": "AL"
+        },
+        {
+          "scf": "362",
+          "state": "AL"
+        },
+        {
+          "scf": "365",
+          "state": "AL"
+        },
+        {
+          "scf": "366",
+          "state": "AL"
+        },
+        {
+          "scf": "373",
+          "state": "TN"
+        },
+        {
+          "scf": "377",
+          "state": "TN"
+        },
+        {
+          "scf": "378",
+          "state": "TN"
+        },
+        {
+          "scf": "381",
+          "state": "TN"
+        },
+        {
+          "scf": "382",
+          "state": "TN"
+        },
+        {
+          "scf": "383",
+          "state": "TN"
+        },
+        {
+          "scf": "386",
+          "state": "TN"
+        },
+        {
+          "scf": "388",
+          "state": "TN"
+        },
+        {
+          "scf": "390",
+          "state": "MS"
+        },
+        {
+          "scf": "391",
+          "state": "MS"
+        },
+        {
+          "scf": "392",
+          "state": "MS"
+        },
+        {
+          "scf": "393",
+          "state": "MS"
+        },
+        {
+          "scf": "394",
+          "state": "AL"
+        },
+        {
+          "scf": "395",
+          "state": "MS"
+        },
+        {
+          "scf": "396",
+          "state": "MS"
+        },
+        {
+          "scf": "397",
+          "state": "MS"
+        },
+        {
+          "scf": "401",
+          "state": "KY"
+        },
+        {
+          "scf": "402",
+          "state": "KY"
+        },
+        {
+          "scf": "420",
+          "state": "IN"
+        },
+        {
+          "scf": "422",
+          "state": "TN"
+        },
+        {
+          "scf": "431",
+          "state": "OH"
+        },
+        {
+          "scf": "435",
+          "state": "OH"
+        },
+        {
+          "scf": "436",
+          "state": "OH"
+        },
+        {
+          "scf": "441",
+          "state": "OH"
+        },
+        {
+          "scf": "443",
+          "state": "OH"
+        },
+        {
+          "scf": "444",
+          "state": "OH"
+        },
+        {
+          "scf": "445",
+          "state": "OH"
+        },
+        {
+          "scf": "448",
+          "state": "OH"
+        },
+        {
+          "scf": "449",
+          "state": "OH"
+        },
+        {
+          "scf": "452",
+          "state": "OH"
+        },
+        {
+          "scf": "454",
+          "state": "OH"
+        },
+        {
+          "scf": "456",
+          "state": "OH"
+        },
+        {
+          "scf": "458",
+          "state": "OH"
+        },
+        {
+          "scf": "462",
+          "state": "IN"
+        },
+        {
+          "scf": "463",
+          "state": "IN"
+        },
+        {
+          "scf": "465",
+          "state": "IN"
+        },
+        {
+          "scf": "473",
+          "state": "IN"
+        },
+        {
+          "scf": "490",
+          "state": "MI"
+        },
+        {
+          "scf": "503",
+          "state": "IA"
+        },
+        {
+          "scf": "507",
+          "state": "IA"
+        },
+        {
+          "scf": "523",
+          "state": "IA"
+        },
+        {
+          "scf": "532",
+          "state": "WI"
+        },
+        {
+          "scf": "535",
+          "state": "WI"
+        },
+        {
+          "scf": "554",
+          "state": "MN"
+        },
+        {
+          "scf": "560",
+          "state": "MN"
+        },
+        {
+          "scf": "581",
+          "state": "ND"
+        },
+        {
+          "scf": "583",
+          "state": "ND"
+        },
+        {
+          "scf": "588",
+          "state": "ND"
+        },
+        {
+          "scf": "600",
+          "state": "IL"
+        },
+        {
+          "scf": "604",
+          "state": "IL"
+        },
+        {
+          "scf": "606",
+          "state": "IL"
+        },
+        {
+          "scf": "608",
+          "state": "IL"
+        },
+        {
+          "scf": "609",
+          "state": "IL"
+        },
+        {
+          "scf": "611",
+          "state": "IL"
+        },
+        {
+          "scf": "613",
+          "state": "IL"
+        },
+        {
+          "scf": "615",
+          "state": "IL"
+        },
+        {
+          "scf": "616",
+          "state": "IL"
+        },
+        {
+          "scf": "622",
+          "state": "MO"
+        },
+        {
+          "scf": "631",
+          "state": "MO"
+        },
+        {
+          "scf": "637",
+          "state": "MO"
+        },
+        {
+          "scf": "639",
+          "state": "MO"
+        },
+        {
+          "scf": "648",
+          "state": "MO"
+        },
+        {
+          "scf": "656",
+          "state": "MO"
+        },
+        {
+          "scf": "658",
+          "state": "MO"
+        },
+        {
+          "scf": "719",
+          "state": "AR"
+        },
+        {
+          "scf": "720",
+          "state": "TX"
+        },
+        {
+          "scf": "721",
+          "state": "TX"
+        },
+        {
+          "scf": "722",
+          "state": "AR"
+        },
+        {
+          "scf": "723",
+          "state": "AR"
+        },
+        {
+          "scf": "724",
+          "state": "TX"
+        },
+        {
+          "scf": "729",
+          "state": "AR"
+        },
+        {
+          "scf": "730",
+          "state": "TX"
+        },
+        {
+          "scf": "731",
+          "state": "TN"
+        },
+        {
+          "scf": "740",
+          "state": "TN"
+        },
+        {
+          "scf": "743",
+          "state": "AR"
+        },
+        {
+          "scf": "744",
+          "state": "AR"
+        },
+        {
+          "scf": "749",
+          "state": "OK"
+        },
+        {
+          "scf": "750",
+          "state": "OK"
+        },
+        {
+          "scf": "751",
+          "state": "OK"
+        },
+        {
+          "scf": "754",
+          "state": "OK"
+        },
+        {
+          "scf": "756",
+          "state": "TX"
+        },
+        {
+          "scf": "757",
+          "state": "OK"
+        },
+        {
+          "scf": "759",
+          "state": "TX"
+        },
+        {
+          "scf": "763",
+          "state": "OK"
+        },
+        {
+          "scf": "765",
+          "state": "TX"
+        },
+        {
+          "scf": "770",
+          "state": "TX"
+        },
+        {
+          "scf": "772",
+          "state": "TX"
+        },
+        {
+          "scf": "776",
+          "state": "TX"
+        },
+        {
+          "scf": "784",
+          "state": "TX"
+        },
+        {
+          "scf": "790",
+          "state": "TX"
+        },
+        {
+          "scf": "791",
+          "state": "TX"
+        },
+        {
+          "scf": "799",
+          "state": "TX"
+        },
+        {
+          "scf": "800",
+          "state": "CO"
+        },
+        {
+          "scf": "809",
+          "state": "CO"
+        },
+        {
+          "scf": "810",
+          "state": "CO"
+        },
+        {
+          "scf": "812",
+          "state": "CO"
+        },
+        {
+          "scf": "814",
+          "state": "CO"
+        },
+        {
+          "scf": "820",
+          "state": "WY"
+        },
+        {
+          "scf": "826",
+          "state": "WY"
+        },
+        {
+          "scf": "832",
+          "state": "ID"
+        },
+        {
+          "scf": "833",
+          "state": "ID"
+        },
+        {
+          "scf": "834",
+          "state": "ID"
+        },
+        {
+          "scf": "835",
+          "state": "WA"
+        },
+        {
+          "scf": "836",
+          "state": "ID"
+        },
+        {
+          "scf": "837",
+          "state": "ID"
+        },
+        {
+          "scf": "838",
+          "state": "WA"
+        },
+        {
+          "scf": "851",
+          "state": "AZ"
+        },
+        {
+          "scf": "860",
+          "state": "AZ"
+        },
+        {
+          "scf": "863",
+          "state": "AZ"
+        },
+        {
+          "scf": "864",
+          "state": "NV"
+        },
+        {
+          "scf": "890",
+          "state": "NV"
+        },
+        {
+          "scf": "891",
+          "state": "NV"
+        },
+        {
+          "scf": "893",
+          "state": "NV"
+        },
+        {
+          "scf": "894",
+          "state": "NV"
+        },
+        {
+          "scf": "895",
+          "state": "NV"
+        },
+        {
+          "scf": "897",
+          "state": "NV"
+        },
+        {
+          "scf": "902",
+          "state": "OR"
+        },
+        {
+          "scf": "903",
+          "state": "CA"
+        },
+        {
+          "scf": "920",
+          "state": "CA"
+        },
+        {
+          "scf": "922",
+          "state": "CA"
+        },
+        {
+          "scf": "923",
+          "state": "CA"
+        },
+        {
+          "scf": "924",
+          "state": "CA"
+        },
+        {
+          "scf": "925",
+          "state": "CA"
+        },
+        {
+          "scf": "932",
+          "state": "CA"
+        },
+        {
+          "scf": "933",
+          "state": "CA"
+        },
+        {
+          "scf": "935",
+          "state": "CA"
+        },
+        {
+          "scf": "936",
+          "state": "OR"
+        },
+        {
+          "scf": "937",
+          "state": "CA"
+        },
+        {
+          "scf": "939",
+          "state": "CA"
+        },
+        {
+          "scf": "945",
+          "state": "CA"
+        },
+        {
+          "scf": "952",
+          "state": "CA"
+        },
+        {
+          "scf": "953",
+          "state": "CA"
+        },
+        {
+          "scf": "955",
+          "state": "CA"
+        },
+        {
+          "scf": "959",
+          "state": "OR"
+        },
+        {
+          "scf": "960",
+          "state": "CA"
+        },
+        {
+          "scf": "961",
+          "state": "CA"
+        },
+        {
+          "scf": "967",
+          "state": "CA"
+        },
+        {
+          "scf": "970",
+          "state": "CA"
+        },
+        {
+          "scf": "971",
+          "state": "NV"
+        },
+        {
+          "scf": "973",
+          "state": "OR"
+        },
+        {
+          "scf": "974",
+          "state": "HI"
+        },
+        {
+          "scf": "975",
+          "state": "OR"
+        },
+        {
+          "scf": "978",
+          "state": "OR"
+        }
+      ],
+      "afterItems": [
+        {
+          "scf": "028",
+          "state": "RI"
+        },
+        {
+          "scf": "040",
+          "state": "ME"
+        },
+        {
+          "scf": "041",
+          "state": "ME"
+        },
+        {
+          "scf": "042",
+          "state": "ME"
+        },
+        {
+          "scf": "046",
+          "state": "ME"
+        },
+        {
+          "scf": "047",
+          "state": "ME"
+        },
+        {
+          "scf": "060",
+          "state": "CT"
+        },
+        {
+          "scf": "061",
+          "state": "CT"
+        },
+        {
+          "scf": "067",
+          "state": "CT"
+        },
+        {
+          "scf": "070",
+          "state": "NJ"
+        },
+        {
+          "scf": "071",
+          "state": "NJ"
+        },
+        {
+          "scf": "072",
+          "state": "NJ"
+        },
+        {
+          "scf": "077",
+          "state": "NJ"
+        },
+        {
+          "scf": "080",
+          "state": "NJ"
+        },
+        {
+          "scf": "082",
+          "state": "NJ"
+        },
+        {
+          "scf": "083",
+          "state": "NJ"
+        },
+        {
+          "scf": "084",
+          "state": "NJ"
+        },
+        {
+          "scf": "085",
+          "state": "NJ"
+        },
+        {
+          "scf": "086",
+          "state": "NJ"
+        },
+        {
+          "scf": "104",
+          "state": "NY"
+        },
+        {
+          "scf": "105",
+          "state": "NY"
+        },
+        {
+          "scf": "109",
+          "state": "NY"
+        },
+        {
+          "scf": "112",
+          "state": "NY"
+        },
+        {
+          "scf": "113",
+          "state": "NY"
+        },
+        {
+          "scf": "114",
+          "state": "NY"
+        },
+        {
+          "scf": "115",
+          "state": "NY"
+        },
+        {
+          "scf": "116",
+          "state": "NY"
+        },
+        {
+          "scf": "117",
+          "state": "NY"
+        },
+        {
+          "scf": "121",
+          "state": "NY"
+        },
+        {
+          "scf": "126",
+          "state": "NY"
+        },
+        {
+          "scf": "130",
+          "state": "NY"
+        },
+        {
+          "scf": "132",
+          "state": "NY"
+        },
+        {
+          "scf": "139",
+          "state": "NY"
+        },
+        {
+          "scf": "142",
+          "state": "NY"
+        },
+        {
+          "scf": "143",
+          "state": "NY"
+        },
+        {
+          "scf": "146",
+          "state": "NY"
+        },
+        {
+          "scf": "150",
+          "state": "PA"
+        },
+        {
+          "scf": "151",
+          "state": "PA"
+        },
+        {
+          "scf": "152",
+          "state": "PA"
+        },
+        {
+          "scf": "153",
+          "state": "PA"
+        },
+        {
+          "scf": "154",
+          "state": "PA"
+        },
+        {
+          "scf": "156",
+          "state": "PA"
+        },
+        {
+          "scf": "165",
+          "state": "PA"
+        },
+        {
+          "scf": "171",
+          "state": "PA"
+        },
+        {
+          "scf": "172",
+          "state": "PA"
+        },
+        {
+          "scf": "176",
+          "state": "PA"
+        },
+        {
+          "scf": "177",
+          "state": "PA"
+        },
+        {
+          "scf": "181",
+          "state": "PA"
+        },
+        {
+          "scf": "182",
+          "state": "PA"
+        },
+        {
+          "scf": "183",
+          "state": "PA"
+        },
+        {
+          "scf": "187",
+          "state": "PA"
+        },
+        {
+          "scf": "189",
+          "state": "PA"
+        },
+        {
+          "scf": "190",
+          "state": "PA"
+        },
+        {
+          "scf": "191",
+          "state": "PA"
+        },
+        {
+          "scf": "197",
+          "state": "DE"
+        },
+        {
+          "scf": "199",
+          "state": "DE"
+        },
+        {
+          "scf": "225",
+          "state": "VA"
+        },
+        {
+          "scf": "232",
+          "state": "VA"
+        },
+        {
+          "scf": "236",
+          "state": "VA"
+        },
+        {
+          "scf": "238",
+          "state": "VA"
+        },
+        {
+          "scf": "241",
+          "state": "VA"
+        },
+        {
+          "scf": "245",
+          "state": "VA"
+        },
+        {
+          "scf": "254",
+          "state": "PA"
+        },
+        {
+          "scf": "292",
+          "state": "SC"
+        },
+        {
+          "scf": "294",
+          "state": "SC"
+        },
+        {
+          "scf": "295",
+          "state": "SC"
+        },
+        {
+          "scf": "296",
+          "state": "SC"
+        },
+        {
+          "scf": "298",
+          "state": "GA"
+        },
+        {
+          "scf": "302",
+          "state": "GA"
+        },
+        {
+          "scf": "306",
+          "state": "GA"
+        },
+        {
+          "scf": "308",
+          "state": "GA"
+        },
+        {
+          "scf": "309",
+          "state": "GA"
+        },
+        {
+          "scf": "310",
+          "state": "GA"
+        },
+        {
+          "scf": "312",
+          "state": "GA"
+        },
+        {
+          "scf": "315",
+          "state": "FL"
+        },
+        {
+          "scf": "316",
+          "state": "FL"
+        },
+        {
+          "scf": "317",
+          "state": "FL"
+        },
+        {
+          "scf": "319",
+          "state": "GA"
+        },
+        {
+          "scf": "321",
+          "state": "FL"
+        },
+        {
+          "scf": "324",
+          "state": "FL"
+        },
+        {
+          "scf": "325",
+          "state": "FL"
+        },
+        {
+          "scf": "326",
+          "state": "FL"
+        },
+        {
+          "scf": "327",
+          "state": "FL"
+        },
+        {
+          "scf": "329",
+          "state": "FL"
+        },
+        {
+          "scf": "335",
+          "state": "FL"
+        },
+        {
+          "scf": "338",
+          "state": "FL"
+        },
+        {
+          "scf": "344",
+          "state": "FL"
+        },
+        {
+          "scf": "346",
+          "state": "FL"
+        },
+        {
+          "scf": "347",
+          "state": "FL"
+        },
+        {
+          "scf": "350",
+          "state": "AL"
+        },
+        {
+          "scf": "354",
+          "state": "AL"
+        },
+        {
+          "scf": "356",
+          "state": "AL"
+        },
+        {
+          "scf": "357",
+          "state": "AL"
+        },
+        {
+          "scf": "358",
+          "state": "AL"
+        },
+        {
+          "scf": "359",
+          "state": "AL"
+        },
+        {
+          "scf": "360",
+          "state": "AL"
+        },
+        {
+          "scf": "361",
+          "state": "AL"
+        },
+        {
+          "scf": "362",
+          "state": "AL"
+        },
+        {
+          "scf": "365",
+          "state": "AL"
+        },
+        {
+          "scf": "366",
+          "state": "AL"
+        },
+        {
+          "scf": "373",
+          "state": "TN"
+        },
+        {
+          "scf": "377",
+          "state": "TN"
+        },
+        {
+          "scf": "378",
+          "state": "TN"
+        },
+        {
+          "scf": "381",
+          "state": "TN"
+        },
+        {
+          "scf": "382",
+          "state": "TN"
+        },
+        {
+          "scf": "383",
+          "state": "TN"
+        },
+        {
+          "scf": "386",
+          "state": "TN"
+        },
+        {
+          "scf": "388",
+          "state": "TN"
+        },
+        {
+          "scf": "390",
+          "state": "MS"
+        },
+        {
+          "scf": "391",
+          "state": "MS"
+        },
+        {
+          "scf": "392",
+          "state": "MS"
+        },
+        {
+          "scf": "393",
+          "state": "MS"
+        },
+        {
+          "scf": "394",
+          "state": "AL"
+        },
+        {
+          "scf": "395",
+          "state": "MS"
+        },
+        {
+          "scf": "396",
+          "state": "MS"
+        },
+        {
+          "scf": "397",
+          "state": "MS"
+        },
+        {
+          "scf": "401",
+          "state": "KY"
+        },
+        {
+          "scf": "402",
+          "state": "KY"
+        },
+        {
+          "scf": "420",
+          "state": "IN"
+        },
+        {
+          "scf": "422",
+          "state": "TN"
+        },
+        {
+          "scf": "431",
+          "state": "OH"
+        },
+        {
+          "scf": "435",
+          "state": "OH"
+        },
+        {
+          "scf": "436",
+          "state": "OH"
+        },
+        {
+          "scf": "441",
+          "state": "OH"
+        },
+        {
+          "scf": "443",
+          "state": "OH"
+        },
+        {
+          "scf": "444",
+          "state": "OH"
+        },
+        {
+          "scf": "445",
+          "state": "OH"
+        },
+        {
+          "scf": "448",
+          "state": "OH"
+        },
+        {
+          "scf": "449",
+          "state": "OH"
+        },
+        {
+          "scf": "452",
+          "state": "OH"
+        },
+        {
+          "scf": "454",
+          "state": "OH"
+        },
+        {
+          "scf": "456",
+          "state": "OH"
+        },
+        {
+          "scf": "458",
+          "state": "OH"
+        },
+        {
+          "scf": "462",
+          "state": "IN"
+        },
+        {
+          "scf": "463",
+          "state": "IN"
+        },
+        {
+          "scf": "465",
+          "state": "IN"
+        },
+        {
+          "scf": "473",
+          "state": "IN"
+        },
+        {
+          "scf": "490",
+          "state": "MI"
+        },
+        {
+          "scf": "503",
+          "state": "IA"
+        },
+        {
+          "scf": "507",
+          "state": "IA"
+        },
+        {
+          "scf": "523",
+          "state": "IA"
+        },
+        {
+          "scf": "532",
+          "state": "WI"
+        },
+        {
+          "scf": "535",
+          "state": "WI"
+        },
+        {
+          "scf": "554",
+          "state": "MN"
+        },
+        {
+          "scf": "560",
+          "state": "MN"
+        },
+        {
+          "scf": "581",
+          "state": "ND"
+        },
+        {
+          "scf": "583",
+          "state": "ND"
+        },
+        {
+          "scf": "588",
+          "state": "ND"
+        },
+        {
+          "scf": "600",
+          "state": "IL"
+        },
+        {
+          "scf": "604",
+          "state": "IL"
+        },
+        {
+          "scf": "606",
+          "state": "IL"
+        },
+        {
+          "scf": "608",
+          "state": "IL"
+        },
+        {
+          "scf": "609",
+          "state": "IL"
+        },
+        {
+          "scf": "611",
+          "state": "IL"
+        },
+        {
+          "scf": "613",
+          "state": "IL"
+        },
+        {
+          "scf": "615",
+          "state": "IL"
+        },
+        {
+          "scf": "616",
+          "state": "IL"
+        },
+        {
+          "scf": "622",
+          "state": "MO"
+        },
+        {
+          "scf": "631",
+          "state": "MO"
+        },
+        {
+          "scf": "637",
+          "state": "MO"
+        },
+        {
+          "scf": "639",
+          "state": "MO"
+        },
+        {
+          "scf": "648",
+          "state": "MO"
+        },
+        {
+          "scf": "656",
+          "state": "MO"
+        },
+        {
+          "scf": "658",
+          "state": "MO"
+        },
+        {
+          "scf": "719",
+          "state": "AR"
+        },
+        {
+          "scf": "720",
+          "state": "TX"
+        },
+        {
+          "scf": "721",
+          "state": "TX"
+        },
+        {
+          "scf": "722",
+          "state": "AR"
+        },
+        {
+          "scf": "723",
+          "state": "AR"
+        },
+        {
+          "scf": "724",
+          "state": "TX"
+        },
+        {
+          "scf": "729",
+          "state": "AR"
+        },
+        {
+          "scf": "730",
+          "state": "TX"
+        },
+        {
+          "scf": "731",
+          "state": "TN"
+        },
+        {
+          "scf": "740",
+          "state": "TN"
+        },
+        {
+          "scf": "743",
+          "state": "AR"
+        },
+        {
+          "scf": "744",
+          "state": "AR"
+        },
+        {
+          "scf": "749",
+          "state": "OK"
+        },
+        {
+          "scf": "750",
+          "state": "OK"
+        },
+        {
+          "scf": "751",
+          "state": "OK"
+        },
+        {
+          "scf": "754",
+          "state": "OK"
+        },
+        {
+          "scf": "756",
+          "state": "TX"
+        },
+        {
+          "scf": "757",
+          "state": "OK"
+        },
+        {
+          "scf": "759",
+          "state": "TX"
+        },
+        {
+          "scf": "763",
+          "state": "OK"
+        },
+        {
+          "scf": "765",
+          "state": "TX"
+        },
+        {
+          "scf": "770",
+          "state": "TX"
+        },
+        {
+          "scf": "772",
+          "state": "TX"
+        },
+        {
+          "scf": "776",
+          "state": "TX"
+        },
+        {
+          "scf": "784",
+          "state": "TX"
+        },
+        {
+          "scf": "790",
+          "state": "TX"
+        },
+        {
+          "scf": "791",
+          "state": "TX"
+        },
+        {
+          "scf": "799",
+          "state": "TX"
+        },
+        {
+          "scf": "800",
+          "state": "CO"
+        },
+        {
+          "scf": "809",
+          "state": "CO"
+        },
+        {
+          "scf": "810",
+          "state": "CO"
+        },
+        {
+          "scf": "812",
+          "state": "CO"
+        },
+        {
+          "scf": "814",
+          "state": "CO"
+        },
+        {
+          "scf": "820",
+          "state": "WY"
+        },
+        {
+          "scf": "826",
+          "state": "WY"
+        },
+        {
+          "scf": "832",
+          "state": "ID"
+        },
+        {
+          "scf": "833",
+          "state": "ID"
+        },
+        {
+          "scf": "834",
+          "state": "ID"
+        },
+        {
+          "scf": "835",
+          "state": "WA"
+        },
+        {
+          "scf": "836",
+          "state": "ID"
+        },
+        {
+          "scf": "837",
+          "state": "ID"
+        },
+        {
+          "scf": "838",
+          "state": "WA"
+        },
+        {
+          "scf": "851",
+          "state": "AZ"
+        },
+        {
+          "scf": "860",
+          "state": "AZ"
+        },
+        {
+          "scf": "863",
+          "state": "AZ"
+        },
+        {
+          "scf": "864",
+          "state": "NV"
+        },
+        {
+          "scf": "890",
+          "state": "NV"
+        },
+        {
+          "scf": "891",
+          "state": "NV"
+        },
+        {
+          "scf": "893",
+          "state": "NV"
+        },
+        {
+          "scf": "894",
+          "state": "NV"
+        },
+        {
+          "scf": "895",
+          "state": "NV"
+        },
+        {
+          "scf": "897",
+          "state": "NV"
+        },
+        {
+          "scf": "902",
+          "state": "OR"
+        },
+        {
+          "scf": "903",
+          "state": "CA"
+        },
+        {
+          "scf": "920",
+          "state": "CA"
+        },
+        {
+          "scf": "922",
+          "state": "CA"
+        },
+        {
+          "scf": "923",
+          "state": "CA"
+        },
+        {
+          "scf": "924",
+          "state": "CA"
+        },
+        {
+          "scf": "925",
+          "state": "CA"
+        },
+        {
+          "scf": "932",
+          "state": "CA"
+        },
+        {
+          "scf": "933",
+          "state": "CA"
+        },
+        {
+          "scf": "935",
+          "state": "CA"
+        },
+        {
+          "scf": "936",
+          "state": "OR"
+        },
+        {
+          "scf": "937",
+          "state": "CA"
+        },
+        {
+          "scf": "939",
+          "state": "CA"
+        },
+        {
+          "scf": "945",
+          "state": "CA"
+        },
+        {
+          "scf": "952",
+          "state": "CA"
+        },
+        {
+          "scf": "953",
+          "state": "CA"
+        },
+        {
+          "scf": "955",
+          "state": "CA"
+        },
+        {
+          "scf": "959",
+          "state": "OR"
+        },
+        {
+          "scf": "960",
+          "state": "CA"
+        },
+        {
+          "scf": "961",
+          "state": "CA"
+        },
+        {
+          "scf": "967",
+          "state": "CA"
+        },
+        {
+          "scf": "970",
+          "state": "CA"
+        },
+        {
+          "scf": "971",
+          "state": "NV"
+        },
+        {
+          "scf": "973",
+          "state": "OR"
+        },
+        {
+          "scf": "974",
+          "state": "HI"
+        },
+        {
+          "scf": "975",
+          "state": "OR"
+        },
+        {
+          "scf": "978",
+          "state": "OR"
+        }
+      ],
+      "metadata": {
+        "removedScfs": [
+          "010",
+          "011",
+          "012",
+          "013",
+          "014",
+          "017",
+          "018",
+          "019",
+          "021",
+          "023",
+          "026",
+          "027"
+        ]
+      }
+    },
     {
       "id": "ref_history_1786459536581_dc20qq",
       "listType": "dnm",
@@ -1021,6 +6760,7 @@
       }
     }
   ],
+  "removedDnmStateKeys": [],
   "lists": [
     {
       "type": "dnm",
@@ -2305,15 +8045,6 @@
       "sourceName": "NHCL SCF's_2025.10",
       "items": [
         {
-          "scf": "010",
-          "state": "CT",
-          "scope": "CT",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "104",
           "state": "NY",
           "scope": "NY",
@@ -2389,15 +8120,6 @@
           "scf": "902",
           "state": "OR",
           "scope": "OR",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "011",
-          "state": "CT",
-          "scope": "CT",
           "addedAt": "2026-06-15T20:11:51.259Z",
           "addedBy": "codex-repair",
           "reason": "Imported from NHCL SCF's_2025.10.xlsx",
@@ -2485,15 +8207,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "012",
-          "state": "CT",
-          "scope": "CT",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "109",
           "state": "NY",
           "scope": "NY",
@@ -2569,15 +8282,6 @@
           "scf": "920",
           "state": "CA",
           "scope": "CA",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "013",
-          "state": "MA",
-          "scope": "MA",
           "addedAt": "2026-06-15T20:11:51.259Z",
           "addedBy": "codex-repair",
           "reason": "Imported from NHCL SCF's_2025.10.xlsx",
@@ -2665,15 +8369,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "014",
-          "state": "MA",
-          "scope": "MA",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "113",
           "state": "NY",
           "scope": "NY",
@@ -2749,15 +8444,6 @@
           "scf": "923",
           "state": "CA",
           "scope": "CA",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "017",
-          "state": "MA",
-          "scope": "MA",
           "addedAt": "2026-06-15T20:11:51.259Z",
           "addedBy": "codex-repair",
           "reason": "Imported from NHCL SCF's_2025.10.xlsx",
@@ -2845,15 +8531,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "018",
-          "state": "MA",
-          "scope": "MA",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "115",
           "state": "NY",
           "scope": "NY",
@@ -2920,15 +8597,6 @@
           "scf": "925",
           "state": "CA",
           "scope": "CA",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "019",
-          "state": "MA",
-          "scope": "MA",
           "addedAt": "2026-06-15T20:11:51.259Z",
           "addedBy": "codex-repair",
           "reason": "Imported from NHCL SCF's_2025.10.xlsx",
@@ -3016,15 +8684,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "021",
-          "state": "MA",
-          "scope": "MA",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "117",
           "state": "NY",
           "scope": "NY",
@@ -3100,15 +8759,6 @@
           "scf": "933",
           "state": "CA",
           "scope": "CA",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "023",
-          "state": "MA",
-          "scope": "MA",
           "addedAt": "2026-06-15T20:11:51.259Z",
           "addedBy": "codex-repair",
           "reason": "Imported from NHCL SCF's_2025.10.xlsx",
@@ -3196,15 +8846,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "026",
-          "state": "RI",
-          "scope": "RI",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "126",
           "state": "NY",
           "scope": "NY",
@@ -3271,15 +8912,6 @@
           "scf": "936",
           "state": "OR",
           "scope": "OR",
-          "addedAt": "2026-06-15T20:11:51.259Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from NHCL SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "027",
-          "state": "RI",
-          "scope": "RI",
           "addedAt": "2026-06-15T20:11:51.259Z",
           "addedBy": "codex-repair",
           "reason": "Imported from NHCL SCF's_2025.10.xlsx",
@@ -4607,15 +10239,6 @@
       "sourceName": "RFC SCF's_2025.10",
       "items": [
         {
-          "scf": "011",
-          "state": "CT",
-          "scope": "CT",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "103",
           "state": "NY",
           "scope": "NY",
@@ -4691,15 +10314,6 @@
           "scf": "900",
           "state": "CA",
           "scope": "CA",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "012",
-          "state": "CT",
-          "scope": "CT",
           "addedAt": "2026-06-15T20:11:51.942Z",
           "addedBy": "codex-repair",
           "reason": "Imported from RFC SCF's_2025.10.xlsx",
@@ -4787,15 +10401,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "013",
-          "state": "MA",
-          "scope": "MA",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "107",
           "state": "NY",
           "scope": "NY",
@@ -4871,15 +10476,6 @@
           "scf": "906",
           "state": "CA",
           "scope": "CA",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "015",
-          "state": "MA",
-          "scope": "MA",
           "addedAt": "2026-06-15T20:11:51.942Z",
           "addedBy": "codex-repair",
           "reason": "Imported from RFC SCF's_2025.10.xlsx",
@@ -4967,15 +10563,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "016",
-          "state": "MA",
-          "scope": "MA",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "110",
           "state": "NY",
           "scope": "NY",
@@ -5051,15 +10638,6 @@
           "scf": "908",
           "state": "CA",
           "scope": "CA",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "021",
-          "state": "MA",
-          "scope": "MA",
           "addedAt": "2026-06-15T20:11:51.942Z",
           "addedBy": "codex-repair",
           "reason": "Imported from RFC SCF's_2025.10.xlsx",
@@ -5147,15 +10725,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "023",
-          "state": "MA",
-          "scope": "MA",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "113",
           "state": "NY",
           "scope": "NY",
@@ -5237,15 +10806,6 @@
           "sourceAnalysis": "reference-upload"
         },
         {
-          "scf": "026",
-          "state": "RI",
-          "scope": "RI",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
           "scf": "114",
           "state": "NY",
           "scope": "NY",
@@ -5321,15 +10881,6 @@
           "scf": "919",
           "state": "CA",
           "scope": "CA",
-          "addedAt": "2026-06-15T20:11:51.942Z",
-          "addedBy": "codex-repair",
-          "reason": "Imported from RFC SCF's_2025.10.xlsx",
-          "sourceAnalysis": "reference-upload"
-        },
-        {
-          "scf": "027",
-          "state": "RI",
-          "scope": "RI",
           "addedAt": "2026-06-15T20:11:51.942Z",
           "addedBy": "codex-repair",
           "reason": "Imported from RFC SCF's_2025.10.xlsx",

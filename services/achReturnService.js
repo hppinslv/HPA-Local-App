@@ -349,11 +349,20 @@ function normalizeComparableText(value) {
     .trim();
 }
 
+function resolveAchReturnCreditRecordId(row = {}) {
+  return normalizeText(
+    row.imported_salesforce_id
+    || row.salesforceCreditId
+    || row.creditRecordId
+  );
+}
+
 function buildAchReturnCommentKeyParts(row = {}) {
   const creditDateIso = normalizeDateText(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded);
   const creditDateDisplay = formatDateMmDdYyyy(creditDateIso || row.creditDate || row.parsed_details?.batchDate || row.dateRefunded);
   return [
     normalizeComparableText(row.certificateNumber),
+    normalizeComparableText(resolveAchReturnCreditRecordId(row)),
     normalizeComparableText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber),
     normalizeComparableText(normalizeAmount(row.creditAmount)),
     normalizeComparableText(row.returnCode || row.reasonCode),
@@ -364,6 +373,7 @@ function buildAchReturnCommentKeyParts(row = {}) {
 }
 
 function buildAchReturnCommentRequiredParts(row = {}) {
+  const creditRecordId = normalizeComparableText(resolveAchReturnCreditRecordId(row));
   const checkNumber = normalizeComparableText(row.checkNo || row.checkNumber || row.matched_payment?.checkNumber);
   const amount = normalizeComparableText(normalizeAmount(row.creditAmount));
   const returnCode = normalizeComparableText(row.returnCode || row.reasonCode);
@@ -376,6 +386,9 @@ function buildAchReturnCommentRequiredParts(row = {}) {
   );
 
   const requiredGroups = [];
+  if (creditRecordId) {
+    requiredGroups.push([creditRecordId]);
+  }
   if (checkNumber) {
     requiredGroups.push([checkNumber]);
   }
@@ -399,6 +412,7 @@ function buildAchReturnCommentText(row = {}, processedAt = new Date().toISOStrin
   const processedOn = formatDateMmDdYyyy(processedAt) || formatDateMmDdYyyy(new Date().toISOString());
   const creditDate = formatDateMmDdYyyy(row.creditDate || row.parsed_details?.batchDate || row.dateRefunded);
   const reasonDetail = [returnCode, returnReason].filter(Boolean).join(" - ");
+  const creditRecordId = resolveAchReturnCreditRecordId(row);
   const sentences = [];
 
   if (returnCode) {
@@ -417,6 +431,9 @@ function buildAchReturnCommentText(row = {}, processedAt = new Date().toISOStrin
   }
   if (reasonDetail) {
     sentences.push(`Return reason: ${reasonDetail}.`);
+  }
+  if (creditRecordId) {
+    sentences.push(`Salesforce credit ${creditRecordId}.`);
   }
   if (processedOn) {
     sentences.push(`Processed on ${processedOn}.`);

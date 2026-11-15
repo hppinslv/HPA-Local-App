@@ -18,6 +18,7 @@ const {
 const {
   getBillDashboard,
   createBillRun,
+  createNextMonthBillRun,
   deleteBillRun,
   getBillRun,
   getBillSettings,
@@ -26,7 +27,20 @@ const {
   updateBillRun,
   initializeBillRunPersistence,
 } = require("./services/billRunService");
-const { applyBill2Corrections, pullBill2Corrections } = require("./services/billCorrectionService");
+const { applyBill2Corrections, pullBill2Corrections } = require("./services/billCorrectionServiceV2");
+const { getBillingArtifactPath, runCorrections, runMonthlyBilling, writeBillingExceptionReport, writesEnabled } = require("./services/billWorkflowService");
+const activeBillExecutionKeys = new Set();
+
+function beginBillExecution(run) {
+  const keys = [`run:${run.id}`, `month:${run.billMonth}`];
+  if (keys.some((key) => activeBillExecutionKeys.has(key))) {
+    const error = new Error(`A billing operation is already running for ${run.billMonth}.`);
+    error.code = "billing_run_in_progress";
+    throw error;
+  }
+  keys.forEach((key) => activeBillExecutionKeys.add(key));
+  return () => keys.forEach((key) => activeBillExecutionKeys.delete(key));
+}
 const { getSupabaseConfig } = require("./services/config");
 const {
   createAuthorizationUrl,
@@ -572,7 +586,7 @@ const server = http.createServer(async (request, response) => {
     }
     try {
       const body = await parseJsonBody(request);
-      const run = createBillRun(body || {});
+      const run = createNextMonthBillRun(body || {});
       sendJson(response, 200, { run, dashboard: getBillDashboard(), runs: listBillRuns() });
       logRouteTiming("/api/bills/runs", request.method, requestStartedAt, 200, { runId: run.id });
     } catch (error) {
@@ -1526,21 +1540,104 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (request.method === "DELETE") {
-      try {
-        const result = deleteBillRun(
-          billRunMatch[1],
-          requestUrl.searchParams.get("actor") || ""
-        );
-        sendJson(response, 200, {
-          result,
-          dashboard: getBillDashboard(),
-          runs: listBillRuns(),
-        });
-      } catch (error) {
-        sendJson(response, 400, { error: error.message || "Unable to delete bill run." });
-      }
+      sendJson(response, 410, { error: "Billing run deletion is disabled to preserve the audit history." });
       return;
     }
+  }
+
+  const billArtifactMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/files\/([^/]+)$/);
+  if (billArtifactMatch && request.method === "GET") {
+    try {
+      const run = getBillRun(billArtifactMatch[1]);
+      const filePath = getBillingArtifactPath(run, decodeURIComponent(billArtifactMatch[2]));
+      const extension = path.extname(filePath).toLowerCase();
+      const contentTypes = { ".pdf": "application/pdf", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".zip": "application/zip", ".json": "application/json; charset=utf-8" };
+      response.writeHead(200, {
+        "Content-Type": contentTypes[extension] || "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${path.basename(filePath).replace(/"/g, "")}"`,
+        "Content-Length": fs.statSync(filePath).size,
+      });
+      fs.createReadStream(filePath).pipe(response);
+    } catch (error) {
+      sendJson(response, 404, { error: error.message || "Billing artifact not found." });
+    }
+    return;
+  }
+
+  const billCorrectionsRunMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/corrections\/run$/);
+  if (billCorrectionsRunMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("bills")) return sendPersistenceNotReady(response, "bills");
+    const runId = billCorrectionsRunMatch[1];
+    let releaseExecution = null;
+    try {
+      const run = getBillRun(runId);
+      releaseExecution = beginBillExecution(run);
+      const corrections = await runCorrections({
+        billMonth: run.billMonth,
+        progress: async (activeStage) => { updateBillRun(runId, { actor: "HPA User", status: "Updating Salesforce", correctionStatus: "Running", activeStage }); },
+      });
+      const status = corrections.summary.complete ? "Corrections Complete" : "Salesforce Update Partially Failed";
+      const updated = updateBillRun(runId, {
+        actor: "HPA User", status, correctionStatus: corrections.summary.complete ? "Complete" : "Partially Failed",
+        activeStage: corrections.summary.complete ? "Retrieving billing reports" : "Verifying Salesforce",
+        corrections: { bill2: corrections.bill2, bill4: corrections.bill4 },
+        counts: { bill2: corrections.bill2.length, bill4: corrections.bill4.length, validationErrors: corrections.summary.failed },
+      });
+      sendJson(response, corrections.summary.complete ? 200 : 409, { run: updated, corrections });
+    } catch (error) {
+      try {
+        const run = getBillRun(runId);
+        const exception = writeBillingExceptionReport(run, error);
+        updateBillRun(runId, { actor: "HPA User", status: "Salesforce Update Partially Failed", correctionStatus: "Failed", lastError: error.message || String(error),
+          corrections: error.corrections ? { bill2: error.corrections.bill2 || [], bill4: error.corrections.bill4 || [] } : undefined,
+          documents: [...(run.documents || []), exception.artifact], outputDirectory: exception.outputDirectory });
+      } catch { /* preserve original error */ }
+      sendJson(response, error.code === "billing_run_in_progress" ? 409 : 400, { error: error.message || "Unable to run bill corrections.", code: error.code || "", writesEnabled: writesEnabled() });
+    } finally {
+      if (releaseExecution) releaseExecution();
+    }
+    return;
+  }
+
+  const monthlyBillingRunMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/monthly\/run$/);
+  if (monthlyBillingRunMatch && request.method === "POST") {
+    if (!isPersistenceModuleReady("bills")) return sendPersistenceNotReady(response, "bills");
+    const runId = monthlyBillingRunMatch[1];
+    let releaseExecution = null;
+    try {
+      const run = getBillRun(runId);
+      releaseExecution = beginBillExecution(run);
+      const result = await runMonthlyBilling(run, {
+        progress: async (activeStage) => { updateBillRun(runId, { actor: "HPA User", status: activeStage === "Ready to Download" ? "Documents Generated" : "Pulling Data", generationStatus: "Running", activeStage }); },
+      });
+      const counts = {
+        bill1: result.datasets.bill1.rows.length, bill2: result.datasets.bill2.rows.length,
+        bill3: result.datasets.bill3.rows.length, bill4: result.datasets.bill4.rows.length,
+        bill3Notices: result.datasets.bill3.rows.length, bill4Notices: result.datasets.bill4.rows.length,
+        totalDocuments: result.datasets.bill1.rows.length + result.datasets.bill2.rows.length + (result.datasets.bill3.rows.length * 2) + (result.datasets.bill4.rows.length * 2),
+        totalRecipients: Object.values(result.datasets).reduce((sum, dataset) => sum + dataset.rows.length, 0), validationErrors: 0,
+      };
+      const updated = updateBillRun(runId, {
+        actor: "HPA User", status: "Documents Generated", correctionStatus: "Complete", generationStatus: "Complete", activeStage: "Ready to Download",
+        corrections: { bill2: result.corrections.bill2, bill4: result.corrections.bill4 }, counts,
+        documents: result.generated.artifacts || [], validations: [{ type: "bill4-pairing", ...result.bill4Pairing }, { type: "pdf-pages", pageCounts: result.generated.pageCounts }],
+        outputDirectory: result.generated.outputDirectory,
+      });
+      sendJson(response, 200, { run: updated, result: { generated: result.generated, corrections: result.corrections.summary } });
+    } catch (error) {
+      try {
+        const run = getBillRun(runId);
+        const exception = writeBillingExceptionReport(run, error);
+        updateBillRun(runId, { actor: "HPA User", status: "Validation Failed", generationStatus: "Failed", lastError: error.message || String(error),
+          corrections: error.corrections ? { bill2: error.corrections.bill2 || [], bill4: error.corrections.bill4 || [] } : undefined,
+          validations: [{ type: error.code || "workflow", valid: false, error: error.message || String(error), dataErrors: error.dataErrors || [] }],
+          documents: [...(run.documents || []), exception.artifact], outputDirectory: exception.outputDirectory });
+      } catch { /* preserve original error */ }
+      sendJson(response, error.code === "billing_run_in_progress" ? 409 : 400, { error: error.message || "Unable to run monthly billing.", code: error.code || "", writesEnabled: writesEnabled() });
+    } finally {
+      if (releaseExecution) releaseExecution();
+    }
+    return;
   }
 
   const bill2PullMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/bill2\/pull$/);
@@ -1563,21 +1660,7 @@ const server = http.createServer(async (request, response) => {
 
   const bill2ApplyMatch = requestUrl.pathname.match(/^\/api\/bills\/runs\/([^/]+)\/bill2\/apply$/);
   if (bill2ApplyMatch && request.method === "POST") {
-    if (!isPersistenceModuleReady("bills")) return sendPersistenceNotReady(response, "bills");
-    try {
-      const run = getBillRun(bill2ApplyMatch[1]);
-      updateBillRun(run.id, { actor: "HPA User", status: "Updating Salesforce", activeStage: "Upload Bill 2 Corrections to Salesforce" });
-      const results = await applyBill2Corrections(run.corrections?.bill2 || []);
-      const failed = results.filter((row) => row.status === "Failed").length;
-      const updated = updateBillRun(run.id, {
-        actor: "HPA User", status: failed ? "Salesforce Update Partially Failed" : "Corrections Complete",
-        activeStage: failed ? "Upload Bill 2 Corrections to Salesforce" : "Pull Bill 4 Correction Records",
-        correctionStatus: failed ? "Partially Failed" : "Complete", corrections: { bill2: results },
-      });
-      sendJson(response, 200, { run: updated, results });
-    } catch (error) {
-      sendJson(response, 400, { error: error.message || "Unable to update Bill 2 corrections in Salesforce." });
-    }
+    sendJson(response, 410, { error: "This legacy write endpoint is disabled. Use Run Monthly Billing or Run Bill Corrections Only." });
     return;
   }
 

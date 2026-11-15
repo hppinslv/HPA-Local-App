@@ -76,3 +76,5 @@ async function applyBill2Corrections(rows) {
 }
 
 module.exports = { applyBill2Corrections, pullBill2Corrections, MONTHLY_BILLING_PAY_TYPE, POLICY_REPORT_ID };
+// Compatibility entry point: all callers receive the authoritative implementation.
+module.exports = require("./billCorrectionServiceV2");

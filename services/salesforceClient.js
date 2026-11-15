@@ -4212,7 +4212,7 @@ async function fetchFlexibleSalesforceReportData(reportId, filters = {}) {
   };
 }
 
-async function fetchRawSalesforceReportRows(reportId) {
+async function fetchRawSalesforceReportRows(reportId, options = {}) {
   const normalizedReportId = String(reportId || "").trim();
   if (!normalizedReportId) {
     throw new Error("Report ID is required.");
@@ -4227,6 +4227,9 @@ async function fetchRawSalesforceReportRows(reportId) {
   const shouldFallbackToSoql = shouldFallbackToSoqlForReportPayload(reportPayload);
 
   if (shouldFallbackToSoql) {
+    if (options.failOnTruncatedReport) {
+      throw new Error(`Salesforce report ${normalizedReportId} was truncated. Billing stopped rather than reconstructing authoritative report filters with SOQL.`);
+    }
     const plan = buildRawDetailSoqlPlan(describePayload);
     const { records, fields } = await runDetailSoqlWithFallback(tokenRecord, plan);
     const rows = records.map((record) => buildRowObjectFromSoqlRecord(record, fields));

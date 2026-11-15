@@ -98,6 +98,28 @@ test("isEquivalentReturnedCheckTask does not treat a generic returned check task
   assert.equal(__test.isEquivalentReturnedCheckTask(existingTask, row), false);
 });
 
+test("returned check notes are de-duplicated by credit record so one certificate can receive multiple notes", () => {
+  const firstCredit = {
+    certificateNumber: "203674",
+    imported_salesforce_id: "a1B000000000001",
+    creditAmount: 71.41,
+    returnCode: "R01",
+    returnReason: "Insufficient Funds",
+    creditDate: "2026-07-01",
+  };
+  const secondCredit = {
+    ...firstCredit,
+    imported_salesforce_id: "a1B000000000002",
+  };
+  const existingTask = {
+    Subject: "Admin - Processed refund",
+    Description: __test.buildAchReturnCommentText(firstCredit, "2026-07-03T12:00:00.000Z"),
+  };
+
+  assert.equal(__test.isEquivalentReturnedCheckTask(existingTask, firstCredit), true);
+  assert.equal(__test.isEquivalentReturnedCheckTask(existingTask, secondCredit), false);
+});
+
 
 test("derives dues when the matched payment has amount and premium but no dues field", () => {
   assert.equal(__test.resolveDuesFromPaymentMatch({ paymentAmount: 8.08, premium: 5.08 }), 3);

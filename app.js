@@ -16236,7 +16236,6 @@ function renderBillHistory() {
           <td>${esc(formatBillTimestamp(run.updatedAt || run.createdAt || ""))}</td>
           <td>
             <button class="secondary-button table-action-button" data-bill-open-run="${esc(run.id || "")}">Open</button>
-            <button class="secondary-button table-action-button danger-button" data-bill-delete-run="${esc(run.id || "")}" data-bill-run-code="${esc(run.runCode || "")}">Delete</button>
           </td>
         </tr>
       `
@@ -16255,36 +16254,15 @@ function renderBillCurrentRun() {
   }
   renderBillStepper(run);
   const sectionLabel = normalizeBillSection(state.bills.section).replace("-", " ");
-  const nextStageButton = run.activeStage === "Create Monthly Run"
-    ? `
-      <button
-        class="primary-button"
-        data-bill-stage-action="begin-bill2-pull"
-        data-bill-run-id="${esc(run.id || "")}"
-      >
-        Begin Step 2: Pull Bill 2 Correction Records
-      </button>
-    `
-    : run.activeStage === "Pull Bill 2 Correction Records"
-      ? `
-        <button
-          class="primary-button"
-          data-bill-stage-action="pull-bill2"
-          data-bill-run-id="${esc(run.id || "")}"
-        >
-          Pull Bill 2 Correction Report
-        </button>
-      `
-      : run.activeStage === "Correct Bill 2 Payment Method" && ensureArray(run.corrections?.bill2).length
-        ? `<button class="primary-button" data-bill-stage-action="apply-bill2" data-bill-run-id="${esc(run.id || "")}">Change CC to Monthly Bill (${ensureArray(run.corrections.bill2).length})</button>`
-        : "";
-  const stepMessage = run.activeStage === "Create Monthly Run"
-    ? "Step 1 is complete once the run shell is saved. Use the button below to move into the Bill 2 pull step."
-    : run.activeStage === "Pull Bill 2 Correction Records"
-      ? "Pull the Salesforce Bill 2 report to load policies currently marked CC."
-      : run.activeStage === "Correct Bill 2 Payment Method"
-        ? `Found ${ensureArray(run.corrections?.bill2).length} Bill 2 policy record(s) marked CC. The correction will set Pay_Type__c to Monthly Bill.`
-      : "This foundation pass persists the run shell, dates, settings, and audit trail. The section-specific Salesforce correction and document work will attach here next.";
+  const nextStageButton = run.status === "Documents Generated"
+    ? ""
+    : `<button class="primary-button" data-bill-stage-action="run-monthly" data-bill-run-id="${esc(run.id || "")}">Run Monthly Billing</button>
+       <button class="secondary-button" data-bill-stage-action="run-corrections" data-bill-run-id="${esc(run.id || "")}">Run Bill Corrections Only</button>`;
+  const stepMessage = run.lastError
+    ? `Run stopped: ${run.lastError}`
+    : run.status === "Documents Generated"
+      ? `${run.billMonth} is ready to download. Counts and validation results are saved with this run.`
+      : "The run automatically corrects and verifies Salesforce before retrieving fresh billing reports.";
   panel.innerHTML = `
     <div class="bill-current-run-grid">
       <article class="bill-current-run-card">
@@ -16304,7 +16282,6 @@ function renderBillCurrentRun() {
         <p><strong>Created By:</strong> ${esc(run.createdBy || "")}</p>
         <p><strong>Updated:</strong> ${esc(formatBillTimestamp(run.updatedAt || ""))}</p>
         <p><strong>Active Section:</strong> ${esc(sectionLabel)}</p>
-        <p><button class="secondary-button danger-button" data-bill-delete-run="${esc(run.id || "")}" data-bill-run-code="${esc(run.runCode || "")}">Delete This Bill Run</button></p>
       </article>
     </div>
     <div class="bill-detail-placeholder">
@@ -16314,7 +16291,8 @@ function renderBillCurrentRun() {
         ${nextStageButton}
       </div>
     </div>
-    ${ensureArray(run.corrections?.bill2).length ? `<div class="table-wrap"><table><thead><tr><th>Policy</th><th>Billing Name</th><th>Current Pay Type</th><th>Correction</th><th>Status</th></tr></thead><tbody>${ensureArray(run.corrections.bill2).map((row) => `<tr><td>${esc(row.policyName || row.policyId || "")}</td><td>${esc(row.billingName || "")}</td><td>${esc(row.payType || "")}</td><td>${esc(row.targetPayType || "Monthly Bill")}</td><td>${esc(row.status || "Ready")}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    ${ensureArray(run.documents).length ? `<div class="bill-detail-placeholder"><strong>Downloads</strong><div class="action-row">${ensureArray(run.documents).map((document) => `<a class="secondary-button" href="/api/bills/runs/${encodeURIComponent(run.id || "")}/files/${encodeURIComponent(document.fileName || "")}" download>${esc(document.fileName || "Download")}</a>`).join("")}</div></div>` : ""}
+    ${ensureArray(run.corrections?.bill2).length ? `<div class="table-wrap"><table><thead><tr><th>Policy</th><th>Billing Name</th><th>Current Pay Type</th><th>Correction</th><th>Status</th></tr></thead><tbody>${ensureArray(run.corrections.bill2).map((row) => `<tr><td>${esc(row.policyName || row.policyId || "")}</td><td>${esc(row.billingName || "")}</td><td>${esc(row.payType || "")}</td><td>${esc(row.targetPayType || "Monthly Billing")}</td><td>${esc(row.status || "Ready")}</td></tr>`).join("")}</tbody></table></div>` : ""}
     <div class="table-wrap">
       <table>
         <thead>
@@ -16357,18 +16335,7 @@ function populateBillSettings() {
 }
 
 function ensureBillFormDefaults() {
-  const monthInput = el("bill-run-month");
-  const dateInput = el("bill-run-date");
-  if (!(monthInput instanceof HTMLInputElement) || !(dateInput instanceof HTMLInputElement)) {
-    return;
-  }
-  if (!monthInput.value) {
-    const today = new Date();
-    monthInput.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-  }
-  if (!dateInput.value && monthInput.value) {
-    dateInput.value = `${monthInput.value}-14`;
-  }
+  // The server derives the next billing month from the HPA business timezone.
 }
 
 async function loadBillDashboard() {
@@ -16412,23 +16379,16 @@ async function loadBillsWorkspace() {
   }
 }
 
-async function handleCreateBillRun() {
-  const billMonth = el("bill-run-month")?.value || "";
-  const scheduledProcessingDate = el("bill-run-date")?.value || "";
+async function handleCreateBillRun(mode = "monthly") {
   const createdBy = el("bill-run-created-by")?.value || "";
   const notes = el("bill-run-notes")?.value || "";
-  const duplicateOverrideReason = el("bill-run-override-reason")?.value || "";
-  setStatus("bill-run-status", "Creating bill run...");
+  setStatus("bill-run-status", mode === "corrections" ? "Creating the corrections run..." : "Creating the monthly billing run...");
   try {
     const payload = await apiRequest("/api/bills/runs", {
       method: "POST",
       body: {
-        billMonth,
-        scheduledProcessingDate,
         createdBy,
         notes,
-        allowDuplicateOverride: Boolean(duplicateOverrideReason.trim()),
-        duplicateOverrideReason,
       },
     });
     state.bills.dashboard = payload.dashboard || state.bills.dashboard;
@@ -16438,10 +16398,30 @@ async function handleCreateBillRun() {
     renderBillDashboard();
     renderBillHistory();
     renderBillCurrentRun();
-    setStatus("bill-run-status", `Created ${payload.run?.runCode || "bill run"}.`);
+    setStatus("bill-run-status", `${payload.run?.runCode || "Bill run"}: starting ${mode === "corrections" ? "corrections" : "monthly billing"}...`);
     persistUiState();
+    await handleAutomaticBillRun(payload.run?.id || "", mode);
   } catch (error) {
     setStatus("bill-run-status", error.message || "Unable to create bill run.");
+  }
+}
+
+async function handleAutomaticBillRun(runId, mode = "monthly") {
+  if (!runId) return;
+  const endpoint = mode === "corrections" ? "corrections/run" : "monthly/run";
+  setStatus("bill-run-status", mode === "corrections" ? "Running Bill 2 and Bill 4 corrections..." : "Running corrections, reports, invoices, notices, and validation...");
+  try {
+    const payload = await apiRequest(`/api/bills/runs/${encodeURIComponent(runId)}/${endpoint}`, { method: "POST" });
+    state.bills.currentRun = payload.run || state.bills.currentRun;
+    await Promise.all([loadBillDashboard(), loadBillRuns()]);
+    renderBillCurrentRun();
+    const counts = payload.run?.counts || {};
+    setStatus("bill-run-status", mode === "corrections"
+      ? `Corrections complete: ${payload.result?.corrections?.updated ?? payload.corrections?.summary?.updated ?? 0} updated.`
+      : `${payload.run?.billMonth || "Billing"} is ready: ${counts.totalDocuments || 0} documents.`);
+  } catch (error) {
+    await openBillRun(runId).catch(() => {});
+    setStatus("bill-run-status", error.message || "The billing run did not complete.");
   }
 }
 
@@ -16496,6 +16476,10 @@ async function handleDeleteBillRun(runId, runCode = "") {
 
 async function handleBillStageAction(runId, action) {
   if (!runId || !action) {
+    return;
+  }
+  if (action === "run-monthly" || action === "run-corrections") {
+    await handleAutomaticBillRun(runId, action === "run-corrections" ? "corrections" : "monthly");
     return;
   }
   if (action === "pull-bill2") {
@@ -16562,7 +16546,10 @@ function openBillsSection(section) {
 
 function bindBillActions() {
   el("bill-create-run-button")?.addEventListener("click", async () => {
-    await handleCreateBillRun();
+    await handleCreateBillRun("monthly");
+  });
+  el("bill-corrections-only-button")?.addEventListener("click", async () => {
+    await handleCreateBillRun("corrections");
   });
   el("bill-refresh-dashboard-button")?.addEventListener("click", async () => {
     setStatus("bill-run-status", "Refreshing bill dashboard...");
@@ -16595,14 +16582,6 @@ function bindBillActions() {
     const stageAction = target.getAttribute("data-bill-stage-action");
     if (!stageAction) return;
     await handleBillStageAction(target.getAttribute("data-bill-run-id") || "", stageAction);
-  });
-  el("bill-run-month")?.addEventListener("change", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLInputElement)) return;
-    if (!target.value) return;
-    if (el("bill-run-date")) {
-      el("bill-run-date").value = `${target.value}-14`;
-    }
   });
 }
 

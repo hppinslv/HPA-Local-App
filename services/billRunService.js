@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { loadStateObject, queueStateSync } = require("./supabasePersistence");
-const { DEFAULT_BILL_SETTINGS, calculateBillDates, normalizeSettings } = require("./billDateService");
+const { DEFAULT_BILL_SETTINGS, calculateBillDates, getNextBillingMonth, normalizeSettings } = require("./billDateService");
 
 const DEFAULT_ACTOR = "HPA User";
 const BILL_DATA_DIR = process.env.HPA_BILL_DATA_DIR
@@ -16,19 +16,16 @@ const BILL_RUNS_SUPABASE_KEY = "bill-runs.json";
 const BILL_SETTINGS_SUPABASE_KEY = "bill-settings.json";
 
 const BILL_WORKFLOW_STAGES = Object.freeze([
-  "Create Monthly Run",
-  "Pull Bill 2 Correction Records",
-  "Correct Bill 2 Payment Method",
-  "Upload Bill 2 Corrections to Salesforce",
-  "Pull Bill 4 Correction Records",
-  "Correct Bill 4 Coverage Values",
-  "Upload Bill 4 Corrections to Salesforce",
-  "Pull Bill 1-4 Report Data",
-  "Validate Bill Data",
-  "Generate Bill Documents",
-  "Review and Approve",
-  "Download / Print",
-  "Complete Run",
+  "Retrieving correction reports",
+  "Correcting Bill 2",
+  "Correcting Bill 4",
+  "Verifying Salesforce",
+  "Retrieving billing reports",
+  "Sorting certificates",
+  "Generating invoices",
+  "Generating notices",
+  "Validating PDFs",
+  "Ready to Download",
 ]);
 
 const BILL_STATUSES = Object.freeze([
@@ -125,7 +122,10 @@ function readBillSettings() {
 
 function isActiveRunStatus(status) {
   const normalized = String(status || "").trim().toLowerCase();
-  return normalized && normalized !== "completed" && normalized !== "cancelled";
+  return Boolean(normalized) && ![
+    "completed", "cancelled", "documents generated", "corrections complete",
+    "validation failed", "salesforce update partially failed",
+  ].includes(normalized);
 }
 
 function buildRunId() {
@@ -318,6 +318,14 @@ function createBillRun(input = {}) {
   return clone(run);
 }
 
+function createNextMonthBillRun(input = {}) {
+  return createBillRun({
+    ...input,
+    billMonth: getNextBillingMonth(input.now ? new Date(input.now) : new Date(), input.timeZone),
+    scheduledProcessingDate: "",
+  });
+}
+
 function getBillRun(runId) {
   const run = readBillRuns().find((entry) => String(entry.id || "").trim() === String(runId || "").trim());
   if (!run) {
@@ -374,6 +382,10 @@ function updateBillRun(runId, changes = {}) {
   if (changes.counts && typeof changes.counts === "object") {
     run.counts = { ...run.counts, ...clone(changes.counts) };
   }
+  if (Array.isArray(changes.documents)) run.documents = clone(changes.documents);
+  if (Array.isArray(changes.validations)) run.validations = clone(changes.validations);
+  if (typeof changes.outputDirectory === "string") run.outputDirectory = changes.outputDirectory;
+  if (typeof changes.lastError === "string") run.lastError = changes.lastError;
   run.updatedAt = new Date().toISOString();
   appendRunEvent(
     run,
@@ -464,6 +476,7 @@ module.exports = {
   BILL_WORKFLOW_STAGES,
   buildRunCode,
   createBillRun,
+  createNextMonthBillRun,
   deleteBillRun,
   getBillDashboard,
   getBillRun,

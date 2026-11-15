@@ -22,6 +22,21 @@ const MONTH_NAMES = [
   "December",
 ];
 
+const DEFAULT_BUSINESS_TIMEZONE = "America/Los_Angeles";
+
+function getNextBillingMonth(now = new Date(), timeZone = process.env.HPA_BUSINESS_TIMEZONE || DEFAULT_BUSINESS_TIMEZONE) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  if (!Number.isInteger(year) || !Number.isInteger(month)) throw new Error("Unable to determine the business date.");
+  const next = new Date(Date.UTC(year, month, 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 function toDateParts(monthValue) {
   const normalized = String(monthValue || "").trim();
   const match = normalized.match(/^(\d{4})-(\d{2})$/);
@@ -157,8 +172,10 @@ function calculateBillDates(billMonth, settings = {}) {
 }
 
 module.exports = {
+  DEFAULT_BUSINESS_TIMEZONE,
   DEFAULT_BILL_SETTINGS,
   calculateBillDates,
   formatOrdinalDay,
+  getNextBillingMonth,
   normalizeSettings,
 };
