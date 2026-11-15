@@ -151,5 +151,220 @@
         "performedAt": "2026-11-15T17:31:29.389Z"
       }
     ]
+  },
+  {
+    "id": "bill_run_1794764770486_az7en6",
+    "runCode": "BILL-2026-12",
+    "billMonth": "2026-12",
+    "processingDate": "2026-12-14",
+    "scheduledProcessingDate": "2026-12-14",
+    "createdBy": "HPA User",
+    "notes": "",
+    "status": "Validation Failed",
+    "correctionStatus": "Draft",
+    "generationStatus": "Failed",
+    "approvalStatus": "Draft",
+    "versionNumber": 1,
+    "duplicateOverrideReason": "",
+    "activeStage": "Retrieving correction reports",
+    "stages": [
+      {
+        "key": "stage_1",
+        "title": "Retrieving correction reports",
+        "status": "current"
+      },
+      {
+        "key": "stage_2",
+        "title": "Correcting Bill 2",
+        "status": "pending"
+      },
+      {
+        "key": "stage_3",
+        "title": "Correcting Bill 4",
+        "status": "pending"
+      },
+      {
+        "key": "stage_4",
+        "title": "Verifying Salesforce",
+        "status": "pending"
+      },
+      {
+        "key": "stage_5",
+        "title": "Retrieving billing reports",
+        "status": "pending"
+      },
+      {
+        "key": "stage_6",
+        "title": "Sorting certificates",
+        "status": "pending"
+      },
+      {
+        "key": "stage_7",
+        "title": "Generating invoices",
+        "status": "pending"
+      },
+      {
+        "key": "stage_8",
+        "title": "Generating notices",
+        "status": "pending"
+      },
+      {
+        "key": "stage_9",
+        "title": "Validating PDFs",
+        "status": "pending"
+      },
+      {
+        "key": "stage_10",
+        "title": "Ready to Download",
+        "status": "pending"
+      }
+    ],
+    "dates": {
+      "processingDate": "2026-12-14",
+      "processingDateDisplay": "12/14/2026",
+      "processingDateLong": "December 14, 2026",
+      "processingDateOrdinalLong": "December 14th, 2026",
+      "bill1DueDate": "2026-12-01",
+      "bill1DueDateDisplay": "12/1/2026",
+      "bill2OriginalOverdueMonth": "NOVEMBER, 2026",
+      "bill2UpcomingMonth": "JANUARY, 2027",
+      "bill3FirstOverdueMonth": "OCTOBER, 2026",
+      "bill3SecondOverdueMonth": "NOVEMBER, 2026",
+      "bill3NextDueDate": "2027-01-01",
+      "bill3NextDueDateDisplay": "January 1, 2027",
+      "bill3LapseDeadline": "2027-01-14",
+      "bill3LapseDeadlineDisplay": "January 14, 2027",
+      "bill3LapseDeadlineOrdinalDisplay": "January 14th, 2027",
+      "bill4LapsedEffectiveDate": "2026-11-01",
+      "bill4LapsedEffectiveDateDisplay": "November 1, 2026",
+      "bill4ReinstatementReferenceDate": "2027-01-01",
+      "bill4ReinstatementReferenceDateDisplay": "January 1, 2027",
+      "documentMonthLabel": "DECEMBER, 2026",
+      "documentMonthShortLabel": "DECEMBER",
+      "processingMonthLabel": "December 2026",
+      "billMonth": "2026-12",
+      "settings": {
+        "normalProcessingDay": 14,
+        "paymentDueDay": 1,
+        "lapseDeadlineDay": 14,
+        "maximumTotalCoverage": 503000,
+        "requiredNonContributoryCoverage": 3000,
+        "maximumContributoryCoverage": 500000
+      }
+    },
+    "counts": {
+      "bill1": 0,
+      "bill2": 0,
+      "bill3": 0,
+      "bill4": 0,
+      "bill3Notices": 0,
+      "bill4Notices": 0,
+      "totalDocuments": 0,
+      "totalRecipients": 0,
+      "validationErrors": 0
+    },
+    "corrections": {
+      "bill2": [],
+      "bill4": []
+    },
+    "validations": [
+      {
+        "type": "workflow",
+        "valid": false,
+        "error": "expired access/refresh token",
+        "dataErrors": []
+      }
+    ],
+    "documents": [
+      {
+        "fileName": "Billing_Exceptions_2026-12.json",
+        "kind": "exception",
+        "contentType": "application/json"
+      },
+      {
+        "fileName": "Billing_Exceptions_2026-12.json",
+        "kind": "exception",
+        "contentType": "application/json"
+      }
+    ],
+    "approvals": [],
+    "sourceSnapshotTimestamp": "2026-11-15T17:46:10.486Z",
+    "createdAt": "2026-11-15T17:46:10.486Z",
+    "updatedAt": "2026-11-15T17:51:13.571Z",
+    "events": [
+      {
+        "id": "bill_event_1794764770486_q70bqb",
+        "eventType": "run-created",
+        "previousStatus": "",
+        "newStatus": "Draft",
+        "details": {
+          "previousStatus": "",
+          "newStatus": "Draft",
+          "billMonth": "2026-12",
+          "runCode": "BILL-2026-12",
+          "duplicateOverrideReason": ""
+        },
+        "performedBy": "HPA User",
+        "performedAt": "2026-11-15T17:46:10.486Z"
+      },
+      {
+        "id": "bill_event_1794765059863_2fputp",
+        "eventType": "run-updated",
+        "previousStatus": "Draft",
+        "newStatus": "Pulling Data",
+        "details": {
+          "previousStatus": "Draft",
+          "newStatus": "Pulling Data",
+          "activeStage": "Retrieving correction reports",
+          "notesUpdated": false
+        },
+        "performedBy": "HPA User",
+        "performedAt": "2026-11-15T17:50:59.863Z"
+      },
+      {
+        "id": "bill_event_1794765060297_2d3lrl",
+        "eventType": "run-updated",
+        "previousStatus": "Pulling Data",
+        "newStatus": "Validation Failed",
+        "details": {
+          "previousStatus": "Pulling Data",
+          "newStatus": "Validation Failed",
+          "activeStage": "Retrieving correction reports",
+          "notesUpdated": false
+        },
+        "performedBy": "HPA User",
+        "performedAt": "2026-11-15T17:51:00.297Z"
+      },
+      {
+        "id": "bill_event_1794765073311_4ch8yd",
+        "eventType": "run-updated",
+        "previousStatus": "Validation Failed",
+        "newStatus": "Pulling Data",
+        "details": {
+          "previousStatus": "Validation Failed",
+          "newStatus": "Pulling Data",
+          "activeStage": "Retrieving correction reports",
+          "notesUpdated": false
+        },
+        "performedBy": "HPA User",
+        "performedAt": "2026-11-15T17:51:13.311Z"
+      },
+      {
+        "id": "bill_event_1794765073571_9s5g7i",
+        "eventType": "run-updated",
+        "previousStatus": "Pulling Data",
+        "newStatus": "Validation Failed",
+        "details": {
+          "previousStatus": "Pulling Data",
+          "newStatus": "Validation Failed",
+          "activeStage": "Retrieving correction reports",
+          "notesUpdated": false
+        },
+        "performedBy": "HPA User",
+        "performedAt": "2026-11-15T17:51:13.571Z"
+      }
+    ],
+    "outputDirectory": "C:\\dev\\HPA\\generated-reports\\bills\\BILL-2026-12-2026-11-15T17-51-00-296Z-6_az7en6",
+    "lastError": "expired access/refresh token"
   }
 ]

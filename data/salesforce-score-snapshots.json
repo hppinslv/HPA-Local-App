@@ -2,7 +2,7 @@
   {
     "id": "2026-11-15::scoreReport::applicationsReceived::::::__report_capture__",
     "snapshot_date": "2026-11-15",
-    "captured_at": "2026-11-15T17:38:25.413Z",
+    "captured_at": "2026-11-15T17:49:48.543Z",
     "salesforce_as_of_text": "",
     "dashboard_key": "scoreReport",
     "dashboard_name": "SCORE Report",
@@ -26,12 +26,12 @@
     "capture_status": "failed",
     "error_message": "expired access/refresh token",
     "created_at": "2026-11-15T17:38:25.413Z",
-    "updated_at": "2026-11-15T17:38:25.413Z"
+    "updated_at": "2026-11-15T17:49:48.543Z"
   },
   {
     "id": "2026-11-15::scoreReport::moneyReceived::::::__report_capture__",
     "snapshot_date": "2026-11-15",
-    "captured_at": "2026-11-15T17:38:25.413Z",
+    "captured_at": "2026-11-15T17:49:48.543Z",
     "salesforce_as_of_text": "",
     "dashboard_key": "scoreReport",
     "dashboard_name": "SCORE Report",
@@ -55,12 +55,12 @@
     "capture_status": "failed",
     "error_message": "expired access/refresh token",
     "created_at": "2026-11-15T17:38:25.413Z",
-    "updated_at": "2026-11-15T17:38:25.413Z"
+    "updated_at": "2026-11-15T17:49:48.543Z"
   },
   {
     "id": "2026-11-15::scoreReport::moneyReceivedByPayType::::::__report_capture__",
     "snapshot_date": "2026-11-15",
-    "captured_at": "2026-11-15T17:38:25.413Z",
+    "captured_at": "2026-11-15T17:49:48.543Z",
     "salesforce_as_of_text": "",
     "dashboard_key": "scoreReport",
     "dashboard_name": "SCORE Report",
@@ -85,12 +85,12 @@
     "capture_status": "failed",
     "error_message": "expired access/refresh token",
     "created_at": "2026-11-15T17:38:25.413Z",
-    "updated_at": "2026-11-15T17:38:25.413Z"
+    "updated_at": "2026-11-15T17:49:48.543Z"
   },
   {
     "id": "2026-11-15::scoreReport::score::::::__report_capture__",
     "snapshot_date": "2026-11-15",
-    "captured_at": "2026-11-15T17:38:25.413Z",
+    "captured_at": "2026-11-15T17:49:48.543Z",
     "salesforce_as_of_text": "",
     "dashboard_key": "scoreReport",
     "dashboard_name": "SCORE Report",
@@ -115,7 +115,7 @@
     "capture_status": "failed",
     "error_message": "expired access/refresh token",
     "created_at": "2026-11-15T17:38:25.413Z",
-    "updated_at": "2026-11-15T17:38:25.413Z"
+    "updated_at": "2026-11-15T17:49:48.543Z"
   },
   {
     "id": "2026-09-02::scoreReport::applicationsReceived::::::__report_capture__",
